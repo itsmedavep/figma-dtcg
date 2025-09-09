@@ -711,6 +711,8 @@
       --border: #e5e7eb;
       --drawer-h: 260px;
       /* bottom log drawer height */
+      --drawer-collapsed-h: 28px;
+      /* slim bar height when collapsed */
     }
 
     html,
@@ -738,6 +740,30 @@
       box-sizing: border-box;
       grid-auto-flow: row;
       /* rows fill before columns */
+    }
+
+    .shell.drawer-collapsed {
+      grid-template-rows: 1fr var(--drawer-collapsed-h);
+    }
+
+    /* Hide drawer body when collapsed */
+    .shell.drawer-collapsed .drawer .drawer-body {
+      display: none;
+    }
+
+    /* Drawer toggle button */
+    .drawer-toggle {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .drawer-toggle:hover {
+      background: #f3f4f6;
     }
 
     .col {
@@ -1055,7 +1081,9 @@
           <div class="eyebrow">Diagnostics</div>
           <h2 class="title">Log</h2>
         </div>
+        <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
       </div>
+
       <div class="drawer-body">
         <div id="log"></div>
       </div>
@@ -1075,6 +1103,8 @@
   var exportBtn = document.getElementById("exportBtn");
   var exportPickers = document.getElementById("exportPickers");
   var refreshBtn = document.getElementById("refreshBtn");
+  var shellEl = document.querySelector(".shell");
+  var drawerToggleBtn = document.getElementById("drawerToggleBtn");
   function postResize(width, height) {
     var w = Math.max(720, Math.min(1600, Math.floor(width)));
     var h = Math.max(420, Math.min(1200, Math.floor(height)));
@@ -1320,6 +1350,39 @@
       else log('Export requested for "' + (payload.collection || "") + '" / "' + (payload.mode || "") + '".');
     });
   }
+  if (drawerToggleBtn && drawerToggleBtn instanceof HTMLButtonElement) {
+    drawerToggleBtn.addEventListener("click", function() {
+      var current = drawerToggleBtn.getAttribute("aria-expanded") === "true";
+      setDrawerOpen(!current);
+    });
+  }
+  function setDrawerOpen(open) {
+    if (shellEl && shellEl instanceof HTMLElement) {
+      if (open) {
+        shellEl.classList.remove("drawer-collapsed");
+      } else {
+        shellEl.classList.add("drawer-collapsed");
+      }
+    }
+    if (drawerToggleBtn && drawerToggleBtn instanceof HTMLButtonElement) {
+      drawerToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      drawerToggleBtn.textContent = open ? "Hide" : "Show";
+      drawerToggleBtn.title = open ? "Hide log" : "Show log";
+    }
+    try {
+      window.localStorage.setItem("drawerOpen", open ? "1" : "0");
+    } catch (_e) {
+    }
+  }
+  function getSavedDrawerOpen() {
+    try {
+      var v = window.localStorage.getItem("drawerOpen");
+      if (v === "0") return false;
+      if (v === "1") return true;
+    } catch (_e) {
+    }
+    return true;
+  }
   window.onmessage = function(event) {
     const data = event.data;
     if (!data || typeof data !== "object") return;
@@ -1372,6 +1435,7 @@
   document.addEventListener("DOMContentLoaded", function() {
     if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = "Loading variable collections\\u2026";
     setDisabledStates();
+    setDrawerOpen(getSavedDrawerOpen());
     postToPlugin({ type: "UI_READY" });
     autoFitOnce();
   });

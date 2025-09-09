@@ -15,6 +15,10 @@ const exportPickers = document.getElementById('exportPickers');
 
 const refreshBtn = document.getElementById('refreshBtn');
 
+const shellEl = document.querySelector('.shell');
+const drawerToggleBtn = document.getElementById('drawerToggleBtn');
+
+
 function postResize(width: number, height: number): void {
   var w = Math.max(720, Math.min(1600, Math.floor(width)));
   var h = Math.max(420, Math.min(1200, Math.floor(height)));
@@ -311,6 +315,42 @@ if (exportBtn && exportBtn instanceof HTMLButtonElement) {
   });
 }
 
+if (drawerToggleBtn && drawerToggleBtn instanceof HTMLButtonElement) {
+  drawerToggleBtn.addEventListener('click', function () {
+    var current = drawerToggleBtn.getAttribute('aria-expanded') === 'true';
+    setDrawerOpen(!current);
+  });
+}
+
+
+function setDrawerOpen(open: boolean): void {
+  if (shellEl && shellEl instanceof HTMLElement) {
+    if (open) {
+      shellEl.classList.remove('drawer-collapsed');
+    } else {
+      shellEl.classList.add('drawer-collapsed');
+    }
+  }
+  if (drawerToggleBtn && drawerToggleBtn instanceof HTMLButtonElement) {
+    drawerToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    drawerToggleBtn.textContent = open ? 'Hide' : 'Show';
+    drawerToggleBtn.title = open ? 'Hide log' : 'Show log';
+  }
+  try {
+    window.localStorage.setItem('drawerOpen', open ? '1' : '0');
+  } catch (_e) { /* ignore */ }
+}
+
+function getSavedDrawerOpen(): boolean {
+  try {
+    var v = window.localStorage.getItem('drawerOpen');
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch (_e) { /* ignore */ }
+  return true; // default: open
+}
+
+
 /* ---------- Receive from plugin ---------- */
 window.onmessage = function (event: MessageEvent) {
   const data: unknown = (event as unknown as { data?: unknown }).data;
@@ -365,6 +405,7 @@ window.onmessage = function (event: MessageEvent) {
 document.addEventListener('DOMContentLoaded', function () {
   if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = 'Loading variable collections…';
   setDisabledStates();
+  setDrawerOpen(getSavedDrawerOpen());
   postToPlugin({ type: 'UI_READY' });
   // request a size that fits current content
   autoFitOnce();

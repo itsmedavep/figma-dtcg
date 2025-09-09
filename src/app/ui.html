@@ -17,6 +17,8 @@
       --border: #e5e7eb;
       --drawer-h: 260px;
       /* bottom log drawer height */
+      --drawer-collapsed-h: 28px;
+      /* slim bar height when collapsed */
     }
 
     html,
@@ -44,6 +46,30 @@
       box-sizing: border-box;
       grid-auto-flow: row;
       /* rows fill before columns */
+    }
+
+    .shell.drawer-collapsed {
+      grid-template-rows: 1fr var(--drawer-collapsed-h);
+    }
+
+    /* Hide drawer body when collapsed */
+    .shell.drawer-collapsed .drawer .drawer-body {
+      display: none;
+    }
+
+    /* Drawer toggle button */
+    .drawer-toggle {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .drawer-toggle:hover {
+      background: #f3f4f6;
     }
 
     .col {
@@ -361,7 +387,9 @@
           <div class="eyebrow">Diagnostics</div>
           <h2 class="title">Log</h2>
         </div>
+        <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
       </div>
+
       <div class="drawer-body">
         <div id="log"></div>
       </div>
