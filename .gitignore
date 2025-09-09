@@ -3,3 +3,8 @@ src/.DS_Store
 src/.DS_Store
 dist/
 node_modules/
+dist/main.js
+dist/main.js.map
+dist/ui.html
+dist/ui.js
+dist/ui.js.map
