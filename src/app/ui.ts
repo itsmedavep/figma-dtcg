@@ -20,6 +20,11 @@ const drawerToggleBtn = document.getElementById('drawerToggleBtn');
 
 const w3cPreviewEl = document.getElementById('w3cPreview') as HTMLElement | null;
 
+const copyRawBtn = document.getElementById('copyRawBtn') as HTMLButtonElement | null;
+const copyW3cBtn = document.getElementById('copyW3cBtn') as HTMLButtonElement | null;
+const copyLogBtn = document.getElementById('copyLogBtn') as HTMLButtonElement | null;
+
+
 
 
 function postResize(width: number, height: number): void {
@@ -27,6 +32,56 @@ function postResize(width: number, height: number): void {
   var h = Math.max(420, Math.min(1200, Math.floor(height)));
   postToPlugin({ type: 'UI_RESIZE', payload: { width: w, height: h } });
 }
+
+async function copyElText(el: HTMLElement | null, label: string): Promise<void> {
+  try {
+    const text = el ? (el.textContent ?? '') : '';
+    if (!text) { log(`Nothing to copy for ${label}.`); return; }
+
+    // First try the modern Clipboard API
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      log(`Copied ${label} to clipboard (${text.length} chars).`);
+      return;
+    }
+
+    // Fallback: create a hidden textarea and execCommand('copy')
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+
+    const ok = document.execCommand('copy'); // deprecated but reliable fallback
+    document.body.removeChild(ta);
+
+    if (ok) {
+      log(`Copied ${label} to clipboard (${text.length} chars).`);
+    } else {
+      throw new Error('execCommand(copy) returned false');
+    }
+  } catch (_err) {
+    // One last ultra-fallback: try permissions API + clipboard again
+    try {
+      const anyNavigator = navigator as any;
+      if (anyNavigator.permissions && anyNavigator.permissions.query) {
+        const perm = await anyNavigator.permissions.query({ name: 'clipboard-write' as PermissionName });
+        if (perm.state === 'granted' || perm.state === 'prompt') {
+          await navigator.clipboard.writeText((el?.textContent) ?? '');
+          log(`Copied ${label} to clipboard.`);
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+    log(`Could not copy ${label}.`);
+  }
+}
+
+
 
 function autoFitOnce(): void {
   // Measure page content
@@ -339,6 +394,15 @@ if (modeSelect && modeSelect instanceof HTMLSelectElement) {
   });
 }
 
+if (copyRawBtn) copyRawBtn.addEventListener('click', () =>
+  copyElText(document.getElementById('raw') as HTMLElement, 'Raw Figma Collections')
+);
+if (copyW3cBtn) copyW3cBtn.addEventListener('click', () =>
+  copyElText(document.getElementById('w3cPreview') as HTMLElement, 'W3C Preview')
+);
+if (copyLogBtn) copyLogBtn.addEventListener('click', () =>
+  copyElText(document.getElementById('log') as HTMLElement, 'Log')
+);
 
 
 function setDrawerOpen(open: boolean): void {
@@ -438,5 +502,5 @@ document.addEventListener('DOMContentLoaded', function () {
   setDrawerOpen(getSavedDrawerOpen());
   postToPlugin({ type: 'UI_READY' });
   // request a size that fits current content
-  // autoFitOnce();
+  autoFitOnce();
 });

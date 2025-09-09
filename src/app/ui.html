@@ -336,6 +336,29 @@
     .shell.drawer-collapsed .drawer .drawer-body {
       display: none;
     }
+
+    /* Add this */
+    .panel-header .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* Change these two existing rules: target any button inside the header,
+   not just direct children */
+    .panel-header button {
+      font-size: 11px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .panel-header button:hover {
+      background: #f3f4f6;
+    }
   </style>
 </head>
 
@@ -397,6 +420,7 @@
             <div class="eyebrow">Reference</div>
             <h2 class="title">Raw Figma Collections</h2>
           </div>
+          <button id="copyRawBtn" title="Copy raw collections">Copy</button>
         </div>
         <div class="panel-body">
           <pre id="raw"></pre>
@@ -413,6 +437,7 @@
             <div class="eyebrow">Preview</div>
             <h2 class="title">W3C Design Tokens (JSON)</h2>
           </div>
+          <button id="copyW3cBtn" title="Copy W3C JSON">Copy</button>
         </div>
         <div class="panel-body">
           <!-- Placeholder; we’ll wire this later -->
@@ -428,7 +453,10 @@
           <div class="eyebrow">Diagnostics</div>
           <h2 class="title">Log</h2>
         </div>
-        <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
+        <div class="actions">
+          <button id="copyLogBtn" title="Copy log">Copy</button>
+          <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
+        </div>
       </div>
 
       <div class="drawer-body">

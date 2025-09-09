@@ -34,6 +34,8 @@ function parseColorSpaceUnion(x: unknown): 'srgb' | 'display-p3' {
   return 'srgb';
 }
 
+
+
 function readColorValue(raw: unknown): ColorValue {
   // Allow either hex string or object form
   if (typeof raw === 'string') {
@@ -68,6 +70,13 @@ export function readDtcgToIR(root: unknown): TokenGraph {
     if (hasKey(obj, '$value')) {
       var rawVal = (obj as { $value: unknown }).$value;
 
+      function readExtensions(obj: unknown): Record<string, unknown> | undefined {
+        if (!obj || typeof obj !== 'object') return undefined;
+        const ext = (obj as { $extensions?: unknown }).$extensions;
+        return ext && typeof ext === 'object' ? (ext as Record<string, unknown>) : undefined;
+      }
+
+
       // alias?
       if (typeof rawVal === 'string') {
         var ref = parseAliasString(rawVal);
@@ -79,6 +88,7 @@ export function readDtcgToIR(root: unknown): TokenGraph {
               var o: { [k: string]: ValueOrAlias } = {};
               o[defaultCtx] = { kind: 'alias', path: ref };
               return o;
+              extensions: readExtensions(obj)
             })()
           });
           return;
@@ -95,6 +105,7 @@ export function readDtcgToIR(root: unknown): TokenGraph {
             var o: { [k: string]: ValueOrAlias } = {};
             o[defaultCtx] = { kind: 'color', value: value };
             return o;
+            extensions: readExtensions(obj)
           })()
         });
         return;
@@ -118,6 +129,7 @@ export function readDtcgToIR(root: unknown): TokenGraph {
             var o: { [k: string]: ValueOrAlias } = {};
             o[defaultCtx] = valObj as ValueOrAlias;
             return o;
+            extensions: readExtensions(obj)
           })()
         });
       }

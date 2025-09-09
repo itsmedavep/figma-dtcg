@@ -25,65 +25,83 @@ function isRGBA(v: unknown): v is { r: number; g: number; b: number; a: number }
 }
 
 export async function readFigmaToIR(): Promise<TokenGraph> {
-  var profile = (figma.root.documentColorProfile as DocumentProfile);
-  var variablesApi = figma.variables;
+  const profile = (figma.root.documentColorProfile as DocumentProfile);
+  const variablesApi = figma.variables;
 
   // Load collections
-  var collections = await variablesApi.getLocalVariableCollectionsAsync();
+  const collections = await variablesApi.getLocalVariableCollectionsAsync();
 
   // Build a map variableId -> { name, collectionId }
-  var varMeta: { [id: string]: { name: string; collectionId: string } } = {};
-  var ci = 0;
-  for (ci = 0; ci < collections.length; ci++) {
-    var col = collections[ci];
-    var vi = 0;
-    for (vi = 0; vi < col.variableIds.length; vi++) {
-      var id = col.variableIds[vi];
-      var v = await variablesApi.getVariableByIdAsync(id);
+  const varMeta: { [id: string]: { name: string; collectionId: string } } = {};
+  for (let ci = 0; ci < collections.length; ci++) {
+    const col = collections[ci];
+    for (let vi = 0; vi < col.variableIds.length; vi++) {
+      const id = col.variableIds[vi];
+      const v = await variablesApi.getVariableByIdAsync(id);
       if (v) varMeta[v.id] = { name: v.name, collectionId: col.id };
     }
   }
 
-  var tokens: TokenNode[] = [];
+  const tokens: TokenNode[] = [];
 
-  for (ci = 0; ci < collections.length; ci++) {
-    var c = collections[ci];
-    var mi = 0;
+  for (let ci = 0; ci < collections.length; ci++) {
+    const c = collections[ci];
+
     // Mode name lookup
-    var modeNameById: { [id: string]: string } = {};
-    for (mi = 0; mi < c.modes.length; mi++) modeNameById[c.modes[mi].modeId] = c.modes[mi].name;
+    const modeNameById: { [id: string]: string } = {};
+    for (let mi = 0; mi < c.modes.length; mi++) modeNameById[c.modes[mi].modeId] = c.modes[mi].name;
 
-    var vi2 = 0;
-    for (vi2 = 0; vi2 < c.variableIds.length; vi2++) {
-      var vid = c.variableIds[vi2];
-      var v2 = await variablesApi.getVariableByIdAsync(vid);
+    for (let vi2 = 0; vi2 < c.variableIds.length; vi2++) {
+      const vid = c.variableIds[vi2];
+      const v2 = await variablesApi.getVariableByIdAsync(vid);
       if (!v2) continue;
 
-      var path = canonicalPath(c.name, v2.name);
-      var type = mapType(v2.resolvedType);
-      var byContext: { [ctx: string]: ValueOrAlias } = {};
+      const path = canonicalPath(c.name, v2.name);
+      const type = mapType(v2.resolvedType);
+      const byContext: { [ctx: string]: ValueOrAlias } = {};
+
+      // NEW: collect per-context figma metadata we’ll store under $extensions.org.figma.perContext
+      const perContext: {
+        [ctx: string]: {
+          collectionName: string; collectionID: string;
+          modeName: string; modeID: string;
+          variableName: string; variableID: string;
+        }
+      } = {};
 
       // For each mode, collect value
-      var mi2 = 0;
-      for (mi2 = 0; mi2 < c.modes.length; mi2++) {
-        var md = c.modes[mi2];
-        var ctx = ctxKey(c.name, md.name);
-        var mv = v2.valuesByMode[md.modeId];
+      for (let mi2 = 0; mi2 < c.modes.length; mi2++) {
+        const md = c.modes[mi2];
+        const ctx = ctxKey(c.name, md.name);
+        const mv = v2.valuesByMode[md.modeId];
+
+        // Always record per-context figma metadata
+        perContext[ctx] = {
+          collectionName: c.name,
+          collectionID: c.id,
+          modeName: md.name,
+          modeID: md.modeId,
+          variableName: v2.name,
+          variableID: v2.id,
+        };
 
         if (isAliasValue(mv)) {
-          var target = await variablesApi.getVariableByIdAsync(mv.id);
+          const target = await variablesApi.getVariableByIdAsync(mv.id);
           if (target) {
             // resolve collection name for target
-            var meta = varMeta[target.id];
-            var collName = meta ? collections.filter(function (cc) { return cc.id === meta.collectionId; }).map(function (cc) { return cc.name; })[0] : c.name;
-            var aPath = canonicalPath(collName, target.name);
+            const meta = varMeta[target.id];
+            const collName =
+              meta
+                ? collections.find(cc => cc.id === meta.collectionId)?.name || c.name
+                : c.name;
+            const aPath = canonicalPath(collName, target.name);
             byContext[ctx] = { kind: 'alias', path: aPath };
           }
           continue;
         }
 
         if (type === 'color' && isRGBA(mv)) {
-          var cv = figmaRGBAToDtcg({ r: mv.r, g: mv.g, b: mv.b, a: mv.a }, profile);
+          const cv = figmaRGBAToDtcg({ r: mv.r, g: mv.g, b: mv.b, a: mv.a }, profile);
           byContext[ctx] = { kind: 'color', value: cv };
           continue;
         }
@@ -94,9 +112,19 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         // else unhandled null/undefined -> skip
       }
 
-      tokens.push({ path: path, type: type, byContext: byContext });
+      const token: TokenNode = {
+        path,
+        type,
+        byContext,
+        // NEW: attach $extensions payload so it shows in preview and exports
+        extensions: {
+          'com.figma': { perContext }
+        }
+      };
+
+      tokens.push(token);
     }
   }
 
-  return { tokens: tokens };
+  return { tokens };
 }

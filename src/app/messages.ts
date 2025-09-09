@@ -1,21 +1,24 @@
 // src/app/messages.ts
 
-// ==== UI -> Plugin ====
-
-// UI → Plugin
+// UI -> Plugin
 export type UiToPlugin =
   | { type: 'UI_READY' }
   | { type: 'FETCH_COLLECTIONS' }
   | { type: 'IMPORT_DTCG'; payload: { json: unknown } }
-  | { type: 'EXPORT_DTCG'; payload: { exportAll: boolean; collection?: string; mode?: string } }
+  | {
+    type: 'EXPORT_DTCG';
+    payload: { exportAll: boolean; collection?: string; mode?: string };
+  }
   | { type: 'SAVE_LAST'; payload: { collection: string; mode: string } }
-  | { type: 'SAVE_PREFS'; payload: { exportAll: boolean } }
-  | { type: 'UI_RESIZE'; payload: { width: number; height: number } }   // <-- added
+  | {
+    type: 'SAVE_PREFS';
+    payload: { exportAll?: boolean; drawerOpen?: boolean };
+  }
+  | { type: 'UI_RESIZE'; payload: { width: number; height: number } }
+  // NEW
   | { type: 'PREVIEW_REQUEST'; payload: { collection: string; mode: string } };
 
-
-// ==== Plugin -> UI ====
-
+// Plugin -> UI
 export type PluginToUi =
   | { type: 'ERROR'; payload: { message: string } }
   | { type: 'INFO'; payload: { message: string } }
@@ -30,8 +33,13 @@ export type PluginToUi =
       }>;
       last: { collection: string; mode: string } | null;
       exportAllPref: boolean;
+      drawerOpenPref?: boolean;
     };
   }
   | { type: 'RAW_COLLECTIONS_TEXT'; payload: { text: string } }
-  | { type: 'EXPORT_RESULT'; payload: { files: Array<{ name: string; json: unknown }> } }
+  | {
+    type: 'EXPORT_RESULT';
+    payload: { files: Array<{ name: string; json: unknown }> };
+  }
+  // NEW
   | { type: 'W3C_PREVIEW'; payload: { name: string; json: unknown } };
