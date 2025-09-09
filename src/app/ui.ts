@@ -1,80 +1,115 @@
+// src/app/ui.ts
 import type { PluginToUi, UiToPlugin } from './messages';
 
-var logEl = document.getElementById('log') as HTMLElement;
-var rawEl = document.getElementById('raw') as HTMLElement;
+const logEl = document.getElementById('log');
+const rawEl = document.getElementById('raw');
 
-var exportAllChk = document.getElementById('exportAllChk') as HTMLInputElement | null;
-var collectionSelect = document.getElementById('collectionSelect') as HTMLSelectElement | null;
-var modeSelect = document.getElementById('modeSelect') as HTMLSelectElement | null;
+const exportAllChk = document.getElementById('exportAllChk');
+const collectionSelect = document.getElementById('collectionSelect');
+const modeSelect = document.getElementById('modeSelect');
 
-var fileInput = document.getElementById('file') as HTMLInputElement | null;
-var importBtn = document.getElementById('importBtn') as HTMLButtonElement | null;
-var exportBtn = document.getElementById('exportBtn') as HTMLButtonElement | null;
-var exportPickers = document.getElementById('exportPickers') as HTMLElement | null;
-var refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement | null;
+const fileInput = document.getElementById('file');
+const importBtn = document.getElementById('importBtn');
+const exportBtn = document.getElementById('exportBtn');
+const exportPickers = document.getElementById('exportPickers');
 
-document.addEventListener('DOMContentLoaded', function () {
-  (parent as any).postMessage({ pluginMessage: { type: 'UI_READY' } }, '*');
-});
+const refreshBtn = document.getElementById('refreshBtn');
 
-function log(msg: string) {
-  var t = new Date().toLocaleTimeString();
-  var line = document.createElement('div');
+// Keep last payload for repopulating mode list on collection change
+let currentCollections: Array<{
+  id: string;
+  name: string;
+  modes: Array<{ id: string; name: string }>;
+  variables: Array<{ id: string; name: string; type: string }>;
+}> = [];
+
+function log(msg: string): void {
+  const t = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
   line.textContent = '[' + t + '] ' + msg;
-  logEl.appendChild(line);
-  logEl.scrollTop = logEl.scrollHeight;
+  if (logEl && logEl instanceof HTMLElement) {
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
 }
 
-function postToPlugin(message: UiToPlugin) {
-  (parent as any).postMessage({ pluginMessage: message }, '*');
+function postToPlugin(message: UiToPlugin): void {
+  (parent as unknown as { postMessage: (m: unknown, t: string) => void }).postMessage({ pluginMessage: message }, '*');
 }
 
-function clearSelect(sel: HTMLSelectElement) { while (sel.options.length > 0) sel.remove(0); }
+function clearSelect(sel: HTMLSelectElement): void {
+  while (sel.options.length > 0) sel.remove(0);
+}
 
-function setDisabledStates() {
-  if (importBtn && fileInput) {
-    var hasFile = !!(fileInput.files && fileInput.files.length > 0);
+function setDisabledStates(): void {
+  // Import enabled only when a file is chosen
+  if (importBtn && fileInput && importBtn instanceof HTMLButtonElement && fileInput instanceof HTMLInputElement) {
+    const hasFile = !!(fileInput.files && fileInput.files.length > 0);
     importBtn.disabled = !hasFile;
   }
-  if (exportBtn && exportAllChk && collectionSelect && modeSelect && exportPickers) {
-    var exportAll = !!exportAllChk.checked;
+
+  // Export enabled when "all" checked, otherwise when both pickers have values
+  if (
+    exportBtn && exportAllChk && collectionSelect && modeSelect && exportPickers &&
+    exportBtn instanceof HTMLButtonElement &&
+    exportAllChk instanceof HTMLInputElement &&
+    collectionSelect instanceof HTMLSelectElement &&
+    modeSelect instanceof HTMLSelectElement &&
+    exportPickers instanceof HTMLElement
+  ) {
+    const exportAll = !!exportAllChk.checked;
     if (exportAll) {
       exportBtn.disabled = false;
       exportPickers.style.opacity = '0.5';
     } else {
       exportPickers.style.opacity = '1';
-      var hasSelection = collectionSelect.value.length > 0 && modeSelect.value.length > 0;
+      const hasSelection = collectionSelect.value.length > 0 && modeSelect.value.length > 0;
       exportBtn.disabled = !hasSelection;
     }
   }
 }
 
-function populateCollections(data: { collections: Array<{ id: string; name: string; modes: Array<{ id: string; name: string }> }> }) {
-  if (!collectionSelect || !modeSelect) return;
+function populateCollections(data: {
+  collections: Array<{
+    id: string; name: string;
+    modes: Array<{ id: string; name: string }>;
+    variables: Array<{ id: string; name: string; type: string }>;
+  }>;
+}): void {
+  currentCollections = data.collections;
+
+  if (!(collectionSelect && modeSelect)) return;
+  if (!(collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement)) return;
+
   clearSelect(collectionSelect);
-  var i: number;
+
+  let i = 0;
   for (i = 0; i < data.collections.length; i++) {
-    var c = data.collections[i];
-    var opt = document.createElement('option');
+    const c = data.collections[i];
+    const opt = document.createElement('option');
     opt.value = c.name;
     opt.textContent = c.name;
     collectionSelect.appendChild(opt);
   }
-  onCollectionChange(data);
+
+  onCollectionChange();
 }
 
-function onCollectionChange(data: { collections: Array<{ id: string; name: string; modes: Array<{ id: string; name: string }> }> }) {
-  if (!collectionSelect || !modeSelect) return;
-  var selected = collectionSelect.value;
+function onCollectionChange(): void {
+  if (!(collectionSelect && modeSelect)) return;
+  if (!(collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement)) return;
+
+  const selected = collectionSelect.value;
   clearSelect(modeSelect);
-  var i: number;
-  for (i = 0; i < data.collections.length; i++) {
-    var c = data.collections[i];
+
+  let i = 0;
+  for (i = 0; i < currentCollections.length; i++) {
+    const c = currentCollections[i];
     if (c.name === selected) {
-      var j: number;
+      let j = 0;
       for (j = 0; j < c.modes.length; j++) {
-        var m = c.modes[j];
-        var opt = document.createElement('option');
+        const m = c.modes[j];
+        const opt = document.createElement('option');
         opt.value = m.name;
         opt.textContent = m.name;
         modeSelect.appendChild(opt);
@@ -82,91 +117,151 @@ function onCollectionChange(data: { collections: Array<{ id: string; name: strin
       break;
     }
   }
+
   setDisabledStates();
 }
 
-function prettyJson(obj: any) { try { return JSON.stringify(obj, null, 2); } catch (_e) { return String(obj); } }
+function applyLastSelection(last: { collection: string; mode: string } | null): void {
+  if (!last) return;
+  if (!(collectionSelect && modeSelect)) return;
+  if (!(collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement)) return;
 
-/* ---------- Events ---------- */
-if (collectionSelect) collectionSelect.addEventListener('change', function () { postToPlugin({ type: 'FETCH_COLLECTIONS' }); });
-if (modeSelect) modeSelect.addEventListener('change', setDisabledStates);
-if (fileInput) fileInput.addEventListener('change', setDisabledStates);
-if (exportAllChk) exportAllChk.addEventListener('change', setDisabledStates);
-if (refreshBtn) refreshBtn.addEventListener('click', function () { postToPlugin({ type: 'FETCH_COLLECTIONS' }); });
+  // Collection
+  let i = 0; let found = false;
+  for (i = 0; i < collectionSelect.options.length; i++) {
+    if (collectionSelect.options[i].value === last.collection) {
+      collectionSelect.selectedIndex = i;
+      found = true;
+      break;
+    }
+  }
 
-/* Import button (closure-safe narrowing) */
-(function () {
-  var importBtnEl = document.getElementById('importBtn');
-  var fileInputEl0 = document.getElementById('file');
-  if (importBtnEl instanceof HTMLButtonElement && fileInputEl0 instanceof HTMLInputElement) {
-    const button: HTMLButtonElement = importBtnEl;
-    const input: HTMLInputElement = fileInputEl0;
+  onCollectionChange();
 
-    button.addEventListener('click', function () {
-      if (!input.files || input.files.length === 0) {
-        log('Select a JSON file first.');
-        return;
+  // Mode
+  if (found) {
+    let j = 0;
+    for (j = 0; j < modeSelect.options.length; j++) {
+      if (modeSelect.options[j].value === last.mode) {
+        modeSelect.selectedIndex = j;
+        break;
       }
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          var text = String(reader.result);
-          var json = JSON.parse(text);
+    }
+  }
+
+  setDisabledStates();
+}
+
+function prettyJson(obj: unknown): string {
+  try { return JSON.stringify(obj, null, 2); } catch (_e) { return String(obj); }
+}
+
+/* ---------- Wire UI events ---------- */
+
+if (collectionSelect && collectionSelect instanceof HTMLSelectElement) {
+  collectionSelect.addEventListener('change', function () {
+    onCollectionChange();
+    if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+      postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+    }
+  });
+}
+
+if (modeSelect && modeSelect instanceof HTMLSelectElement) {
+  modeSelect.addEventListener('change', function () {
+    if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+      postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+    }
+    setDisabledStates();
+  });
+}
+
+if (fileInput && fileInput instanceof HTMLInputElement) {
+  fileInput.addEventListener('change', setDisabledStates);
+}
+
+if (exportAllChk && exportAllChk instanceof HTMLInputElement) {
+  exportAllChk.addEventListener('change', function () {
+    setDisabledStates();
+    postToPlugin({ type: 'SAVE_PREFS', payload: { exportAll: !!exportAllChk.checked } });
+  });
+}
+
+if (refreshBtn && refreshBtn instanceof HTMLButtonElement) {
+  refreshBtn.addEventListener('click', function () {
+    postToPlugin({ type: 'FETCH_COLLECTIONS' });
+  });
+}
+
+if (importBtn && importBtn instanceof HTMLButtonElement && fileInput && fileInput instanceof HTMLInputElement) {
+  importBtn.addEventListener('click', function () {
+    if (!fileInput.files || fileInput.files.length === 0) { log('Select a JSON file first.'); return; }
+    const reader = new FileReader();
+    reader.onload = function () {
+      try {
+        const text = String(reader.result);
+        const json = JSON.parse(text);
+        // Minimal sanity check (object, not array)
+        if (json && typeof json === 'object' && !(json instanceof Array)) {
           postToPlugin({ type: 'IMPORT_DTCG', payload: { json: json } });
           log('Import requested.');
-        } catch (e) {
-          var msg = (e instanceof Error) ? e.message : String(e);
-          log('Failed to parse JSON: ' + msg);
+        } else {
+          log('Invalid JSON structure for tokens (expected an object).');
         }
-      };
-      reader.readAsText(input.files[0]);
-    });
-  }
-})();
-
-/* Export button */
-(function () {
-  var exportBtnEl = document.getElementById('exportBtn');
-  var exportAllEl = document.getElementById('exportAllChk');
-  var collSelEl = document.getElementById('collectionSelect');
-  var modeSelEl = document.getElementById('modeSelect');
-
-  if (exportBtnEl instanceof HTMLButtonElement) {
-    exportBtnEl.addEventListener('click', function () {
-      var exportAll = !!(exportAllEl instanceof HTMLInputElement && exportAllEl.checked);
-      var payload: { exportAll: boolean; collection?: string; mode?: string } = { exportAll: exportAll };
-      if (!exportAll && collSelEl instanceof HTMLSelectElement && modeSelEl instanceof HTMLSelectElement) {
-        payload.collection = collSelEl.value;
-        payload.mode = modeSelEl.value;
-        if (!(payload.collection && payload.mode)) { log('Pick collection and mode or use "Export all".'); return; }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log('Failed to parse JSON: ' + msg);
       }
-      postToPlugin({ type: 'EXPORT_DTCG', payload: payload });
-      if (exportAll) log('Export all requested.');
-      else log('Export requested for "' + payload.collection + '" / "' + payload.mode + '".');
-    });
-  }
-})();
+    };
+    reader.readAsText(fileInput.files[0]);
+  });
+}
+
+if (exportBtn && exportBtn instanceof HTMLButtonElement) {
+  exportBtn.addEventListener('click', function () {
+    let exportAll = false;
+    if (exportAllChk && exportAllChk instanceof HTMLInputElement) exportAll = !!exportAllChk.checked;
+
+    const payload: { exportAll: boolean; collection?: string; mode?: string } = { exportAll: exportAll };
+    if (!exportAll && collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+      payload.collection = collectionSelect.value;
+      payload.mode = modeSelect.value;
+      if (!(payload.collection && payload.mode)) { log('Pick collection and mode or use "Export all".'); return; }
+    }
+    postToPlugin({ type: 'EXPORT_DTCG', payload: payload });
+    if (exportAll) log('Export all requested.'); else log('Export requested for "' + (payload.collection || '') + '" / "' + (payload.mode || '') + '".');
+  });
+}
 
 /* ---------- Receive from plugin ---------- */
-(window as any).onmessage = function (event: MessageEvent<{ pluginMessage?: PluginToUi }>) {
-  var msg = event.data && event.data.pluginMessage ? event.data.pluginMessage : null;
+window.onmessage = function (event: MessageEvent) {
+  const data: unknown = (event as unknown as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return;
+
+  let msg: PluginToUi | null = null;
+  if ((data as { pluginMessage?: unknown }).pluginMessage && typeof (data as { pluginMessage?: unknown }).pluginMessage === 'object') {
+    const maybe = (data as { pluginMessage?: unknown }).pluginMessage as { type?: string };
+    if (maybe && typeof maybe.type === 'string') {
+      msg = (data as { pluginMessage: PluginToUi }).pluginMessage;
+    }
+  }
   if (!msg) return;
 
   if (msg.type === 'ERROR') { log('ERROR: ' + msg.payload.message); return; }
   if (msg.type === 'INFO') { log(msg.payload.message); return; }
 
   if (msg.type === 'EXPORT_RESULT') {
-    var k: number;
+    let k = 0;
     for (k = 0; k < msg.payload.files.length; k++) {
-      var f = msg.payload.files[k];
-      var a = document.createElement('a');
-      var blob = new Blob([prettyJson(f.json)], { type: 'application/json' });
+      const f = msg.payload.files[k];
+      const a = document.createElement('a');
+      const blob = new Blob([prettyJson(f.json)], { type: 'application/json' });
       a.href = URL.createObjectURL(blob);
       a.download = f.name;
       a.textContent = 'Download ' + f.name;
-      var div = document.createElement('div');
+      const div = document.createElement('div');
       div.appendChild(a);
-      logEl.appendChild(div);
+      if (logEl && logEl instanceof HTMLElement) logEl.appendChild(div);
     }
     log('Export ready.');
     return;
@@ -174,17 +269,23 @@ if (refreshBtn) refreshBtn.addEventListener('click', function () { postToPlugin(
 
   if (msg.type === 'COLLECTIONS_DATA') {
     populateCollections({ collections: msg.payload.collections });
+    if (exportAllChk && exportAllChk instanceof HTMLInputElement) {
+      exportAllChk.checked = !!msg.payload.exportAllPref;
+    }
+    applyLastSelection(msg.payload.last);
     setDisabledStates();
     return;
   }
 
   if (msg.type === 'RAW_COLLECTIONS_TEXT') {
-    rawEl.textContent = msg.payload.text;
+    if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = msg.payload.text;
     return;
   }
 };
 
 /* ---------- Announce ready ---------- */
-rawEl.textContent = 'Loading variable collections…';
-setDisabledStates();
-postToPlugin({ type: 'UI_READY' });
+document.addEventListener('DOMContentLoaded', function () {
+  if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = 'Loading variable collections…';
+  setDisabledStates();
+  postToPlugin({ type: 'UI_READY' });
+});

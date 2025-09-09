@@ -60,6 +60,7 @@
       border: 1px solid var(--border);
       background: var(--surface);
       border-radius: 10px;
+      padding: .5rem;
     }
 
     .panel-header {
@@ -85,7 +86,7 @@
     }
 
     .panel-body {
-      padding: 4px;
+      padding: px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -194,6 +195,15 @@
       align-items: center;
       justify-content: space-between
     }
+
+    #refreshBtn {
+      margin-top: .5rem;
+      margin-bottom: .5rem;
+      margin-left: auto;
+      margin-right: auto;
+      width: 45%;
+      border-radius: .25rem;
+    }
   </style>
 </head>
 
@@ -228,7 +238,7 @@
             <div class="row-center">
               <label><input type="checkbox" id="exportAllChk" /> Export all collections & modes into a single
                 file</label>
-              <button id="refreshBtn" style="background:#6b7280">Refresh</button>
+
             </div>
             <div class="stack" id="exportPickers">
               <div>
@@ -242,8 +252,9 @@
             </div>
             <div class="row">
               <button id="exportBtn" disabled>Export</button>
+              <div class="muted">Select a collection and mode, or check “Export all”.</div>
             </div>
-            <div class="muted">Select a collection and mode, or check “Export all”.</div>
+
           </div>
         </div>
       </div>
@@ -261,6 +272,7 @@
         <div class="panel-body">
           <pre id="raw"></pre>
         </div>
+        <button id="refreshBtn" style="background:#6b7280">Refresh</button>
       </div>
     </div>
 
@@ -293,15 +305,15 @@
   var exportBtn = document.getElementById("exportBtn");
   var exportPickers = document.getElementById("exportPickers");
   var refreshBtn = document.getElementById("refreshBtn");
-  document.addEventListener("DOMContentLoaded", function() {
-    parent.postMessage({ pluginMessage: { type: "UI_READY" } }, "*");
-  });
+  var currentCollections = [];
   function log(msg) {
-    var t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
-    var line = document.createElement("div");
+    const t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
+    const line = document.createElement("div");
     line.textContent = "[" + t + "] " + msg;
-    logEl.appendChild(line);
-    logEl.scrollTop = logEl.scrollHeight;
+    if (logEl && logEl instanceof HTMLElement) {
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
   }
   function postToPlugin(message) {
     parent.postMessage({ pluginMessage: message }, "*");
@@ -310,52 +322,80 @@
     while (sel.options.length > 0) sel.remove(0);
   }
   function setDisabledStates() {
-    if (importBtn && fileInput) {
-      var hasFile = !!(fileInput.files && fileInput.files.length > 0);
+    if (importBtn && fileInput && importBtn instanceof HTMLButtonElement && fileInput instanceof HTMLInputElement) {
+      const hasFile = !!(fileInput.files && fileInput.files.length > 0);
       importBtn.disabled = !hasFile;
     }
-    if (exportBtn && exportAllChk && collectionSelect && modeSelect && exportPickers) {
-      var exportAll = !!exportAllChk.checked;
+    if (exportBtn && exportAllChk && collectionSelect && modeSelect && exportPickers && exportBtn instanceof HTMLButtonElement && exportAllChk instanceof HTMLInputElement && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement && exportPickers instanceof HTMLElement) {
+      const exportAll = !!exportAllChk.checked;
       if (exportAll) {
         exportBtn.disabled = false;
         exportPickers.style.opacity = "0.5";
       } else {
         exportPickers.style.opacity = "1";
-        var hasSelection = collectionSelect.value.length > 0 && modeSelect.value.length > 0;
+        const hasSelection = collectionSelect.value.length > 0 && modeSelect.value.length > 0;
         exportBtn.disabled = !hasSelection;
       }
     }
   }
   function populateCollections(data) {
-    if (!collectionSelect || !modeSelect) return;
+    currentCollections = data.collections;
+    if (!(collectionSelect && modeSelect)) return;
+    if (!(collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement)) return;
     clearSelect(collectionSelect);
-    var i;
+    let i = 0;
     for (i = 0; i < data.collections.length; i++) {
-      var c = data.collections[i];
-      var opt = document.createElement("option");
+      const c = data.collections[i];
+      const opt = document.createElement("option");
       opt.value = c.name;
       opt.textContent = c.name;
       collectionSelect.appendChild(opt);
     }
-    onCollectionChange(data);
+    onCollectionChange();
   }
-  function onCollectionChange(data) {
-    if (!collectionSelect || !modeSelect) return;
-    var selected = collectionSelect.value;
+  function onCollectionChange() {
+    if (!(collectionSelect && modeSelect)) return;
+    if (!(collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement)) return;
+    const selected = collectionSelect.value;
     clearSelect(modeSelect);
-    var i;
-    for (i = 0; i < data.collections.length; i++) {
-      var c = data.collections[i];
+    let i = 0;
+    for (i = 0; i < currentCollections.length; i++) {
+      const c = currentCollections[i];
       if (c.name === selected) {
-        var j;
+        let j = 0;
         for (j = 0; j < c.modes.length; j++) {
-          var m = c.modes[j];
-          var opt = document.createElement("option");
+          const m = c.modes[j];
+          const opt = document.createElement("option");
           opt.value = m.name;
           opt.textContent = m.name;
           modeSelect.appendChild(opt);
         }
         break;
+      }
+    }
+    setDisabledStates();
+  }
+  function applyLastSelection(last) {
+    if (!last) return;
+    if (!(collectionSelect && modeSelect)) return;
+    if (!(collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement)) return;
+    let i = 0;
+    let found = false;
+    for (i = 0; i < collectionSelect.options.length; i++) {
+      if (collectionSelect.options[i].value === last.collection) {
+        collectionSelect.selectedIndex = i;
+        found = true;
+        break;
+      }
+    }
+    onCollectionChange();
+    if (found) {
+      let j = 0;
+      for (j = 0; j < modeSelect.options.length; j++) {
+        if (modeSelect.options[j].value === last.mode) {
+          modeSelect.selectedIndex = j;
+          break;
+        }
       }
     }
     setDisabledStates();
@@ -367,67 +407,89 @@
       return String(obj);
     }
   }
-  if (collectionSelect) collectionSelect.addEventListener("change", function() {
-    postToPlugin({ type: "FETCH_COLLECTIONS" });
-  });
-  if (modeSelect) modeSelect.addEventListener("change", setDisabledStates);
-  if (fileInput) fileInput.addEventListener("change", setDisabledStates);
-  if (exportAllChk) exportAllChk.addEventListener("change", setDisabledStates);
-  if (refreshBtn) refreshBtn.addEventListener("click", function() {
-    postToPlugin({ type: "FETCH_COLLECTIONS" });
-  });
-  (function() {
-    var importBtnEl = document.getElementById("importBtn");
-    var fileInputEl0 = document.getElementById("file");
-    if (importBtnEl instanceof HTMLButtonElement && fileInputEl0 instanceof HTMLInputElement) {
-      const button = importBtnEl;
-      const input = fileInputEl0;
-      button.addEventListener("click", function() {
-        if (!input.files || input.files.length === 0) {
-          log("Select a JSON file first.");
-          return;
-        }
-        var reader = new FileReader();
-        reader.onload = function() {
-          try {
-            var text = String(reader.result);
-            var json = JSON.parse(text);
+  if (collectionSelect && collectionSelect instanceof HTMLSelectElement) {
+    collectionSelect.addEventListener("change", function() {
+      onCollectionChange();
+      if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+        postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+      }
+    });
+  }
+  if (modeSelect && modeSelect instanceof HTMLSelectElement) {
+    modeSelect.addEventListener("change", function() {
+      if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+        postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+      }
+      setDisabledStates();
+    });
+  }
+  if (fileInput && fileInput instanceof HTMLInputElement) {
+    fileInput.addEventListener("change", setDisabledStates);
+  }
+  if (exportAllChk && exportAllChk instanceof HTMLInputElement) {
+    exportAllChk.addEventListener("change", function() {
+      setDisabledStates();
+      postToPlugin({ type: "SAVE_PREFS", payload: { exportAll: !!exportAllChk.checked } });
+    });
+  }
+  if (refreshBtn && refreshBtn instanceof HTMLButtonElement) {
+    refreshBtn.addEventListener("click", function() {
+      postToPlugin({ type: "FETCH_COLLECTIONS" });
+    });
+  }
+  if (importBtn && importBtn instanceof HTMLButtonElement && fileInput && fileInput instanceof HTMLInputElement) {
+    importBtn.addEventListener("click", function() {
+      if (!fileInput.files || fileInput.files.length === 0) {
+        log("Select a JSON file first.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function() {
+        try {
+          const text = String(reader.result);
+          const json = JSON.parse(text);
+          if (json && typeof json === "object" && !(json instanceof Array)) {
             postToPlugin({ type: "IMPORT_DTCG", payload: { json } });
             log("Import requested.");
-          } catch (e) {
-            var msg = e instanceof Error ? e.message : String(e);
-            log("Failed to parse JSON: " + msg);
+          } else {
+            log("Invalid JSON structure for tokens (expected an object).");
           }
-        };
-        reader.readAsText(input.files[0]);
-      });
-    }
-  })();
-  (function() {
-    var exportBtnEl = document.getElementById("exportBtn");
-    var exportAllEl = document.getElementById("exportAllChk");
-    var collSelEl = document.getElementById("collectionSelect");
-    var modeSelEl = document.getElementById("modeSelect");
-    if (exportBtnEl instanceof HTMLButtonElement) {
-      exportBtnEl.addEventListener("click", function() {
-        var exportAll = !!(exportAllEl instanceof HTMLInputElement && exportAllEl.checked);
-        var payload = { exportAll };
-        if (!exportAll && collSelEl instanceof HTMLSelectElement && modeSelEl instanceof HTMLSelectElement) {
-          payload.collection = collSelEl.value;
-          payload.mode = modeSelEl.value;
-          if (!(payload.collection && payload.mode)) {
-            log('Pick collection and mode or use "Export all".');
-            return;
-          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          log("Failed to parse JSON: " + msg);
         }
-        postToPlugin({ type: "EXPORT_DTCG", payload });
-        if (exportAll) log("Export all requested.");
-        else log('Export requested for "' + payload.collection + '" / "' + payload.mode + '".');
-      });
-    }
-  })();
+      };
+      reader.readAsText(fileInput.files[0]);
+    });
+  }
+  if (exportBtn && exportBtn instanceof HTMLButtonElement) {
+    exportBtn.addEventListener("click", function() {
+      let exportAll = false;
+      if (exportAllChk && exportAllChk instanceof HTMLInputElement) exportAll = !!exportAllChk.checked;
+      const payload = { exportAll };
+      if (!exportAll && collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+        payload.collection = collectionSelect.value;
+        payload.mode = modeSelect.value;
+        if (!(payload.collection && payload.mode)) {
+          log('Pick collection and mode or use "Export all".');
+          return;
+        }
+      }
+      postToPlugin({ type: "EXPORT_DTCG", payload });
+      if (exportAll) log("Export all requested.");
+      else log('Export requested for "' + (payload.collection || "") + '" / "' + (payload.mode || "") + '".');
+    });
+  }
   window.onmessage = function(event) {
-    var msg = event.data && event.data.pluginMessage ? event.data.pluginMessage : null;
+    const data = event.data;
+    if (!data || typeof data !== "object") return;
+    let msg = null;
+    if (data.pluginMessage && typeof data.pluginMessage === "object") {
+      const maybe = data.pluginMessage;
+      if (maybe && typeof maybe.type === "string") {
+        msg = data.pluginMessage;
+      }
+    }
     if (!msg) return;
     if (msg.type === "ERROR") {
       log("ERROR: " + msg.payload.message);
@@ -438,34 +500,40 @@
       return;
     }
     if (msg.type === "EXPORT_RESULT") {
-      var k;
+      let k = 0;
       for (k = 0; k < msg.payload.files.length; k++) {
-        var f = msg.payload.files[k];
-        var a = document.createElement("a");
-        var blob = new Blob([prettyJson(f.json)], { type: "application/json" });
+        const f = msg.payload.files[k];
+        const a = document.createElement("a");
+        const blob = new Blob([prettyJson(f.json)], { type: "application/json" });
         a.href = URL.createObjectURL(blob);
         a.download = f.name;
         a.textContent = "Download " + f.name;
-        var div = document.createElement("div");
+        const div = document.createElement("div");
         div.appendChild(a);
-        logEl.appendChild(div);
+        if (logEl && logEl instanceof HTMLElement) logEl.appendChild(div);
       }
       log("Export ready.");
       return;
     }
     if (msg.type === "COLLECTIONS_DATA") {
       populateCollections({ collections: msg.payload.collections });
+      if (exportAllChk && exportAllChk instanceof HTMLInputElement) {
+        exportAllChk.checked = !!msg.payload.exportAllPref;
+      }
+      applyLastSelection(msg.payload.last);
       setDisabledStates();
       return;
     }
     if (msg.type === "RAW_COLLECTIONS_TEXT") {
-      rawEl.textContent = msg.payload.text;
+      if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = msg.payload.text;
       return;
     }
   };
-  rawEl.textContent = "Loading variable collections\u2026";
-  setDisabledStates();
-  postToPlugin({ type: "UI_READY" });
+  document.addEventListener("DOMContentLoaded", function() {
+    if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = "Loading variable collections\u2026";
+    setDisabledStates();
+    postToPlugin({ type: "UI_READY" });
+  });
 })();
 //# sourceMappingURL=ui.js.map
 </script>

@@ -2,7 +2,7 @@
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
 
-// __html__ is injected by esbuild.config.mjs from dist/ui.html with ui.js inlined
+// __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
 
 figma.showUI(__html__, { width: 960, height: 540 });
@@ -104,16 +104,29 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
   try {
     if (msg.type === 'UI_READY') {
       const snap = await snapshotCollectionsForUi();
+      // Load prefs
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(function () { return false; });
+      const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
+        ? last
+        : null;
+
       send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections (initial)' } });
-      send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections } });
+      send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
       send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
       return;
     }
 
     if (msg.type === 'FETCH_COLLECTIONS') {
       const snapshot = await snapshotCollectionsForUi();
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(function () { return false; });
+      const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
+        ? last
+        : null;
+
       send({ type: 'INFO', payload: { message: 'Fetched ' + String(snapshot.collections.length) + ' collections' } });
-      send({ type: 'COLLECTIONS_DATA', payload: { collections: snapshot.collections } });
+      send({ type: 'COLLECTIONS_DATA', payload: { collections: snapshot.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
       send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snapshot.rawText } });
       return;
     }
@@ -122,7 +135,13 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       await importDtcg(msg.payload.json);
       send({ type: 'INFO', payload: { message: 'Import completed.' } });
       const snap2 = await snapshotCollectionsForUi();
-      send({ type: 'COLLECTIONS_DATA', payload: { collections: snap2.collections } });
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(function () { return false; });
+      const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
+        ? last
+        : null;
+
+      send({ type: 'COLLECTIONS_DATA', payload: { collections: snap2.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
       send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap2.rawText } });
       return;
     }
@@ -145,9 +164,24 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       send({ type: 'EXPORT_RESULT', payload: { files: picked.length > 0 ? picked : per.files } });
       return;
     }
+
+    if (msg.type === 'SAVE_LAST') {
+      // Persist selection
+      if (msg.payload && typeof msg.payload.collection === 'string' && typeof msg.payload.mode === 'string') {
+        await figma.clientStorage.setAsync('lastSelection', { collection: msg.payload.collection, mode: msg.payload.mode });
+      }
+      return;
+    }
+
+    if (msg.type === 'SAVE_PREFS') {
+      await figma.clientStorage.setAsync('exportAllPref', !!msg.payload.exportAll);
+      return;
+    }
+
   } catch (e) {
-    let message = 'Unknown error';
-    if (e instanceof Error) message = e.message;
+    var message = 'Unknown error';
+    if (e && (e as Error).message) message = (e as Error).message;
+    figma.notify('Plugin error: ' + message, { timeout: 4000 });
     send({ type: 'ERROR', payload: { message: message } });
     // eslint-disable-next-line no-console
     console.error(e);
