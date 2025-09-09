@@ -201,6 +201,24 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
 
+    if (msg.type === 'PREVIEW_REQUEST') {
+      const collectionName = msg.payload.collection ? String(msg.payload.collection) : '';
+      const modeName = msg.payload.mode ? String(msg.payload.mode) : '';
+
+      // Build all per-mode files with the current graph
+      const per = await exportDtcg({ format: 'perMode' });
+
+      // Reuse your key logic to pick the right one
+      const key = safeKeyFromCollectionAndMode(collectionName, modeName);
+      let picked = per.files.find(f => f.name.indexOf(key) !== -1);
+      if (!picked) picked = per.files[0]; // graceful fallback
+      if (!picked) picked = { name: 'tokens-empty.json', json: {} };
+
+      send({ type: 'W3C_PREVIEW', payload: { name: picked.name, json: picked.json } });
+      return;
+    }
+
+
 
   } catch (e) {
     var message = 'Unknown error';

@@ -18,6 +18,9 @@ const refreshBtn = document.getElementById('refreshBtn');
 const shellEl = document.querySelector('.shell');
 const drawerToggleBtn = document.getElementById('drawerToggleBtn');
 
+const w3cPreviewEl = document.getElementById('w3cPreview') as HTMLElement | null;
+
+
 
 function postResize(width: number, height: number): void {
   var w = Math.max(720, Math.min(1600, Math.floor(width)));
@@ -238,25 +241,19 @@ function prettyJson(obj: unknown): string {
   try { return JSON.stringify(obj, null, 2); } catch (_e) { return String(obj); }
 }
 
+function requestPreviewForCurrent(): void {
+  if (!(collectionSelect instanceof HTMLSelectElement) || !(modeSelect instanceof HTMLSelectElement)) return;
+  const collection = collectionSelect.value || '';
+  const mode = modeSelect.value || '';
+  if (!collection || !mode) {
+    if (w3cPreviewEl) w3cPreviewEl.textContent = '{ /* select a collection & mode to preview */ }';
+    return;
+  }
+  postToPlugin({ type: 'PREVIEW_REQUEST', payload: { collection, mode } });
+}
+
+
 /* ---------- Wire UI events ---------- */
-
-if (collectionSelect && collectionSelect instanceof HTMLSelectElement) {
-  collectionSelect.addEventListener('change', function () {
-    onCollectionChange();
-    if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
-      postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
-    }
-  });
-}
-
-if (modeSelect && modeSelect instanceof HTMLSelectElement) {
-  modeSelect.addEventListener('change', function () {
-    if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
-      postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
-    }
-    setDisabledStates();
-  });
-}
 
 if (fileInput && fileInput instanceof HTMLInputElement) {
   fileInput.addEventListener('change', setDisabledStates);
@@ -322,6 +319,27 @@ if (drawerToggleBtn && drawerToggleBtn instanceof HTMLButtonElement) {
   });
 }
 
+if (collectionSelect && collectionSelect instanceof HTMLSelectElement) {
+  collectionSelect.addEventListener('change', function () {
+    onCollectionChange();
+    if (collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+      postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+      requestPreviewForCurrent(); // ← new
+    }
+  });
+}
+
+if (modeSelect && modeSelect instanceof HTMLSelectElement) {
+  modeSelect.addEventListener('change', function () {
+    if (collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+      postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+    }
+    setDisabledStates();
+    requestPreviewForCurrent(); // ← new
+  });
+}
+
+
 
 function setDrawerOpen(open: boolean): void {
   if (shellEl && shellEl instanceof HTMLElement) {
@@ -352,6 +370,7 @@ function getSavedDrawerOpen(): boolean {
 
 
 /* ---------- Receive from plugin ---------- */
+/* ---------- Receive from plugin ---------- */
 window.onmessage = function (event: MessageEvent) {
   const data: unknown = (event as unknown as { data?: unknown }).data;
   if (!data || typeof data !== 'object') return;
@@ -369,8 +388,7 @@ window.onmessage = function (event: MessageEvent) {
   if (msg.type === 'INFO') { log(msg.payload.message); return; }
 
   if (msg.type === 'EXPORT_RESULT') {
-    let k = 0;
-    for (k = 0; k < msg.payload.files.length; k++) {
+    for (let k = 0; k < msg.payload.files.length; k++) {
       const f = msg.payload.files[k];
       const a = document.createElement('a');
       const blob = new Blob([prettyJson(f.json)], { type: 'application/json' });
@@ -385,13 +403,24 @@ window.onmessage = function (event: MessageEvent) {
     return;
   }
 
+  if (msg.type === 'W3C_PREVIEW') {
+    const header = `/* ${msg.payload.name} */\n`;
+    if (w3cPreviewEl) w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
+    return;
+  }
+
+  // ← keep only this single COLLECTIONS_DATA branch
   if (msg.type === 'COLLECTIONS_DATA') {
     populateCollections({ collections: msg.payload.collections });
     if (exportAllChk && exportAllChk instanceof HTMLInputElement) {
       exportAllChk.checked = !!msg.payload.exportAllPref;
     }
-    applyLastSelection(msg.payload.last);
+    if (typeof (msg.payload as any).drawerOpenPref === 'boolean') {
+      setDrawerOpen((msg.payload as any).drawerOpenPref);
+    }
+    applyLastSelection((msg.payload as any).last as { collection: string; mode: string } | null);
     setDisabledStates();
+    requestPreviewForCurrent(); // keep preview in sync
     return;
   }
 
@@ -400,6 +429,7 @@ window.onmessage = function (event: MessageEvent) {
     return;
   }
 };
+
 
 /* ---------- Announce ready ---------- */
 document.addEventListener('DOMContentLoaded', function () {

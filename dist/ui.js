@@ -13,6 +13,7 @@
   var refreshBtn = document.getElementById("refreshBtn");
   var shellEl = document.querySelector(".shell");
   var drawerToggleBtn = document.getElementById("drawerToggleBtn");
+  var w3cPreviewEl = document.getElementById("w3cPreview");
   function postResize(width, height) {
     var w = Math.max(720, Math.min(1600, Math.floor(width)));
     var h = Math.max(420, Math.min(1200, Math.floor(height)));
@@ -185,21 +186,15 @@
       return String(obj);
     }
   }
-  if (collectionSelect && collectionSelect instanceof HTMLSelectElement) {
-    collectionSelect.addEventListener("change", function() {
-      onCollectionChange();
-      if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
-        postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
-      }
-    });
-  }
-  if (modeSelect && modeSelect instanceof HTMLSelectElement) {
-    modeSelect.addEventListener("change", function() {
-      if (collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
-        postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
-      }
-      setDisabledStates();
-    });
+  function requestPreviewForCurrent() {
+    if (!(collectionSelect instanceof HTMLSelectElement) || !(modeSelect instanceof HTMLSelectElement)) return;
+    const collection = collectionSelect.value || "";
+    const mode = modeSelect.value || "";
+    if (!collection || !mode) {
+      if (w3cPreviewEl) w3cPreviewEl.textContent = "{ /* select a collection & mode to preview */ }";
+      return;
+    }
+    postToPlugin({ type: "PREVIEW_REQUEST", payload: { collection, mode } });
   }
   if (fileInput && fileInput instanceof HTMLInputElement) {
     fileInput.addEventListener("change", setDisabledStates);
@@ -264,6 +259,24 @@
       setDrawerOpen(!current);
     });
   }
+  if (collectionSelect && collectionSelect instanceof HTMLSelectElement) {
+    collectionSelect.addEventListener("change", function() {
+      onCollectionChange();
+      if (collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+        postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+        requestPreviewForCurrent();
+      }
+    });
+  }
+  if (modeSelect && modeSelect instanceof HTMLSelectElement) {
+    modeSelect.addEventListener("change", function() {
+      if (collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+        postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+      }
+      setDisabledStates();
+      requestPreviewForCurrent();
+    });
+  }
   function setDrawerOpen(open) {
     if (shellEl && shellEl instanceof HTMLElement) {
       if (open) {
@@ -311,8 +324,7 @@
       return;
     }
     if (msg.type === "EXPORT_RESULT") {
-      let k = 0;
-      for (k = 0; k < msg.payload.files.length; k++) {
+      for (let k = 0; k < msg.payload.files.length; k++) {
         const f = msg.payload.files[k];
         const a = document.createElement("a");
         const blob = new Blob([prettyJson(f.json)], { type: "application/json" });
@@ -326,13 +338,23 @@
       log("Export ready.");
       return;
     }
+    if (msg.type === "W3C_PREVIEW") {
+      const header = `/* ${msg.payload.name} */
+`;
+      if (w3cPreviewEl) w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
+      return;
+    }
     if (msg.type === "COLLECTIONS_DATA") {
       populateCollections({ collections: msg.payload.collections });
       if (exportAllChk && exportAllChk instanceof HTMLInputElement) {
         exportAllChk.checked = !!msg.payload.exportAllPref;
       }
+      if (typeof msg.payload.drawerOpenPref === "boolean") {
+        setDrawerOpen(msg.payload.drawerOpenPref);
+      }
       applyLastSelection(msg.payload.last);
       setDisabledStates();
+      requestPreviewForCurrent();
       return;
     }
     if (msg.type === "RAW_COLLECTIONS_TEXT") {

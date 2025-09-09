@@ -10,7 +10,8 @@ export type UiToPlugin =
   | { type: 'EXPORT_DTCG'; payload: { exportAll: boolean; collection?: string; mode?: string } }
   | { type: 'SAVE_LAST'; payload: { collection: string; mode: string } }
   | { type: 'SAVE_PREFS'; payload: { exportAll: boolean } }
-  | { type: 'UI_RESIZE'; payload: { width: number; height: number } };   // <-- added
+  | { type: 'UI_RESIZE'; payload: { width: number; height: number } }   // <-- added
+  | { type: 'PREVIEW_REQUEST'; payload: { collection: string; mode: string } };
 
 
 // ==== Plugin -> UI ====
@@ -32,4 +33,5 @@ export type PluginToUi =
     };
   }
   | { type: 'RAW_COLLECTIONS_TEXT'; payload: { text: string } }
-  | { type: 'EXPORT_RESULT'; payload: { files: Array<{ name: string; json: unknown }> } };
+  | { type: 'EXPORT_RESULT'; payload: { files: Array<{ name: string; json: unknown }> } }
+  | { type: 'W3C_PREVIEW'; payload: { name: string; json: unknown } };
