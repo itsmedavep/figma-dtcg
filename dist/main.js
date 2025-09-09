@@ -694,8 +694,8 @@
       --ink-subtle: #4b5563;
       --ink-muted: #6b7280;
       --surface: #f9fafb;
-      --accent: #1e88e5;
-      --accent-ink: #ffffff;
+      --accent: #0051ff;
+      --accent-ink: #dfdfdf;
       --border: #e5e7eb
     }
 
@@ -768,7 +768,7 @@
     }
 
     .panel-body {
-      padding: px;
+      padding: .25rem;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -833,35 +833,42 @@
     /* Middle column raw view */
     pre {
       margin: 0;
-      padding: 12px;
+      padding: .5rem;
       background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
+      /* WRAP LONG CONTENT */
+      white-space: pre-wrap;
+      /* preserve newlines/spaces but allow wrapping */
+      overflow-wrap: anywhere;
+      /* break long tokens without spaces */
+      word-break: break-word;
+      /* fallback for older engines */
       overflow: auto;
-      white-space: pre;
       min-width: 0;
       min-height: 0;
       flex: 1;
-      /* \u2190 stretch */
       height: 100%;
     }
 
     /* Right column log */
     #log {
-      padding: 12px;
+      padding: .5rem;
       background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
+      /* WRAP LONG CONTENT */
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       overflow: auto;
       min-width: 0;
       min-height: 0;
       flex: 1;
-      /* \u2190 stretch */
       height: 100%;
     }
 
@@ -917,11 +924,7 @@
           <!-- Export -->
           <div class="stack" style="border-top:1px solid var(--border);padding-top:12px;">
             <div class="eyebrow">Export DTCG</div>
-            <div class="row-center">
-              <label><input type="checkbox" id="exportAllChk" /> Export all collections & modes into a single
-                file</label>
-
-            </div>
+            <div class="row-center"></div>
             <div class="stack" id="exportPickers">
               <div>
                 <label>Collection</label>
@@ -931,12 +934,13 @@
                 <label>Mode (within collection)</label>
                 <select id="modeSelect"></select>
               </div>
+              <div>
+                <label><input type="checkbox" id="exportAllChk" /> Export all collections & modes into a single
+                  file</label>
+                <div class="muted">Select a collection and mode, or check \u201CExport all\u201D.</div>
+                <button id="exportBtn" disabled>Export</button>
+              </div>
             </div>
-            <div class="row">
-              <button id="exportBtn" disabled>Export</button>
-              <div class="muted">Select a collection and mode, or check \u201CExport all\u201D.</div>
-            </div>
-
           </div>
         </div>
       </div>
