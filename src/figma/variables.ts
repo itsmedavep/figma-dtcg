@@ -1,45 +1,39 @@
+// src/figma/variables.ts
+// Small helpers used by the Figma adapters.
 
-import type { ValueOrAlias, ColorValue } from '../core/ir';
-import { figmaToSrgb } from '../core/color';
+import { type PrimitiveType, type ValueOrAlias } from '../core/ir';
+import { dtcgToFigmaRGBA, type DocumentProfile } from '../core/color';
 
-export function ensureCollection(name: string): VariableCollection {
-  const found = figma.variables.getLocalVariableCollections().find(c => c.name === name);
-  if (found) { return found; } return figma.variables.createVariableCollection(name);
+export function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
+  if (t === 'color') return 'COLOR';
+  if (t === 'number') return 'FLOAT';
+  if (t === 'string') return 'STRING';
+  return 'BOOLEAN';
 }
-export function ensureMode(c: VariableCollection, modeName: string): string {
-  const found = c.modes.find(m => m.name === modeName);
-  if (found) { return found.modeId; } return c.addMode(modeName);
-}
-export function upsertVariable(c: VariableCollection, name: string, resolvedType: VariableResolvedDataType): Variable {
-  for (const id of c.variableIds) {
-    const v = figma.variables.getVariableById(id);
-    if (v && v.name === name) return v;
+
+export async function applyValueForMode(
+  variable: Variable,
+  modeId: string,
+  value: ValueOrAlias,
+  profile: DocumentProfile,
+  getVarIdByPath: (dotPath: string) => string | null,
+  toDot: (parts: string[]) => string
+): Promise<void> {
+  if (value.kind === 'alias') {
+    var targetId = getVarIdByPath(toDot(value.path));
+    if (!targetId) return;
+    var alias = await figma.variables.createVariableAliasByIdAsync(targetId);
+    variable.setValueForMode(modeId, alias);
+    return;
   }
-  return figma.variables.createVariable(name, c, resolvedType);
-}
-export function findVariableByPath(path: string): Variable | null {
-  const name = path; // already 'a/b/c'
-  for (const c of figma.variables.getLocalVariableCollections()) {
-    for (const id of c.variableIds) {
-      const v = figma.variables.getVariableById(id);
-      if (v && v.name === name) return v;
-    }
-  }
-  return null;
-}
 
-export function irToFigmaValue(v: ValueOrAlias): any {
-  if ('kind' in v && v.kind === 'color') {
-    const { components, alpha } = v.value;
-    return { r: components[0], g: components[1], b: components[2], a: (typeof alpha === 'number' ? alpha : 1) };
+  if (value.kind === 'color') {
+    var rgba = dtcgToFigmaRGBA(value.value, profile);
+    variable.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
+    return;
   }
-  if ('kind' in v && v.kind === 'number') return v.value;
-  if ('kind' in v && v.kind === 'boolean') return v.value;
-  if ('kind' in v && v.kind === 'string') return v.value;
-  if ('kind' in v && v.kind === 'dimension') return v.value.value; // no unit in Figma
-  return v as any;
-}
 
-export function figmaColorToIR(c: {r:number;g:number;b:number;a:number}): ColorValue {
-  return figmaToSrgb(c.r, c.g, c.b, c.a);
+  if (value.kind === 'number') { variable.setValueForMode(modeId, value.value); return; }
+  if (value.kind === 'string') { variable.setValueForMode(modeId, value.value); return; }
+  if (value.kind === 'boolean') { variable.setValueForMode(modeId, value.value); return; }
 }

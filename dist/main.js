@@ -1,330 +1,474 @@
 "use strict";
 (() => {
   // src/core/normalize.ts
+  function slugSegment(s) {
+    var cleaned = s.replace(/\s+/g, "-").trim().toLowerCase();
+    var out = "";
+    var i = 0;
+    for (i = 0; i < cleaned.length; i++) {
+      var ch = cleaned.charAt(i);
+      if (ch === "{" || ch === "}" || ch === "." || ch === ":" || ch === "\\" || ch === "/") ch = "-";
+      var ok = ch >= "a" && ch <= "z" || ch >= "0" && ch <= "9" || ch === "-";
+      out += ok ? ch : "-";
+    }
+    out = out.replace(/-+/g, "-");
+    if (out.length > 0 && out.charAt(0) === "$") out = "dollar" + out.substring(1);
+    if (out.length === 0) out = "unnamed";
+    return out;
+  }
+  function canonicalPath(collectionName, variableName) {
+    var segs = variableName.split("/");
+    var out = [];
+    out.push(slugSegment(collectionName));
+    var i = 0;
+    for (i = 0; i < segs.length; i++) out.push(slugSegment(segs[i]));
+    return out;
+  }
+  function toDot(path) {
+    var i = 0, s = "";
+    for (i = 0; i < path.length; i++) {
+      if (i > 0) s += ".";
+      s += path[i];
+    }
+    return s;
+  }
+  function toAliasString(path) {
+    return "{" + toDot(path) + "}";
+  }
+  function parseAliasString(s) {
+    if (typeof s !== "string") return null;
+    if (s.length < 3) return null;
+    if (s.charAt(0) !== "{" || s.charAt(s.length - 1) !== "}") return null;
+    var inner = s.substring(1, s.length - 1);
+    if (!inner) return null;
+    return inner.split(".");
+  }
   function normalize(graph) {
-    const seen = /* @__PURE__ */ new Set();
-    const tokens = [];
-    for (const t of graph.tokens) {
-      const key = t.path.join("/");
-      if (!seen.has(key)) {
-        seen.add(key);
-        tokens.push(t);
+    var seen = {};
+    var copy = [];
+    var i = 0;
+    for (i = 0; i < graph.tokens.length; i++) {
+      var t = graph.tokens[i];
+      var key = slashPath(t.path);
+      if (!seen[key]) {
+        seen[key] = 1;
+        copy.push(t);
       }
     }
-    return { tokens };
+    copy.sort(function(a, b) {
+      var da = toDot(a.path);
+      var db = toDot(b.path);
+      if (da < db) return -1;
+      if (da > db) return 1;
+      return 0;
+    });
+    return { tokens: copy };
   }
-
-  // src/core/plan.ts
-  function planChanges(current, desired) {
-    return {
-      items: desired.tokens.map((t) => ({
-        path: t.path,
-        type: t.type,
-        perContext: t.byContext
-      }))
-    };
+  function slashPath(path) {
+    var i = 0, s = "";
+    for (i = 0; i < path.length; i++) {
+      if (i > 0) s += "/";
+      s += path[i];
+    }
+    return s;
   }
 
   // src/core/ir.ts
-  var ctxKey = (collection, mode) => `${collection}/mode=${mode}`;
+  function ctxKey(collection, mode) {
+    return collection + "/" + mode;
+  }
 
-  // src/adapters/dtcg-reader.ts
-  function isDict(o) {
-    return typeof o === "object" && o !== null;
+  // src/core/color.ts
+  function clamp01(x) {
+    if (x < 0) return 0;
+    if (x > 1) return 1;
+    return x;
   }
-  function parse(root) {
-    if (!isDict(root)) throw new Error("DTCG: root must be an object");
-    var tokens = [];
-    walkGroup(root, [], void 0, tokens);
-    return { tokens };
+  function clamp01Array(v) {
+    var out = [];
+    var i = 0;
+    for (i = 0; i < v.length; i++) out.push(clamp01(v[i]));
+    return out;
   }
-  function walkGroup(node, path, inheritedType, out) {
-    if (!isDict(node)) return;
-    var groupType = inheritedType;
-    if (typeof node["$type"] === "string") groupType = node["$type"];
-    var key;
-    for (key in node) {
-      if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
-      if (key.length > 0 && key.charAt(0) === "$") continue;
-      var value = node[key];
-      if (isDict(value)) {
-        if (hasTokenShape(value)) {
-          var t = tokenFromEntry(path.concat(key), value, groupType);
-          out.push(t);
-        } else {
-          walkGroup(value, path.concat(key), groupType, out);
-        }
-      }
+  function srgbEncode(linear) {
+    if (linear <= 31308e-7) return 12.92 * linear;
+    return 1.055 * Math.pow(linear, 1 / 2.4) - 0.055;
+  }
+  function srgbDecode(encoded) {
+    if (encoded <= 0.04045) return encoded / 12.92;
+    return Math.pow((encoded + 0.055) / 1.055, 2.4);
+  }
+  var p3Encode = srgbEncode;
+  var p3Decode = srgbDecode;
+  function mul3(m, v) {
+    return [
+      m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+      m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+      m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]
+    ];
+  }
+  var M_SRGB_TO_XYZ = [
+    [0.4124564, 0.3575761, 0.1804375],
+    [0.2126729, 0.7151522, 0.072175],
+    [0.0193339, 0.119192, 0.9503041]
+  ];
+  var M_XYZ_TO_SRGB = [
+    [3.2404542, -1.5371385, -0.4985314],
+    [-0.969266, 1.8760108, 0.041556],
+    [0.0556434, -0.2040259, 1.0572252]
+  ];
+  var M_P3_TO_XYZ = [
+    [0.4865709486482162, 0.26566769316909306, 0.1982172852343625],
+    [0.2289745640697488, 0.6917385218365064, 0.079286914093745],
+    [0, 0.04511338185890264, 1.043944368900976]
+  ];
+  var M_XYZ_TO_P3 = [
+    [2.493496911941425, -0.9313836179191239, -0.40271078445071684],
+    [-0.8294889695615747, 1.7626640603183463, 0.02362468584194358],
+    [0.03584583024378447, -0.07617238926804182, 0.9568845240076872]
+  ];
+  function encode(space, linearRGB) {
+    if (space === "display-p3") return [p3Encode(linearRGB[0]), p3Encode(linearRGB[1]), p3Encode(linearRGB[2])];
+    return [srgbEncode(linearRGB[0]), srgbEncode(linearRGB[1]), srgbEncode(linearRGB[2])];
+  }
+  function decode(space, encodedRGB) {
+    if (space === "display-p3") return [p3Decode(encodedRGB[0]), p3Decode(encodedRGB[1]), p3Decode(encodedRGB[2])];
+    return [srgbDecode(encodedRGB[0]), srgbDecode(encodedRGB[1]), srgbDecode(encodedRGB[2])];
+  }
+  function convertRgbSpace(rgb, src, dst) {
+    if (src === dst) return clamp01Array(rgb);
+    var lin = decode(src, clamp01Array(rgb));
+    var xyz = src === "srgb" ? mul3(M_SRGB_TO_XYZ, lin) : mul3(M_P3_TO_XYZ, lin);
+    var linDst = dst === "srgb" ? mul3(M_XYZ_TO_SRGB, xyz) : mul3(M_XYZ_TO_P3, xyz);
+    var enc = encode(dst, linDst);
+    return clamp01Array(enc);
+  }
+  function srgbToHex6(rgb) {
+    var r = Math.round(clamp01(rgb[0]) * 255);
+    var g = Math.round(clamp01(rgb[1]) * 255);
+    var b = Math.round(clamp01(rgb[2]) * 255);
+    function to2(n) {
+      var s = n.toString(16);
+      return s.length === 1 ? "0" + s : s;
     }
+    return "#" + to2(r) + to2(g) + to2(b);
   }
-  function hasTokenShape(o) {
-    if (Object.prototype.hasOwnProperty.call(o, "$value")) return true;
-    if (Object.prototype.hasOwnProperty.call(o, "$type")) return true;
-    if (Object.prototype.hasOwnProperty.call(o, "$description")) return true;
-    if (Object.prototype.hasOwnProperty.call(o, "$extensions")) return true;
+  function isHexCharCode(code) {
+    if (code >= 48 && code <= 57) return true;
+    if (code >= 65 && code <= 70) return true;
+    if (code >= 97 && code <= 102) return true;
     return false;
   }
-  function tokenFromEntry(path, entry, inheritedType) {
-    var explicitType = void 0;
-    if (typeof entry["$type"] === "string") explicitType = entry["$type"];
-    var type = explicitType ? explicitType : inheritedType;
-    if (!type) {
-      type = guessType(entry);
-      if (!type) throw new Error("Token " + path.join("/") + " missing $type and cannot be inferred");
+  function hexPairToByte(h1, h2) {
+    function val(c) {
+      if (c >= 48 && c <= 57) return c - 48;
+      if (c >= 65 && c <= 70) return c - 55;
+      if (c >= 97 && c <= 102) return c - 87;
+      return 0;
     }
-    var description = void 0;
-    if (typeof entry["$description"] === "string") description = String(entry["$description"]);
-    var extensions = void 0;
-    if (isDict(entry["$extensions"])) extensions = entry["$extensions"];
-    var byContext = {};
-    var ctxMap = contextsFromExtensions(entry, type);
-    if (ctxMap) {
-      byContext = ctxMap;
+    return val(h1) << 4 | val(h2);
+  }
+  function parseHexToSrgbRGBA(hex) {
+    var s = hex;
+    if (s.length > 0 && s.charAt(0) === "#") s = s.substring(1);
+    var i = 0;
+    for (i = 0; i < s.length; i++) {
+      if (!isHexCharCode(s.charCodeAt(i))) throw new Error("Invalid hex color: " + hex);
+    }
+    var r = 0, g = 0, b = 0, a = 255;
+    if (s.length === 3 || s.length === 4) {
+      var rNib = s.charCodeAt(0);
+      var gNib = s.charCodeAt(1);
+      var bNib = s.charCodeAt(2);
+      var aNib = s.length === 4 ? s.charCodeAt(3) : 102;
+      r = hexPairToByte(rNib, rNib);
+      g = hexPairToByte(gNib, gNib);
+      b = hexPairToByte(bNib, bNib);
+      a = hexPairToByte(aNib, aNib);
+    } else if (s.length === 6 || s.length === 8) {
+      r = hexPairToByte(s.charCodeAt(0), s.charCodeAt(1));
+      g = hexPairToByte(s.charCodeAt(2), s.charCodeAt(3));
+      b = hexPairToByte(s.charCodeAt(4), s.charCodeAt(5));
+      if (s.length === 8) a = hexPairToByte(s.charCodeAt(6), s.charCodeAt(7));
     } else {
-      var raw = entry["$value"];
-      var coll = "Imported";
-      var mode = "Default";
-      var extOrg = safeGet(entry, ["$extensions", "org", "figma"]);
-      if (isDict(extOrg)) {
-        var cName = extOrg["collectionName"];
-        var mName = extOrg["modeName"];
-        if (typeof cName === "string") coll = cName;
-        if (typeof mName === "string") mode = mName;
+      throw new Error("Invalid hex length: " + hex);
+    }
+    return { r: clamp01(r / 255), g: clamp01(g / 255), b: clamp01(b / 255), a: clamp01(a / 255) };
+  }
+  function docProfileToSpaceKey(profile) {
+    if (profile === "DISPLAY_P3") return "display-p3";
+    return "srgb";
+  }
+  function dtcgToFigmaRGBA(value, docProfile) {
+    var alpha = typeof value.alpha === "number" ? value.alpha : 1;
+    var dst = docProfileToSpaceKey(docProfile);
+    var comps = value.components;
+    if (comps && comps.length >= 3) {
+      var space = value.colorSpace;
+      if (space === "srgb" || space === "display-p3") {
+        var converted = convertRgbSpace([comps[0], comps[1], comps[2]], space, dst);
+        return { r: converted[0], g: converted[1], b: converted[2], a: clamp01(alpha) };
       }
-      byContext[ctxKey(coll, mode)] = parseValueOrAlias(raw, type);
+      throw new Error("Unsupported colorSpace: " + space + ". Supported: srgb, display-p3.");
     }
-    return { path, type, byContext, description, extensions };
+    if (value.hex && typeof value.hex === "string") {
+      var fromHex = parseHexToSrgbRGBA(value.hex);
+      var a = typeof value.alpha === "number" ? clamp01(value.alpha) : fromHex.a;
+      if (dst === "srgb") return { r: fromHex.r, g: fromHex.g, b: fromHex.b, a };
+      var toDst = convertRgbSpace([fromHex.r, fromHex.g, fromHex.b], "srgb", dst);
+      return { r: toDst[0], g: toDst[1], b: toDst[2], a };
+    }
+    throw new Error("Color has neither components nor hex.");
   }
-  function safeGet(obj, path) {
-    var cur = obj;
-    var i;
-    for (i = 0; i < path.length; i++) {
-      if (!isDict(cur)) return void 0;
-      var k = path[i];
-      if (!Object.prototype.hasOwnProperty.call(cur, k)) return void 0;
-      cur = cur[k];
-    }
-    return cur;
+  function figmaRGBAToDtcg(rgba, docProfile) {
+    var src = docProfileToSpaceKey(docProfile);
+    var rgb = [clamp01(rgba.r), clamp01(rgba.g), clamp01(rgba.b)];
+    var a = clamp01(rgba.a);
+    var colorSpace = src;
+    var components = [rgb[0], rgb[1], rgb[2]];
+    var srgbRgb = src === "srgb" ? rgb : convertRgbSpace(rgb, "display-p3", "srgb");
+    var hex = srgbToHex6(srgbRgb);
+    return { colorSpace, components, alpha: a, hex };
   }
-  function contextsFromExtensions(entry, type) {
-    var valuesByCtx = safeGet(entry, ["$extensions", "org", "figma", "valuesByContext"]);
-    if (!isDict(valuesByCtx)) return null;
-    var byContext = {};
-    var k;
-    for (k in valuesByCtx) {
-      if (!Object.prototype.hasOwnProperty.call(valuesByCtx, k)) continue;
-      var raw = valuesByCtx[k];
-      byContext[k] = parseValueOrAlias(raw, type);
-    }
-    return byContext;
+  function toHex6FromSrgb(rgb) {
+    return srgbToHex6([clamp01(rgb.r), clamp01(rgb.g), clamp01(rgb.b)]);
   }
-  function guessType(entry) {
-    if (Object.prototype.hasOwnProperty.call(entry, "$value")) {
-      var v = entry["$value"];
-      if (typeof v === "string") {
-        if (/^\{[^}]+\}$/.test(v)) return "string";
-        if (/^#?[0-9a-f]{3,8}$/i.test(v)) return "color";
-        return "string";
-      } else if (typeof v === "number") return "number";
-      else if (typeof v === "boolean") return "boolean";
-      else if (isDict(v) && Object.prototype.hasOwnProperty.call(v, "colorSpace")) return "color";
-    }
-    return void 0;
+  function hexToDtcgColor(hex) {
+    var rgba = parseHexToSrgbRGBA(hex);
+    var comps = [rgba.r, rgba.g, rgba.b];
+    return { colorSpace: "srgb", components: comps, alpha: rgba.a, hex: toHex6FromSrgb({ r: rgba.r, g: rgba.g, b: rgba.b }) };
   }
-  function parseValueOrAlias(raw, type) {
-    if (typeof raw === "string" && /^\{[^}]+\}$/.test(raw)) {
-      return { kind: "alias", path: raw.slice(1, raw.length - 1) };
+
+  // src/adapters/dtcg-reader.ts
+  function guessTypeFromValue(v) {
+    if (typeof v === "number") return "number";
+    if (typeof v === "string") return "string";
+    if (typeof v === "boolean") return "boolean";
+    return "string";
+  }
+  function isColorObject(obj) {
+    return !!obj && typeof obj === "object" && (typeof obj.colorSpace === "string" || obj.components instanceof Array || typeof obj.hex === "string");
+  }
+  function hasKey(o, k) {
+    return !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k);
+  }
+  function toNumber(x, def) {
+    return typeof x === "number" ? x : def;
+  }
+  function parseColorSpaceUnion(x) {
+    if (x === "srgb") return "srgb";
+    if (x === "display-p3") return "display-p3";
+    return "srgb";
+  }
+  function readColorValue(raw) {
+    if (typeof raw === "string") {
+      return hexToDtcgColor(raw);
     }
-    if (type === "color") {
-      if (typeof raw === "string") {
-        var hex = raw.replace(/^#/, "");
-        var rgb = null;
-        if (hex.length === 3) {
-          rgb = [0, 1, 2].map(function(i) {
-            var c = hex.charAt(i);
-            return parseInt(c + c, 16) / 255;
+    var obj = raw;
+    var cs = parseColorSpaceUnion(obj.colorSpace);
+    var comps = [0, 0, 0];
+    if (obj.components && obj.components.length >= 3) {
+      comps = [toNumber(obj.components[0], 0), toNumber(obj.components[1], 0), toNumber(obj.components[2], 0)];
+    }
+    var alpha = typeof obj.alpha === "number" ? obj.alpha : void 0;
+    var hex = typeof obj.hex === "string" ? obj.hex : void 0;
+    return { colorSpace: cs, components: comps, alpha, hex };
+  }
+  function readDtcgToIR(root) {
+    var tokens = [];
+    var defaultCtx = ctxKey("tokens", "default");
+    function visit(obj, path, inheritedType) {
+      if (!obj || typeof obj !== "object") return;
+      var groupType = inheritedType;
+      if (hasKey(obj, "$type") && typeof obj.$type === "string") {
+        var t = String(obj.$type);
+        if (t === "color" || t === "number" || t === "string" || t === "boolean") groupType = t;
+      }
+      if (hasKey(obj, "$value")) {
+        var rawVal = obj.$value;
+        if (typeof rawVal === "string") {
+          var ref = parseAliasString(rawVal);
+          if (ref && ref.length > 0) {
+            tokens.push({
+              path: path.slice(0),
+              type: groupType ? groupType : "string",
+              byContext: (function() {
+                var o = {};
+                o[defaultCtx] = { kind: "alias", path: ref };
+                return o;
+              })()
+            });
+            return;
+          }
+        }
+        if (isColorObject(rawVal) || typeof rawVal === "string") {
+          var value = readColorValue(rawVal);
+          tokens.push({
+            path: path.slice(0),
+            type: "color",
+            byContext: (function() {
+              var o = {};
+              o[defaultCtx] = { kind: "color", value };
+              return o;
+            })()
           });
-        } else if (hex.length === 6 || hex.length === 8) {
-          rgb = [0, 1, 2].map(function(i) {
-            return parseInt(hex.slice(i * 2, i * 2 + 2), 16) / 255;
+          return;
+        }
+        var t2 = groupType ? groupType : guessTypeFromValue(rawVal);
+        var valObj = null;
+        if (t2 === "number" && typeof rawVal === "number") valObj = { kind: "number", value: rawVal };
+        else if (t2 === "boolean" && typeof rawVal === "boolean") valObj = { kind: "boolean", value: rawVal };
+        else if (t2 === "string" && typeof rawVal === "string") valObj = { kind: "string", value: rawVal };
+        else if (typeof rawVal === "string") valObj = { kind: "string", value: rawVal };
+        else if (typeof rawVal === "number") valObj = { kind: "number", value: rawVal };
+        else if (typeof rawVal === "boolean") valObj = { kind: "boolean", value: rawVal };
+        if (valObj) {
+          tokens.push({
+            path: path.slice(0),
+            type: t2,
+            byContext: (function() {
+              var o = {};
+              o[defaultCtx] = valObj;
+              return o;
+            })()
           });
         }
-        var alpha = void 0;
-        if (hex.length === 8) alpha = parseInt(hex.slice(6, 8), 16) / 255;
-        if (!rgb) throw new Error("Unsupported hex color: " + String(raw));
-        return { kind: "color", value: { colorSpace: "srgb", components: [rgb[0], rgb[1], rgb[2]], alpha, hex: "#" + hex } };
-      } else if (isDict(raw) && Object.prototype.hasOwnProperty.call(raw, "colorSpace")) {
-        return { kind: "color", value: raw };
+        return;
       }
-      throw new Error("Color token requires hex or srgb object");
+      var k;
+      for (k in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+        if (k.length > 0 && k.charAt(0) === "$") continue;
+        var child = obj[k];
+        var newPath = path.concat([slugSegment(k)]);
+        visit(child, newPath, groupType);
+      }
     }
-    if (type === "number") return { kind: "number", value: Number(raw) };
-    if (type === "boolean") return { kind: "boolean", value: Boolean(raw) };
-    if (type === "string") return { kind: "string", value: String(raw) };
-    return { kind: "string", value: String(raw) };
+    visit(root, [], null);
+    return { tokens };
   }
 
   // src/adapters/dtcg-writer.ts
-  function serialize(graph, opts) {
-    return opts.format === "perMode" ? serializePerMode(graph) : serializeSingle(graph);
+  function serialize(graph, _opts) {
+    var root = {};
+    var i = 0;
+    for (i = 0; i < graph.tokens.length; i++) {
+      var t = graph.tokens[i];
+      writeTokenInto(root, t);
+    }
+    return { json: root };
   }
-  function serializePerMode(graph) {
-    const byCtx = {};
-    for (const t of graph.tokens) {
-      for (const [ctx, v] of Object.entries(t.byContext)) {
-        (byCtx[ctx] ? byCtx[ctx] : byCtx[ctx] = []).push((function() {
-          const copy = { path: t.path.slice(0), type: t.type, byContext: {} };
-          if (t.description) copy.description = t.description;
-          if (t.extensions) copy.extensions = t.extensions;
-          copy.byContext[ctx] = v;
-          return copy;
-        })());
+  function writeTokenInto(root, t) {
+    var obj = root;
+    var i = 0;
+    for (i = 0; i < t.path.length - 1; i++) {
+      var seg = t.path[i];
+      var next = obj[seg];
+      if (!next || typeof next !== "object") {
+        next = {};
+        obj[seg] = next;
+      }
+      obj = next;
+    }
+    var leaf = t.path[t.path.length - 1];
+    var tokenObj = {};
+    tokenObj["$type"] = t.type;
+    var ctxKeys = keysOf(t.byContext);
+    var chosen = ctxKeys.length > 0 ? t.byContext[ctxKeys[0]] : null;
+    if (chosen) {
+      if (chosen.kind === "alias") {
+        tokenObj["$value"] = toAliasString(chosen.path);
+      } else if (chosen.kind === "color") {
+        var cv = chosen.value;
+        var out = {};
+        out["colorSpace"] = cv.colorSpace;
+        out["components"] = [cv.components[0], cv.components[1], cv.components[2]];
+        if (typeof cv.alpha === "number") out["alpha"] = cv.alpha;
+        if (typeof cv.hex === "string") out["hex"] = cv.hex;
+        tokenObj["$value"] = out;
+      } else if (chosen.kind === "number") {
+        tokenObj["$value"] = chosen.value;
+      } else if (chosen.kind === "string") {
+        tokenObj["$value"] = chosen.value;
+      } else if (chosen.kind === "boolean") {
+        tokenObj["$value"] = chosen.value;
       }
     }
-    const files = [];
-    for (const [ctx, tokens] of Object.entries(byCtx)) {
-      const json = tokensToDtcg(tokens, { includeExtensions: true });
-      const safeName = ctx.replace(/[\/:]/g, "_");
-      files.push({ name: `tokens_${safeName}.json`, json });
-    }
-    return { files };
+    if (t.description) tokenObj["$description"] = t.description;
+    if (t.extensions) tokenObj["$extensions"] = t.extensions;
+    obj[leaf] = tokenObj;
   }
-  function serializeSingle(graph) {
-    const json = tokensToDtcg(graph.tokens, { includeExtensions: true, includeAllContexts: true });
-    return { files: [{ name: "tokens_all.json", json }] };
-  }
-  function tokensToDtcg(tokens, opts) {
-    const root = {};
-    for (const t of tokens) {
-      const leafContainer = ensurePath(root, t.path.slice(0, -1));
-      const name = t.path[t.path.length - 1];
-      let value;
-      let exts = void 0;
-      const entries = Object.entries(t.byContext);
-      if (entries.length === 1 && !opts.includeAllContexts) {
-        value = valueOut(entries[0][1]);
-      } else {
-        const valuesByContext = {};
-        for (const [ctx, v] of entries) valuesByContext[ctx] = valueOut(v);
-        exts = (function() {
-          var base = {};
-          if (t.extensions) {
-            for (var k in t.extensions) {
-              if (Object.prototype.hasOwnProperty.call(t.extensions, k)) base[k] = t.extensions[k];
-            }
-          }
-          base.org = { figma: { valuesByContext } };
-          return base;
-        })();
-        value = valueOut(entries[0][1]);
-      }
-      const obj = { $type: t.type, $value: value };
-      if (t.description) obj.$description = t.description;
-      if (opts.includeExtensions && (exts || t.extensions)) {
-        obj.$extensions = exts || t.extensions;
-      }
-      leafContainer[name] = obj;
-    }
-    return root;
-  }
-  function valueOut(v) {
-    if ("kind" in v && v.kind === "alias") return `{${v.path}}`;
-    if ("kind" in v && v.kind === "color") {
-      if (v.value.hex) return v.value.hex;
-      const [r, g, b] = v.value.components;
-      const a = v.value.alpha || 1;
-      if (a === 1) return rgbToHex(r, g, b);
-      return { colorSpace: "srgb", components: [r, g, b], alpha: a };
-    }
-    if ("kind" in v && v.kind === "dimension") return v.value;
-    if ("kind" in v) return v.value;
-    return v;
-  }
-  function ensurePath(root, path) {
-    let cur = root;
-    for (var i = 0; i < path.length; i++) {
-      var p = path[i];
-      if (!Object.prototype.hasOwnProperty.call(cur, p) || cur[p] == null) {
-        cur[p] = {};
-      }
-      cur = cur[p];
-    }
-    return cur;
-  }
-  function rgbToHex(r, g, b) {
-    const c = (x) => Math.round(x * 255).toString(16).padStart(2, "0");
-    return "#" + c(r) + c(g) + c(b);
+  function keysOf(o) {
+    var out = [];
+    var k;
+    for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) out.push(k);
+    return out;
   }
 
   // src/adapters/figma-reader.ts
-  function mapType(rt) {
-    if (rt === "COLOR") return "color";
-    if (rt === "FLOAT") return "number";
-    if (rt === "BOOLEAN") return "boolean";
-    return "string";
+  function mapType(t) {
+    if (t === "COLOR") return "color";
+    if (t === "FLOAT") return "number";
+    if (t === "STRING") return "string";
+    return "boolean";
   }
   function isAliasValue(v) {
-    return typeof v === "object" && v !== null && v.type === "VARIABLE_ALIAS" && typeof v.id === "string";
+    return !!v && typeof v === "object" && v.type === "VARIABLE_ALIAS" && typeof v.id === "string";
   }
   function isRGBA(v) {
-    if (typeof v !== "object" || v === null) return false;
-    var o = v;
-    return typeof o.r === "number" && typeof o.g === "number" && typeof o.b === "number" && typeof o.a === "number";
+    return !!v && typeof v === "object" && typeof v.r === "number" && typeof v.g === "number" && typeof v.b === "number" && typeof v.a === "number";
   }
-  function figmaColorToIR(c) {
-    const comps = [c.r, c.g, c.b];
-    const SRGB = "srgb";
-    return { colorSpace: SRGB, components: comps, alpha: c.a };
-  }
-  async function snapshot() {
-    const tokens = [];
-    const vars = figma.variables;
-    let collections = [];
-    if (typeof vars.getLocalVariableCollectionsAsync === "function" && vars.getLocalVariableCollectionsAsync) {
-      collections = await vars.getLocalVariableCollectionsAsync();
-    } else {
-      collections = vars.getLocalVariableCollections();
-    }
-    let ci;
+  async function readFigmaToIR() {
+    var profile = figma.root.documentColorProfile;
+    var variablesApi = figma.variables;
+    var collections = await variablesApi.getLocalVariableCollectionsAsync();
+    var varMeta = {};
+    var ci = 0;
     for (ci = 0; ci < collections.length; ci++) {
-      const c = collections[ci];
-      if (!c) continue;
-      let vi;
-      for (vi = 0; vi < c.variableIds.length; vi++) {
-        const vid = c.variableIds[vi];
-        let v = null;
-        if (typeof vars.getVariableByIdAsync === "function" && vars.getVariableByIdAsync) {
-          v = await vars.getVariableByIdAsync(vid);
-        } else {
-          v = vars.getVariableById(vid);
-        }
-        if (!v) continue;
-        const path = v.name.split("/");
-        const type = mapType(v.resolvedType);
-        const byContext = {};
-        let mi;
-        for (mi = 0; mi < c.modes.length; mi++) {
-          const m = c.modes[mi];
-          const ctx = ctxKey(c.name, m.name);
-          const mv = v.valuesByMode[m.modeId];
+      var col = collections[ci];
+      var vi = 0;
+      for (vi = 0; vi < col.variableIds.length; vi++) {
+        var id = col.variableIds[vi];
+        var v = await variablesApi.getVariableByIdAsync(id);
+        if (v) varMeta[v.id] = { name: v.name, collectionId: col.id };
+      }
+    }
+    var tokens = [];
+    for (ci = 0; ci < collections.length; ci++) {
+      var c = collections[ci];
+      var mi = 0;
+      var modeNameById = {};
+      for (mi = 0; mi < c.modes.length; mi++) modeNameById[c.modes[mi].modeId] = c.modes[mi].name;
+      var vi2 = 0;
+      for (vi2 = 0; vi2 < c.variableIds.length; vi2++) {
+        var vid = c.variableIds[vi2];
+        var v2 = await variablesApi.getVariableByIdAsync(vid);
+        if (!v2) continue;
+        var path = canonicalPath(c.name, v2.name);
+        var type = mapType(v2.resolvedType);
+        var byContext = {};
+        var mi2 = 0;
+        for (mi2 = 0; mi2 < c.modes.length; mi2++) {
+          var md = c.modes[mi2];
+          var ctx = ctxKey(c.name, md.name);
+          var mv = v2.valuesByMode[md.modeId];
           if (isAliasValue(mv)) {
-            let target = null;
-            if (typeof vars.getVariableByIdAsync === "function" && vars.getVariableByIdAsync) {
-              target = await vars.getVariableByIdAsync(mv.id);
-            } else {
-              target = vars.getVariableById(mv.id);
-            }
+            var target = await variablesApi.getVariableByIdAsync(mv.id);
             if (target) {
-              byContext[ctx] = {
-                kind: "alias",
-                // Use the canonical slash-separated variable name as path
-                path: target.name
-              };
+              var meta = varMeta[target.id];
+              var collName = meta ? collections.filter(function(cc) {
+                return cc.id === meta.collectionId;
+              }).map(function(cc) {
+                return cc.name;
+              })[0] : c.name;
+              var aPath = canonicalPath(collName, target.name);
+              byContext[ctx] = { kind: "alias", path: aPath };
             }
             continue;
           }
-          if (isRGBA(mv)) {
-            byContext[ctx] = { kind: "color", value: figmaColorToIR({ r: mv.r, g: mv.g, b: mv.b, a: mv.a }) };
+          if (type === "color" && isRGBA(mv)) {
+            var cv = figmaRGBAToDtcg({ r: mv.r, g: mv.g, b: mv.b, a: mv.a }, profile);
+            byContext[ctx] = { kind: "color", value: cv };
             continue;
           }
           if (typeof mv === "number") {
@@ -346,105 +490,193 @@
     return { tokens };
   }
 
-  // src/figma/variables.ts
-  function ensureCollection(name) {
-    const found = figma.variables.getLocalVariableCollections().find((c) => c.name === name);
-    if (found) {
-      return found;
-    }
-    return figma.variables.createVariableCollection(name);
-  }
-  function ensureMode(c, modeName) {
-    const found = c.modes.find((m) => m.name === modeName);
-    if (found) {
-      return found.modeId;
-    }
-    return c.addMode(modeName);
-  }
-  function upsertVariable(c, name, resolvedType) {
-    for (const id of c.variableIds) {
-      const v = figma.variables.getVariableById(id);
-      if (v && v.name === name) return v;
-    }
-    return figma.variables.createVariable(name, c, resolvedType);
-  }
-  function findVariableByPath(path) {
-    const name = path;
-    for (const c of figma.variables.getLocalVariableCollections()) {
-      for (const id of c.variableIds) {
-        const v = figma.variables.getVariableById(id);
-        if (v && v.name === name) return v;
-      }
-    }
-    return null;
-  }
-  function irToFigmaValue(v) {
-    if ("kind" in v && v.kind === "color") {
-      const { components, alpha } = v.value;
-      return { r: components[0], g: components[1], b: components[2], a: typeof alpha === "number" ? alpha : 1 };
-    }
-    if ("kind" in v && v.kind === "number") return v.value;
-    if ("kind" in v && v.kind === "boolean") return v.value;
-    if ("kind" in v && v.kind === "string") return v.value;
-    if ("kind" in v && v.kind === "dimension") return v.value.value;
-    return v;
-  }
-
   // src/adapters/figma-writer.ts
-  async function apply(plan) {
-    for (const item of plan.items) {
-      const perCollection = {};
-      for (const [ctx, val] of Object.entries(item.perContext)) {
-        const [collection, modeEq] = ctx.split("/mode=");
-        if (!perCollection[collection]) {
-          perCollection[collection] = [];
-        }
-        perCollection[collection].push({ mode: modeEq, value: val });
+  function resolvedTypeFor(t) {
+    if (t === "color") return "COLOR";
+    if (t === "number") return "FLOAT";
+    if (t === "string") return "STRING";
+    return "BOOLEAN";
+  }
+  function forEachKey(obj) {
+    var out = [];
+    var k;
+    for (k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
+    return out;
+  }
+  async function writeIRToFigma(graph) {
+    var profile = figma.root.documentColorProfile;
+    var variablesApi = figma.variables;
+    var existing = await variablesApi.getLocalVariableCollectionsAsync();
+    var colByName = {};
+    var ci = 0;
+    for (ci = 0; ci < existing.length; ci++) colByName[existing[ci].name] = existing[ci];
+    var idByPath = {};
+    var i = 0;
+    for (i = 0; i < graph.tokens.length; i++) {
+      var t = graph.tokens[i];
+      if (t.path.length < 1) continue;
+      var collectionName = t.path[0];
+      var collection = colByName[collectionName];
+      if (!collection) {
+        collection = variablesApi.createVariableCollection(collectionName);
+        colByName[collectionName] = collection;
       }
-      for (const [collectionName, entries] of Object.entries(perCollection)) {
-        const c = ensureCollection(collectionName);
-        const figmaType = mapToFigmaType(item.type);
-        const varName = item.path.join("/");
-        const variable = upsertVariable(c, varName, figmaType);
-        for (const { mode, value } of entries) {
-          const modeId = ensureMode(c, mode);
-          if (value && "kind" in value && value.kind === "alias") {
-            const target = findVariableByPath(value.path);
-            if (!target) throw new Error(`Alias target not found: ${value.path}`);
-            variable.setValueForMode(modeId, figma.variables.createVariableAlias(target));
-          } else {
-            variable.setValueForMode(modeId, irToFigmaValue(value));
-          }
+      var j = 1, varName = "";
+      for (j = 1; j < t.path.length; j++) {
+        if (j > 1) varName += "/";
+        varName += t.path[j];
+      }
+      var existingVarId = null;
+      var k = 0;
+      for (k = 0; k < collection.variableIds.length; k++) {
+        var cand = await variablesApi.getVariableByIdAsync(collection.variableIds[k]);
+        if (cand && cand.name === varName) {
+          existingVarId = cand.id;
+          break;
         }
+      }
+      var createdOrFound;
+      if (existingVarId) {
+        var got = await variablesApi.getVariableByIdAsync(existingVarId);
+        if (!got) continue;
+        createdOrFound = got;
+      } else {
+        var variableType = resolvedTypeFor(t.type);
+        createdOrFound = variablesApi.createVariable(varName, collection, variableType);
+      }
+      idByPath[toDot(t.path)] = createdOrFound.id;
+    }
+    var modeIdByKey = {};
+    var cols = await variablesApi.getLocalVariableCollectionsAsync();
+    var cii = 0;
+    for (cii = 0; cii < cols.length; cii++) {
+      var c = cols[cii];
+      var mi = 0;
+      for (mi = 0; mi < c.modes.length; mi++) {
+        var k2 = c.name + "/" + c.modes[mi].name;
+        modeIdByKey[k2] = c.modes[mi].modeId;
       }
     }
-  }
-  function mapToFigmaType(t) {
-    switch (t) {
-      case "color":
-        return "COLOR";
-      case "number":
-        return "FLOAT";
-      case "string":
-        return "STRING";
-      case "boolean":
-        return "BOOLEAN";
-      default:
-        return "STRING";
+    for (i = 0; i < graph.tokens.length; i++) {
+      var node = graph.tokens[i];
+      var dot = toDot(node.path);
+      var varId = idByPath[dot];
+      if (!varId) continue;
+      var targetVar = await variablesApi.getVariableByIdAsync(varId);
+      if (!targetVar) continue;
+      var ctxKeys = forEachKey(node.byContext);
+      var z = 0;
+      for (z = 0; z < ctxKeys.length; z++) {
+        var ctx = ctxKeys[z];
+        var val = node.byContext[ctx];
+        var modeId = modeIdByKey[ctx];
+        if (!modeId) continue;
+        if (val.kind === "alias") {
+          var targetId = idByPath[toDot(val.path)];
+          if (!targetId) continue;
+          var alias = await variablesApi.createVariableAliasByIdAsync(targetId);
+          targetVar.setValueForMode(modeId, alias);
+        } else if (val.kind === "color") {
+          var rgba = dtcgToFigmaRGBA(val.value, profile);
+          targetVar.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
+        } else if (val.kind === "number") {
+          targetVar.setValueForMode(modeId, val.value);
+        } else if (val.kind === "string") {
+          targetVar.setValueForMode(modeId, val.value);
+        } else if (val.kind === "boolean") {
+          targetVar.setValueForMode(modeId, val.value);
+        }
+      }
     }
   }
 
   // src/core/pipeline.ts
+  function keysOf2(obj) {
+    var out = [];
+    var k;
+    for (k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
+    return out;
+  }
+  function sanitizeForFile(s) {
+    var out = "";
+    var i = 0;
+    for (i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === "/" || ch === "\\" || ch === ":") out += "_";
+      else out += ch;
+    }
+    return out;
+  }
+  function cloneTokenWithSingleContext(t, ctx) {
+    var val = t.byContext[ctx];
+    if (!val) return null;
+    var copyByCtx = {};
+    copyByCtx[ctx] = val;
+    return {
+      path: (function() {
+        var arr = [];
+        var i = 0;
+        for (i = 0; i < t.path.length; i++) arr.push(t.path[i]);
+        return arr;
+      })(),
+      type: t.type,
+      byContext: copyByCtx,
+      description: t.description,
+      extensions: t.extensions
+    };
+  }
   async function importDtcg(json) {
-    const desiredGraph = normalize(parse(json));
-    const current = await snapshot();
-    const plan = planChanges(current, desiredGraph);
-    await apply(plan);
+    var desired = normalize(readDtcgToIR(json));
+    await writeIRToFigma(desired);
   }
   async function exportDtcg(opts) {
-    const current = await snapshot();
-    const graph = normalize(current);
-    return serialize(graph, opts);
+    var current = await readFigmaToIR();
+    var graph = normalize(current);
+    if (opts.format === "single") {
+      var single = serialize(graph);
+      return { files: [{ name: "tokens.json", json: single.json }] };
+    }
+    var contexts = [];
+    var i = 0;
+    for (i = 0; i < graph.tokens.length; i++) {
+      var t = graph.tokens[i];
+      var ks = keysOf2(t.byContext);
+      var j = 0;
+      for (j = 0; j < ks.length; j++) {
+        var c = ks[j];
+        var found = false;
+        var k = 0;
+        for (k = 0; k < contexts.length; k++) if (contexts[k] === c) {
+          found = true;
+          break;
+        }
+        if (!found) contexts.push(c);
+      }
+    }
+    var files = [];
+    var ci = 0;
+    for (ci = 0; ci < contexts.length; ci++) {
+      var ctx = contexts[ci];
+      var filtered = { tokens: [] };
+      var ii = 0;
+      for (ii = 0; ii < graph.tokens.length; ii++) {
+        var tok = graph.tokens[ii];
+        var one = cloneTokenWithSingleContext(tok, ctx);
+        if (one) filtered.tokens.push(one);
+      }
+      if (filtered.tokens.length === 0) continue;
+      var out = serialize(filtered);
+      var slash = ctx.indexOf("/");
+      var collection = slash >= 0 ? ctx.substring(0, slash) : ctx;
+      var mode = slash >= 0 ? ctx.substring(slash + 1) : "default";
+      var fname = sanitizeForFile(collection) + "_mode=" + sanitizeForFile(mode) + ".tokens.json";
+      files.push({ name: fname, json: out.json });
+    }
+    if (files.length === 0) {
+      var fallback = serialize(graph);
+      files.push({ name: "tokens.json", json: fallback.json });
+    }
+    return { files };
   }
 
   // src/app/main.ts
@@ -1071,7 +1303,7 @@
         return;
       }
       if (msg.type === "FETCH_COLLECTIONS") {
-        const snapshot2 = await snapshotCollectionsForUi();
+        const snapshot = await snapshotCollectionsForUi();
         const last = await figma.clientStorage.getAsync("lastSelection").catch(function() {
           return null;
         });
@@ -1079,9 +1311,9 @@
           return false;
         });
         const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-        send({ type: "INFO", payload: { message: "Fetched " + String(snapshot2.collections.length) + " collections" } });
-        send({ type: "COLLECTIONS_DATA", payload: { collections: snapshot2.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
-        send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snapshot2.rawText } });
+        send({ type: "INFO", payload: { message: "Fetched " + String(snapshot.collections.length) + " collections" } });
+        send({ type: "COLLECTIONS_DATA", payload: { collections: snapshot.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
+        send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snapshot.rawText } });
         return;
       }
       if (msg.type === "IMPORT_DTCG") {

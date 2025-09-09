@@ -1,89 +1,80 @@
+// src/adapters/dtcg-writer.ts
+// IR -> DTCG object (grouped), including aliases and color values.
 
-import type { TokenGraph, TokenNode, ValueOrAlias } from '../core/ir';
+import { type TokenGraph, type TokenNode } from '../core/ir';
+import { toAliasString } from '../core/normalize';
 
-interface SerializeResult {
-  files: Array<{ name: string; json: any }>;
+export interface SerializeResult {
+  json: unknown;
 }
-interface ExportOpts { format: 'single'|'perMode' }
-
-export function serialize(graph: TokenGraph, opts: ExportOpts): SerializeResult {
-  return opts.format === 'perMode' ? serializePerMode(graph) : serializeSingle(graph);
+export interface ExportOpts {
+  // reserved for future (e.g., filename templates, grouping strategy)
 }
 
-function serializePerMode(graph: TokenGraph): SerializeResult {
-  // group by context key
-  const byCtx: Record<string, TokenNode[]> = {};
-  for (const t of graph.tokens) {
-    for (const [ctx, v] of Object.entries(t.byContext)) {
-      ((byCtx[ctx]) ? byCtx[ctx] : (byCtx[ctx] = [])).push((function(){ const copy:any = { path: t.path.slice(0), type: t.type, byContext: {} }; if (t.description) copy.description = t.description; if (t.extensions) copy.extensions = t.extensions; copy.byContext[ctx] = v; return copy; })());
+export function serialize(graph: TokenGraph, _opts?: ExportOpts): SerializeResult {
+  var root: { [k: string]: unknown } = {};
+
+  var i = 0;
+  for (i = 0; i < graph.tokens.length; i++) {
+    var t = graph.tokens[i];
+    writeTokenInto(root, t);
+  }
+
+  return { json: root };
+}
+
+function writeTokenInto(root: { [k: string]: unknown }, t: TokenNode): void {
+  // Build groups
+  var obj = root;
+  var i = 0;
+  for (i = 0; i < t.path.length - 1; i++) {
+    var seg = t.path[i];
+    var next = obj[seg];
+    if (!next || typeof next !== 'object') {
+      next = {};
+      obj[seg] = next;
+    }
+    obj = next as { [k: string]: unknown };
+  }
+
+  var leaf = t.path[t.path.length - 1];
+  var tokenObj: { [k: string]: unknown } = {};
+  tokenObj['$type'] = t.type;
+
+  // Choose a single context to emit; DTCG doesn't encode "modes".
+  // We pick the first defined value.
+  var ctxKeys = keysOf(t.byContext);
+  var chosen = ctxKeys.length > 0 ? t.byContext[ctxKeys[0]] : null;
+
+  if (chosen) {
+    if (chosen.kind === 'alias') {
+      tokenObj['$value'] = toAliasString(chosen.path);
+    } else if (chosen.kind === 'color') {
+      var cv = chosen.value;
+      var out: { [k: string]: unknown } = {};
+      out['colorSpace'] = cv.colorSpace;
+      out['components'] = [cv.components[0], cv.components[1], cv.components[2]];
+      if (typeof cv.alpha === 'number') out['alpha'] = cv.alpha;
+      if (typeof cv.hex === 'string') out['hex'] = cv.hex;
+      tokenObj['$value'] = out;
+    } else if (chosen.kind === 'number') {
+      tokenObj['$value'] = chosen.value;
+    } else if (chosen.kind === 'string') {
+      tokenObj['$value'] = chosen.value;
+    } else if (chosen.kind === 'boolean') {
+      tokenObj['$value'] = chosen.value;
     }
   }
-  const files: Array<{ name: string; json: any }> = [];
-  for (const [ctx, tokens] of Object.entries(byCtx)) {
-    const json = tokensToDtcg(tokens, { includeExtensions: true });
-    const safeName = ctx.replace(/[\/:]/g, '_');
-    files.push({ name: `tokens_${safeName}.json`, json });
-  }
-  return { files };
+
+  if (t.description) tokenObj['$description'] = t.description;
+  if (t.extensions) tokenObj['$extensions'] = t.extensions;
+
+  obj[leaf] = tokenObj;
 }
 
-function serializeSingle(graph: TokenGraph): SerializeResult {
-  const json = tokensToDtcg(graph.tokens, { includeExtensions: true, includeAllContexts: true });
-  return { files: [{ name: 'tokens_all.json', json }] };
+function keysOf<T>(o: { [k: string]: T }): string[] {
+  var out: string[] = [];
+  var k: string;
+  for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) out.push(k);
+  return out;
 }
-
-function tokensToDtcg(tokens: TokenNode[], opts: { includeExtensions: boolean; includeAllContexts?: boolean }) {
-  // Emit a flat object with group nesting based on path segments.
-  const root: any = {};
-  for (const t of tokens) {
-    const leafContainer = ensurePath(root, t.path.slice(0, -1));
-    const name = t.path[t.path.length-1];
-
-    // Choose one value if only one context; else emit $extensions.org.figma.valuesByContext
-    let value: any;
-    let exts: any = undefined;
-    const entries = Object.entries(t.byContext);
-    if (entries.length === 1 && !opts.includeAllContexts) {
-      value = valueOut(entries[0][1]);
-    } else {
-      // keep values by context
-      const valuesByContext: Record<string, any> = {};
-      for (const [ctx, v] of entries) valuesByContext[ctx] = valueOut(v);
-      exts = (function(){ var base:any = {}; if (t.extensions) { for (var k in t.extensions) { if (Object.prototype.hasOwnProperty.call(t.extensions, k)) base[k] = (t.extensions as any)[k]; } } base.org = { figma: { valuesByContext: valuesByContext } }; return base; })();
-      value = valueOut(entries[0][1]); // pick first as default
-    }
-    const obj: any = { $type: t.type, $value: value };
-    if (t.description) obj.$description = t.description;
-    if (opts.includeExtensions && (exts || t.extensions)) {
-      obj.$extensions = exts || t.extensions;
-    }
-    leafContainer[name] = obj;
-  }
-  return root;
-}
-
-function valueOut(v: ValueOrAlias) {
-  if ('kind' in v && v.kind === 'alias') return `{${v.path}}`;
-  if ('kind' in v && v.kind === 'color') {
-    if (v.value.hex) return v.value.hex;
-    const [r,g,b] = v.value.components;
-    const a = v.value.alpha || 1;
-    if (a === 1) return rgbToHex(r,g,b);
-    return { colorSpace: 'srgb', components: [r,g,b], alpha: a };
-  }
-  if ('kind' in v && v.kind === 'dimension') return v.value;
-  if ('kind' in v) return v.value as any;
-  return v as any;
-}
-
-function ensurePath(root:any, path:string[]) {
-  let cur = root;
-  for (var i=0; i<path.length; i++){ var p = path[i]; if (!Object.prototype.hasOwnProperty.call(cur, p) || cur[p] == null) { cur[p] = {}; } cur = cur[p]; }
-  return cur;
-}
-
-function rgbToHex(r:number,g:number,b:number) {
-  const c = (x:number) => Math.round(x*255).toString(16).padStart(2, '0');
-  return '#' + c(r)+c(g)+c(b);
-}
-

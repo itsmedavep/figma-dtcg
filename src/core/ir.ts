@@ -1,30 +1,34 @@
+// src/core/ir.ts
 
-export type PrimitiveType = 'color' | 'number' | 'string' | 'boolean' | 'dimension';
+export type PrimitiveType = 'color' | 'number' | 'string' | 'boolean';
 
-export type AliasRef = { kind: 'alias'; path: string };
-export type ColorValue = { colorSpace: 'srgb'; components: [number, number, number]; alpha?: number; hex?: string };
-export type DimensionValue = { value: number; unit: 'px'|'rem'|'em'|'pt'|'percent' };
+export interface ColorValue {
+  colorSpace: 'srgb' | 'display-p3';
+  components: [number, number, number]; // 0..1
+  alpha?: number;                       // 0..1
+  hex?: string;                         // sRGB fallback "#RRGGBB"
+}
 
-export type PrimitiveValue =
+export type ValueOrAlias =
+  | { kind: 'alias'; path: string[] }
   | { kind: 'color'; value: ColorValue }
   | { kind: 'number'; value: number }
   | { kind: 'string'; value: string }
-  | { kind: 'boolean'; value: boolean }
-  | { kind: 'dimension'; value: DimensionValue };
-
-export type ValueOrAlias = PrimitiveValue | AliasRef;
+  | { kind: 'boolean'; value: boolean };
 
 export interface TokenNode {
-  path: string[];                     // group path + name
-  type: PrimitiveType;                // resolved type
-  byContext: Record<string, ValueOrAlias>; // 'Collection/mode=Light' => value
+  path: string[];                         // canonical path segments
+  type: PrimitiveType;
+  byContext: { [ctx: string]: ValueOrAlias }; // ctx like "Collection/Mode"
   description?: string;
-  extensions?: Record<string, unknown>;
+  extensions?: { [k: string]: unknown };
 }
 
 export interface TokenGraph {
   tokens: TokenNode[];
 }
 
-export const ctxKey = (collection: string, mode: string) => `${collection}/mode=${mode}`;
-export const tokenNameFromPath = (p: string[]) => p.join('/');
+/** Build a context key like "Collection/Mode". */
+export function ctxKey(collection: string, mode: string): string {
+  return collection + '/' + mode;
+}

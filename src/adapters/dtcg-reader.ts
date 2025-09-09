@@ -1,148 +1,140 @@
-import type { TokenGraph, TokenNode, PrimitiveType, ValueOrAlias } from '../core/ir';
-import { ctxKey } from '../core/ir';
+// src/adapters/dtcg-reader.ts
+// DTCG JSON -> IR TokenGraph (handles aliases, simple $type inheritance)
 
-type Dict = { [key: string]: unknown };
-function isDict(o: unknown): o is Dict { return typeof o === 'object' && o !== null; }
+import { type TokenGraph, type TokenNode, type PrimitiveType, type ValueOrAlias, ctxKey, type ColorValue } from '../core/ir';
+import { parseAliasString, slugSegment } from '../core/normalize';
+import { hexToDtcgColor } from '../core/color';
 
-export function parse(root: unknown): TokenGraph {
-  if (!isDict(root)) throw new Error('DTCG: root must be an object');
-  var tokens: Array<TokenNode> = [];
-  walkGroup(root, [], undefined, tokens);
+function guessTypeFromValue(v: unknown): PrimitiveType {
+  if (typeof v === 'number') return 'number';
+  if (typeof v === 'string') return 'string';
+  if (typeof v === 'boolean') return 'boolean';
+  return 'string';
+}
+
+function isColorObject(obj: unknown): obj is { colorSpace?: string; components?: number[]; alpha?: number; hex?: string } {
+  return !!obj && typeof obj === 'object' && (
+    typeof (obj as { colorSpace?: unknown }).colorSpace === 'string' ||
+    (obj as { components?: unknown }).components instanceof Array ||
+    typeof (obj as { hex?: unknown }).hex === 'string'
+  );
+}
+
+function hasKey(o: unknown, k: string): boolean {
+  return !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
+}
+
+function toNumber(x: unknown, def: number): number {
+  return typeof x === 'number' ? x : def;
+}
+
+function parseColorSpaceUnion(x: unknown): 'srgb' | 'display-p3' {
+  if (x === 'srgb') return 'srgb';
+  if (x === 'display-p3') return 'display-p3';
+  return 'srgb';
+}
+
+function readColorValue(raw: unknown): ColorValue {
+  // Allow either hex string or object form
+  if (typeof raw === 'string') {
+    return hexToDtcgColor(raw);
+  }
+  var obj = raw as { colorSpace?: string; components?: number[]; alpha?: number; hex?: string };
+
+  var cs = parseColorSpaceUnion(obj.colorSpace);
+  var comps: [number, number, number] = [0, 0, 0];
+  if (obj.components && obj.components.length >= 3) {
+    comps = [toNumber(obj.components[0], 0), toNumber(obj.components[1], 0), toNumber(obj.components[2], 0)];
+  }
+  var alpha = typeof obj.alpha === 'number' ? obj.alpha : undefined;
+  var hex = typeof obj.hex === 'string' ? obj.hex : undefined;
+
+  return { colorSpace: cs, components: comps, alpha: alpha, hex: hex };
+}
+
+export function readDtcgToIR(root: unknown): TokenGraph {
+  var tokens: TokenNode[] = [];
+  var defaultCtx = ctxKey('tokens', 'default');
+
+  function visit(obj: unknown, path: string[], inheritedType: PrimitiveType | null): void {
+    if (!obj || typeof obj !== 'object') return;
+
+    var groupType: PrimitiveType | null = inheritedType;
+    if (hasKey(obj, '$type') && typeof (obj as { $type: unknown }).$type === 'string') {
+      var t = String((obj as { $type: unknown }).$type);
+      if (t === 'color' || t === 'number' || t === 'string' || t === 'boolean') groupType = t;
+    }
+
+    if (hasKey(obj, '$value')) {
+      var rawVal = (obj as { $value: unknown }).$value;
+
+      // alias?
+      if (typeof rawVal === 'string') {
+        var ref = parseAliasString(rawVal);
+        if (ref && ref.length > 0) {
+          tokens.push({
+            path: path.slice(0),
+            type: groupType ? groupType : 'string',
+            byContext: (function () {
+              var o: { [k: string]: ValueOrAlias } = {};
+              o[defaultCtx] = { kind: 'alias', path: ref };
+              return o;
+            })()
+          });
+          return;
+        }
+      }
+
+      // color object or hex
+      if (isColorObject(rawVal) || typeof rawVal === 'string') {
+        var value = readColorValue(rawVal);
+        tokens.push({
+          path: path.slice(0),
+          type: 'color',
+          byContext: (function () {
+            var o: { [k: string]: ValueOrAlias } = {};
+            o[defaultCtx] = { kind: 'color', value: value };
+            return o;
+          })()
+        });
+        return;
+      }
+
+      // primitives
+      var t2 = groupType ? groupType : guessTypeFromValue(rawVal);
+      var valObj: ValueOrAlias | null = null;
+      if (t2 === 'number' && typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
+      else if (t2 === 'boolean' && typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
+      else if (t2 === 'string' && typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
+      else if (typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
+      else if (typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
+      else if (typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
+
+      if (valObj) {
+        tokens.push({
+          path: path.slice(0),
+          type: t2,
+          byContext: (function () {
+            var o: { [k: string]: ValueOrAlias } = {};
+            o[defaultCtx] = valObj as ValueOrAlias;
+            return o;
+          })()
+        });
+      }
+      return;
+    }
+
+    // groups
+    var k: string;
+    for (k in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+      if (k.length > 0 && k.charAt(0) === '$') continue;
+      var child = (obj as { [key: string]: unknown })[k];
+      var newPath = path.concat([slugSegment(k)]);
+      visit(child, newPath, groupType);
+    }
+  }
+
+  visit(root, [], null);
   return { tokens: tokens };
-}
-
-function walkGroup(node: unknown, path: Array<string>, inheritedType: PrimitiveType | undefined, out: Array<TokenNode>) {
-  if (!isDict(node)) return;
-  var groupType: PrimitiveType | undefined = inheritedType;
-  if (typeof node['$type'] === 'string') groupType = node['$type'] as PrimitiveType;
-
-  var key: string;
-  for (key in node) {
-    if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
-    if (key.length > 0 && key.charAt(0) === '$') continue;
-
-    var value = (node as Dict)[key];
-
-    if (isDict(value)) {
-      if (hasTokenShape(value)) {
-        var t = tokenFromEntry(path.concat(key), value, groupType);
-        out.push(t);
-      } else {
-        walkGroup(value, path.concat(key), groupType, out);
-      }
-    }
-  }
-}
-
-function hasTokenShape(o: Dict): boolean {
-  if (Object.prototype.hasOwnProperty.call(o, '$value')) return true;
-  if (Object.prototype.hasOwnProperty.call(o, '$type')) return true;
-  if (Object.prototype.hasOwnProperty.call(o, '$description')) return true;
-  if (Object.prototype.hasOwnProperty.call(o, '$extensions')) return true;
-  return false;
-}
-
-function tokenFromEntry(path: Array<string>, entry: Dict, inheritedType: PrimitiveType | undefined): TokenNode {
-  var explicitType: PrimitiveType | undefined = undefined;
-  if (typeof entry['$type'] === 'string') explicitType = entry['$type'] as PrimitiveType;
-  var type: PrimitiveType | undefined = explicitType ? explicitType : inheritedType;
-  if (!type) {
-    type = guessType(entry);
-    if (!type) throw new Error('Token ' + path.join('/') + ' missing $type and cannot be inferred');
-  }
-
-  var description: string | undefined = undefined;
-  if (typeof entry['$description'] === 'string') description = String(entry['$description']);
-
-  var extensions: Record<string, unknown> | undefined = undefined;
-  if (isDict(entry['$extensions'])) extensions = entry['$extensions'] as Record<string, unknown>;
-
-  // Prefer contexts from $extensions.org.figma.valuesByContext
-  var byContext: Record<string, ValueOrAlias> = {};
-  var ctxMap = contextsFromExtensions(entry, type);
-  if (ctxMap) {
-    byContext = ctxMap;
-  } else {
-    var raw = (entry as any)['$value'];
-    var coll = 'Imported';
-    var mode = 'Default';
-    var extOrg = safeGet(entry, ['$extensions', 'org', 'figma']);
-    if (isDict(extOrg)) {
-      var cName = (extOrg as any)['collectionName'];
-      var mName = (extOrg as any)['modeName'];
-      if (typeof cName === 'string') coll = cName;
-      if (typeof mName === 'string') mode = mName;
-    }
-    byContext[ctxKey(coll, mode)] = parseValueOrAlias(raw, type);
-  }
-
-  return { path: path, type: type, byContext: byContext, description: description, extensions: extensions };
-}
-
-function safeGet(obj: unknown, path: Array<string>): unknown {
-  var cur: unknown = obj;
-  var i: number;
-  for (i = 0; i < path.length; i++) {
-    if (!isDict(cur)) return undefined;
-    var k = path[i];
-    if (!Object.prototype.hasOwnProperty.call(cur, k)) return undefined;
-    cur = (cur as Dict)[k];
-  }
-  return cur;
-}
-
-function contextsFromExtensions(entry: Dict, type: PrimitiveType): Record<string, ValueOrAlias> | null {
-  var valuesByCtx = safeGet(entry, ['$extensions', 'org', 'figma', 'valuesByContext']);
-  if (!isDict(valuesByCtx)) return null;
-
-  var byContext: Record<string, ValueOrAlias> = {};
-  var k: string;
-  for (k in valuesByCtx as Dict) {
-    if (!Object.prototype.hasOwnProperty.call(valuesByCtx, k)) continue;
-    var raw = (valuesByCtx as Dict)[k];
-    byContext[k] = parseValueOrAlias(raw, type);
-  }
-  return byContext;
-}
-
-function guessType(entry: Dict): PrimitiveType | undefined {
-  if (Object.prototype.hasOwnProperty.call(entry, '$value')) {
-    var v = (entry as any)['$value'];
-    if (typeof v === 'string') {
-      if (/^\{[^}]+\}$/.test(v)) return 'string';
-      if (/^#?[0-9a-f]{3,8}$/i.test(v)) return 'color';
-      return 'string';
-    } else if (typeof v === 'number') return 'number';
-    else if (typeof v === 'boolean') return 'boolean';
-    else if (isDict(v) && Object.prototype.hasOwnProperty.call(v, 'colorSpace')) return 'color';
-  }
-  return undefined;
-}
-
-function parseValueOrAlias(raw: unknown, type: PrimitiveType): ValueOrAlias {
-  if (typeof raw === 'string' && /^\{[^}]+\}$/.test(raw)) {
-    return { kind: 'alias', path: raw.slice(1, raw.length - 1) };
-  }
-  if (type === 'color') {
-    if (typeof raw === 'string') {
-      var hex = raw.replace(/^#/, '');
-      var rgb: Array<number> | null = null;
-      if (hex.length === 3) {
-        rgb = [0, 1, 2].map(function (i) { var c = hex.charAt(i); return parseInt(c + c, 16) / 255; });
-      } else if (hex.length === 6 || hex.length === 8) {
-        rgb = [0, 1, 2].map(function (i) { return parseInt(hex.slice(i * 2, i * 2 + 2), 16) / 255; });
-      }
-      var alpha: number | undefined = undefined;
-      if (hex.length === 8) alpha = parseInt(hex.slice(6, 8), 16) / 255;
-      if (!rgb) throw new Error('Unsupported hex color: ' + String(raw));
-      return { kind: 'color', value: { colorSpace: 'srgb', components: [rgb[0], rgb[1], rgb[2]], alpha: alpha, hex: '#' + hex } };
-    } else if (isDict(raw) && Object.prototype.hasOwnProperty.call(raw, 'colorSpace')) {
-      return { kind: 'color', value: raw as any };
-    }
-    throw new Error('Color token requires hex or srgb object');
-  }
-  if (type === 'number') return { kind: 'number', value: Number(raw) };
-  if (type === 'boolean') return { kind: 'boolean', value: Boolean(raw) };
-  if (type === 'string') return { kind: 'string', value: String(raw) };
-  return { kind: 'string', value: String(raw) };
 }
