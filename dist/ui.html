@@ -295,6 +295,47 @@
       margin-top: .5rem;
       width: 100%;
     }
+
+    /* Collapsed drawer: turn the outer container into a thin row with no chrome,
+   and let the header itself render the small pill/bar. */
+    .shell.drawer-collapsed .drawer {
+      padding: 0;
+      /* remove outer padding that created the white strip */
+      background: transparent;
+      /* no background/plinth */
+      border: 0;
+      /* no outer border */
+    }
+
+    /* Make the header itself look like a compact pill */
+    .shell.drawer-collapsed .drawer .panel-header {
+      padding: 4px 8px;
+      /* tighter */
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      /* remove the normal header divider line */
+      border-bottom: 1px solid var(--border);
+      /* keep a hairline if you like */
+    }
+
+    /* Save vertical space: only keep the eyebrow, hide the big title in collapsed mode */
+    .shell.drawer-collapsed .drawer .title {
+      display: none;
+    }
+
+    .shell.drawer-collapsed .drawer .eyebrow {
+      margin: 0;
+    }
+
+    /* (Already present) */
+    .shell.drawer-collapsed {
+      grid-template-rows: 1fr var(--drawer-collapsed-h);
+    }
+
+    .shell.drawer-collapsed .drawer .drawer-body {
+      display: none;
+    }
   </style>
 </head>
 
