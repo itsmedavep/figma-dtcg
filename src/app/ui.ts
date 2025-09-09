@@ -438,5 +438,5 @@ document.addEventListener('DOMContentLoaded', function () {
   setDrawerOpen(getSavedDrawerOpen());
   postToPlugin({ type: 'UI_READY' });
   // request a size that fits current content
-  autoFitOnce();
+  // autoFitOnce();
 });
