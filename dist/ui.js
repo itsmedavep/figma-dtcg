@@ -11,6 +11,76 @@
   var exportBtn = document.getElementById("exportBtn");
   var exportPickers = document.getElementById("exportPickers");
   var refreshBtn = document.getElementById("refreshBtn");
+  function postResize(width, height) {
+    var w = Math.max(720, Math.min(1600, Math.floor(width)));
+    var h = Math.max(420, Math.min(1200, Math.floor(height)));
+    postToPlugin({ type: "UI_RESIZE", payload: { width: w, height: h } });
+  }
+  function autoFitOnce() {
+    var contentW = Math.max(
+      document.documentElement.scrollWidth,
+      document.body ? document.body.scrollWidth : 0
+    );
+    var contentH = Math.max(
+      document.documentElement.scrollHeight,
+      document.body ? document.body.scrollHeight : 0
+    );
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var needsW = contentW > vw ? contentW : vw;
+    var needsH = contentH > vh ? contentH : vh;
+    if (needsW > vw || needsH > vh) {
+      postResize(needsW, needsH);
+    }
+  }
+  (function wireDragHandle() {
+    var handle = document.getElementById("resizeHandle");
+    if (!handle) return;
+    var dragging = false;
+    var startX = 0, startY = 0;
+    var startW = 0, startH = 0;
+    var raf = 0;
+    var loggedOnce = false;
+    function onMouseMove(e) {
+      if (!dragging) return;
+      if (raf) return;
+      raf = window.requestAnimationFrame(function() {
+        var _a, _b;
+        raf = 0;
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        var targetW = startW + dx;
+        var targetH = startH + dy;
+        if (!loggedOnce) {
+          loggedOnce = true;
+          try {
+            (_b = (_a = window.console) == null ? void 0 : _a.log) == null ? void 0 : _b.call(_a, "UI_RESIZE \u2192", targetW, targetH);
+          } catch (_e) {
+          }
+        }
+        postResize(targetW, targetH);
+      });
+    }
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    }
+    handle.addEventListener("mousedown", function(e) {
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = window.innerWidth;
+      startH = window.innerHeight;
+      loggedOnce = false;
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+      e.preventDefault();
+    });
+  })();
   var currentCollections = [];
   function log(msg) {
     const t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
@@ -239,6 +309,7 @@
     if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = "Loading variable collections\u2026";
     setDisabledStates();
     postToPlugin({ type: "UI_READY" });
+    autoFitOnce();
   });
 })();
 //# sourceMappingURL=ui.js.map

@@ -5,7 +5,21 @@ import { importDtcg, exportDtcg } from '../core/pipeline';
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
 
-figma.showUI(__html__, { width: 960, height: 540 });
+// Use saved size if available; fall back to 960×540.
+(async function initUI() {
+  var w = 960, h = 540;
+  try {
+    var saved = await figma.clientStorage.getAsync('uiSize');
+    if (saved && typeof saved.width === 'number' && typeof saved.height === 'number') {
+      var sw = Math.floor(saved.width);
+      var sh = Math.floor(saved.height);
+      w = Math.max(720, Math.min(1600, sw));
+      h = Math.max(420, Math.min(1200, sh));
+    }
+  } catch (_e) { /* ignore */ }
+  figma.showUI(__html__, { width: w, height: h });
+})();
+
 
 function send(msg: PluginToUi): void {
   figma.ui.postMessage(msg);
@@ -177,6 +191,16 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       await figma.clientStorage.setAsync('exportAllPref', !!msg.payload.exportAll);
       return;
     }
+
+    if (msg.type === 'UI_RESIZE') {
+      var w = Math.max(720, Math.min(1600, Math.floor(msg.payload.width)));
+      var h = Math.max(420, Math.min(1200, Math.floor(msg.payload.height)));
+      figma.ui.resize(w, h);
+      try { await figma.clientStorage.setAsync('uiSize', { width: w, height: h }); } catch (_err) { }
+      // send({ type: 'INFO', payload: { message: 'Resized UI to ' + w + '×' + h } }); // <— add this single line
+      return;
+    }
+
 
   } catch (e) {
     var message = 'Unknown error';

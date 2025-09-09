@@ -680,7 +680,19 @@
   }
 
   // src/app/main.ts
-  figma.showUI(`<!doctype html>
+  (async function initUI() {
+    var w = 960, h = 540;
+    try {
+      var saved = await figma.clientStorage.getAsync("uiSize");
+      if (saved && typeof saved.width === "number" && typeof saved.height === "number") {
+        var sw = Math.floor(saved.width);
+        var sh = Math.floor(saved.height);
+        w = Math.max(720, Math.min(1600, sw));
+        h = Math.max(420, Math.min(1200, sh));
+      }
+    } catch (_e) {
+    }
+    figma.showUI(`<!doctype html>
 <html>
 
 <head>
@@ -696,41 +708,43 @@
       --surface: #f9fafb;
       --accent: #0051ff;
       --accent-ink: #dfdfdf;
-      --border: #e5e7eb
+      --border: #e5e7eb;
+      --drawer-h: 260px;
+      /* bottom log drawer height */
     }
 
     html,
     body {
       height: 100%;
-      margin: 0
+      margin: 0;
     }
 
     body {
       background: var(--bg);
       color: var(--ink);
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      line-height: 1.4
+      line-height: 1.4;
     }
 
-    /* Force the working area to occupy all available space */
+    /* Two-row grid: main content + bottom drawer */
     .shell {
       height: 100vh;
-      /* ensures full iframe height */
       width: 100%;
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
-      grid-template-rows: 1fr;
+      grid-template-rows: 1fr var(--drawer-h);
       gap: 12px;
       padding: 12px;
       box-sizing: border-box;
-      grid-auto-flow: column;
+      grid-auto-flow: row;
+      /* rows fill before columns */
     }
 
     .col {
       display: flex;
       flex-direction: column;
       min-width: 0;
-      min-height: 0
+      min-height: 0;
     }
 
     .panel {
@@ -750,7 +764,7 @@
       align-items: center;
       justify-content: space-between;
       padding: 10px 12px 4px 12px;
-      border-bottom: 1px solid var(--border)
+      border-bottom: 1px solid var(--border);
     }
 
     .eyebrow {
@@ -758,13 +772,13 @@
       letter-spacing: .06em;
       text-transform: uppercase;
       color: var(--ink-muted);
-      margin: 0 0 2px 0
+      margin: 0 0 2px 0;
     }
 
     .title {
       font-size: 16px;
       font-weight: 700;
-      margin: 0
+      margin: 0;
     }
 
     .panel-body {
@@ -775,25 +789,24 @@
       min-width: 0;
       min-height: 0;
       flex: 1;
-      /* \u2190 make body fill panel */
     }
 
     .row {
       display: flex;
       gap: 8px;
-      align-items: center
+      align-items: center;
     }
 
     .row>* {
       flex: 1;
-      min-width: 0
+      min-width: 0;
     }
 
     label {
       font-size: 12px;
       color: var(--ink-subtle);
       display: block;
-      margin-bottom: 4px
+      margin-bottom: 4px;
     }
 
     input[type="text"],
@@ -806,7 +819,7 @@
       background: #fff;
       color: var(--ink);
       font-size: 12px;
-      box-sizing: border-box
+      box-sizing: border-box;
     }
 
     button {
@@ -817,20 +830,20 @@
       color: var(--accent-ink);
       font-weight: 600;
       cursor: pointer;
-      font-size: 13px
+      font-size: 13px;
     }
 
     button[disabled] {
       opacity: .5;
-      cursor: not-allowed
+      cursor: not-allowed;
     }
 
     .muted {
       color: var(--ink-muted);
-      font-size: 12px
+      font-size: 12px;
     }
 
-    /* Middle column raw view */
+    /* Monospace content panes (raw + preview) */
     pre {
       margin: 0;
       padding: .5rem;
@@ -839,31 +852,10 @@
       border-radius: 8px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
-      /* WRAP LONG CONTENT */
       white-space: pre-wrap;
-      /* preserve newlines/spaces but allow wrapping */
+      /* preserve newlines but allow wrapping */
       overflow-wrap: anywhere;
-      /* break long tokens without spaces */
-      word-break: break-word;
-      /* fallback for older engines */
-      overflow: auto;
-      min-width: 0;
-      min-height: 0;
-      flex: 1;
-      height: 100%;
-    }
-
-    /* Right column log */
-    #log {
-      padding: .5rem;
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 11px;
-      /* WRAP LONG CONTENT */
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
+      /* break long tokens/paths */
       word-break: break-word;
       overflow: auto;
       min-width: 0;
@@ -875,30 +867,108 @@
     .stack {
       display: flex;
       flex-direction: column;
-      gap: 10px
+      gap: 10px;
     }
 
     .row-center {
       display: flex;
       gap: 8px;
       align-items: center;
-      justify-content: space-between
+      justify-content: space-between;
     }
 
     #refreshBtn {
-      margin-top: .5rem;
-      margin-bottom: .5rem;
-      margin-left: auto;
-      margin-right: auto;
+      margin: .5rem auto;
       width: 45%;
       border-radius: .25rem;
+      background: #6b7280;
+    }
+
+    /* Bottom drawer (Log) spans all columns */
+    .drawer {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 10px;
+      padding: .5rem;
+    }
+
+    .drawer .panel-header {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawer-body {
+      padding: .25rem;
+      min-height: 0;
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Log content area */
+    #log {
+      padding: .5rem;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      overflow: auto;
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+      height: 100%;
+    }
+
+    /* Allow an on-canvas resize handle */
+    .resize-handle {
+      position: fixed;
+      /* inside the iframe viewport */
+      right: 6px;
+      bottom: 6px;
+      width: 14px;
+      height: 14px;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 3px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
+      cursor: nwse-resize;
+      display: grid;
+      place-items: center;
+      z-index: 2147483647;
+      /* on top of everything inside the iframe */
+    }
+
+    .resize-handle::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid #9ca3af;
+      /* subtle diagonal corner */
+      border-bottom: 2px solid #9ca3af;
+      transform: translate(1px, 1px);
+      pointer-events: none;
+    }
+
+    #exportBtn {
+      margin-top: .5rem;
+      width: 100%;
     }
   </style>
 </head>
 
 <body>
   <div class="shell">
-    <!-- Left: Import + Export -->
+    <!-- Left: Actions -->
     <div class="col">
       <div class="panel">
         <div class="panel-header">
@@ -908,7 +978,7 @@
           </div>
         </div>
         <div class="panel-body">
-          <!-- Import (file only) -->
+          <!-- Import -->
           <div class="stack">
             <div class="eyebrow">Import DTCG</div>
             <div>
@@ -935,7 +1005,7 @@
                 <select id="modeSelect"></select>
               </div>
               <div>
-                <label><input type="checkbox" id="exportAllChk" /> Export all collections & modes into a single
+                <label><input type="checkbox" id="exportAllChk" /> Export all collections &amp; modes into a single
                   file</label>
                 <div class="muted">Select a collection and mode, or check \u201CExport all\u201D.</div>
                 <button id="exportBtn" disabled>Export</button>
@@ -958,26 +1028,40 @@
         <div class="panel-body">
           <pre id="raw"></pre>
         </div>
-        <button id="refreshBtn" style="background:#6b7280">Refresh</button>
+        <button id="refreshBtn">Refresh</button>
       </div>
     </div>
 
-    <!-- Right: Log -->
+    <!-- Right: W3C Preview -->
     <div class="col">
       <div class="panel">
         <div class="panel-header">
           <div>
-            <div class="eyebrow">Diagnostics</div>
-            <h2 class="title">Log</h2>
+            <div class="eyebrow">Preview</div>
+            <h2 class="title">W3C Design Tokens (JSON)</h2>
           </div>
         </div>
         <div class="panel-body">
-          <div id="log"></div>
+          <!-- Placeholder; we\u2019ll wire this later -->
+          <pre id="w3cPreview">{ /* preview will render here */ }</pre>
         </div>
       </div>
     </div>
-  </div>
 
+    <!-- Bottom drawer: Log (spans all columns) -->
+    <div class="drawer">
+      <div class="panel-header">
+        <div>
+          <div class="eyebrow">Diagnostics</div>
+          <h2 class="title">Log</h2>
+        </div>
+      </div>
+      <div class="drawer-body">
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+  <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
   <script>"use strict";
 (() => {
   // src/app/ui.ts
@@ -991,6 +1075,76 @@
   var exportBtn = document.getElementById("exportBtn");
   var exportPickers = document.getElementById("exportPickers");
   var refreshBtn = document.getElementById("refreshBtn");
+  function postResize(width, height) {
+    var w = Math.max(720, Math.min(1600, Math.floor(width)));
+    var h = Math.max(420, Math.min(1200, Math.floor(height)));
+    postToPlugin({ type: "UI_RESIZE", payload: { width: w, height: h } });
+  }
+  function autoFitOnce() {
+    var contentW = Math.max(
+      document.documentElement.scrollWidth,
+      document.body ? document.body.scrollWidth : 0
+    );
+    var contentH = Math.max(
+      document.documentElement.scrollHeight,
+      document.body ? document.body.scrollHeight : 0
+    );
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var needsW = contentW > vw ? contentW : vw;
+    var needsH = contentH > vh ? contentH : vh;
+    if (needsW > vw || needsH > vh) {
+      postResize(needsW, needsH);
+    }
+  }
+  (function wireDragHandle() {
+    var handle = document.getElementById("resizeHandle");
+    if (!handle) return;
+    var dragging = false;
+    var startX = 0, startY = 0;
+    var startW = 0, startH = 0;
+    var raf = 0;
+    var loggedOnce = false;
+    function onMouseMove(e) {
+      if (!dragging) return;
+      if (raf) return;
+      raf = window.requestAnimationFrame(function() {
+        var _a, _b;
+        raf = 0;
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        var targetW = startW + dx;
+        var targetH = startH + dy;
+        if (!loggedOnce) {
+          loggedOnce = true;
+          try {
+            (_b = (_a = window.console) == null ? void 0 : _a.log) == null ? void 0 : _b.call(_a, "UI_RESIZE \\u2192", targetW, targetH);
+          } catch (_e) {
+          }
+        }
+        postResize(targetW, targetH);
+      });
+    }
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    }
+    handle.addEventListener("mousedown", function(e) {
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = window.innerWidth;
+      startH = window.innerHeight;
+      loggedOnce = false;
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+      e.preventDefault();
+    });
+  })();
   var currentCollections = [];
   function log(msg) {
     const t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
@@ -1219,13 +1373,15 @@
     if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = "Loading variable collections\\u2026";
     setDisabledStates();
     postToPlugin({ type: "UI_READY" });
+    autoFitOnce();
   });
 })();
 //# sourceMappingURL=ui.js.map
 <\/script>
 </body>
 
-</html>`, { width: 960, height: 540 });
+</html>`, { width: w, height: h });
+  })();
   function send(msg) {
     figma.ui.postMessage(msg);
   }
@@ -1360,6 +1516,16 @@
       }
       if (msg.type === "SAVE_PREFS") {
         await figma.clientStorage.setAsync("exportAllPref", !!msg.payload.exportAll);
+        return;
+      }
+      if (msg.type === "UI_RESIZE") {
+        var w = Math.max(720, Math.min(1600, Math.floor(msg.payload.width)));
+        var h = Math.max(420, Math.min(1200, Math.floor(msg.payload.height)));
+        figma.ui.resize(w, h);
+        try {
+          await figma.clientStorage.setAsync("uiSize", { width: w, height: h });
+        } catch (_err) {
+        }
         return;
       }
     } catch (e) {

@@ -15,6 +15,84 @@ const exportPickers = document.getElementById('exportPickers');
 
 const refreshBtn = document.getElementById('refreshBtn');
 
+function postResize(width: number, height: number): void {
+  var w = Math.max(720, Math.min(1600, Math.floor(width)));
+  var h = Math.max(420, Math.min(1200, Math.floor(height)));
+  postToPlugin({ type: 'UI_RESIZE', payload: { width: w, height: h } });
+}
+
+function autoFitOnce(): void {
+  // Measure page content
+  var contentW = Math.max(
+    document.documentElement.scrollWidth,
+    document.body ? document.body.scrollWidth : 0
+  );
+  var contentH = Math.max(
+    document.documentElement.scrollHeight,
+    document.body ? document.body.scrollHeight : 0
+  );
+
+  // Current iframe viewport size
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+
+  // Only ask to grow the window if content overflows
+  var needsW = contentW > vw ? contentW : vw;
+  var needsH = contentH > vh ? contentH : vh;
+
+  if (needsW > vw || needsH > vh) {
+    postResize(needsW, needsH);
+  }
+}
+
+
+(function wireDragHandle() {
+  var handle = document.getElementById('resizeHandle');
+  if (!handle) return;
+
+  var dragging = false;
+  var startX = 0, startY = 0;
+  var startW = 0, startH = 0;
+  var raf = 0;
+  var loggedOnce = false;
+
+  function onMouseMove(e: MouseEvent) {
+    if (!dragging) return;
+    if (raf) return; // throttle with rAF
+    raf = window.requestAnimationFrame(function () {
+      raf = 0;
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      var targetW = startW + dx;
+      var targetH = startH + dy;
+      // Optional: one-time debug so you can see it fires
+      if (!loggedOnce) { loggedOnce = true; try { (window as any).console?.log?.('UI_RESIZE →', targetW, targetH); } catch (_e) { } }
+      postResize(targetW, targetH);
+    });
+  }
+  function onMouseUp() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+  handle.addEventListener('mousedown', function (e) {
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startW = window.innerWidth;
+    startH = window.innerHeight;
+    loggedOnce = false;
+    document.body.style.userSelect = 'none'; // avoid text selection while dragging
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    e.preventDefault();
+  });
+})();
+
+
+
 // Keep last payload for repopulating mode list on collection change
 let currentCollections: Array<{
   id: string;
@@ -288,4 +366,6 @@ document.addEventListener('DOMContentLoaded', function () {
   if (rawEl && rawEl instanceof HTMLElement) rawEl.textContent = 'Loading variable collections…';
   setDisabledStates();
   postToPlugin({ type: 'UI_READY' });
+  // request a size that fits current content
+  autoFitOnce();
 });

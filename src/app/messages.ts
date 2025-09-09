@@ -2,13 +2,16 @@
 
 // ==== UI -> Plugin ====
 
+// UI → Plugin
 export type UiToPlugin =
   | { type: 'UI_READY' }
   | { type: 'FETCH_COLLECTIONS' }
   | { type: 'IMPORT_DTCG'; payload: { json: unknown } }
   | { type: 'EXPORT_DTCG'; payload: { exportAll: boolean; collection?: string; mode?: string } }
   | { type: 'SAVE_LAST'; payload: { collection: string; mode: string } }
-  | { type: 'SAVE_PREFS'; payload: { exportAll: boolean } };
+  | { type: 'SAVE_PREFS'; payload: { exportAll: boolean } }
+  | { type: 'UI_RESIZE'; payload: { width: number; height: number } };   // <-- added
+
 
 // ==== Plugin -> UI ====
 
