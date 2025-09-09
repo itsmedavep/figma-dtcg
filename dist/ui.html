@@ -1,56 +1,474 @@
-
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DTCG Import/Export</title>
-    <style>
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 12px; }
-      fieldset { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
-      legend { padding: 0 6px; color: #333; }
-      label { display: block; margin: 6px 0 2px; }
-      input[type=text], select { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 6px; }
-      button { padding: 8px 12px; border: 0; border-radius: 8px; background: #1e88e5; color: white; cursor: pointer; }
-      button.secondary { background: #555; }
-      #log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; white-space: pre-wrap; background: #fafafa; border: 1px solid #eee; padding: 8px; border-radius: 6px; height: 120px; overflow: auto; }
-      .row { display: flex; gap: 8px; align-items: center; }
-      .row > * { flex: 1; }
-    </style>
-  </head>
-  <body>
-    <fieldset>
-      <legend>Import DTCG</legend>
-      <div class="row">
-        <div>
-          <label for="collection">Collection name</label>
-          <input id="collection" type="text" placeholder="e.g., Theme" />
-        </div>
-        <div>
-          <label for="mode">Mode name</label>
-          <input id="mode" type="text" placeholder="e.g., Light" />
-        </div>
-      </div>
-      <label for="file">Choose a DTCG JSON file</label>
-      <input id="file" type="file" accept=".json,application/json" />
-      <div style="margin-top:8px;">
-        <button id="importBtn">Import</button>
-      </div>
-    </fieldset>
 
-    <fieldset>
-      <legend>Export DTCG</legend>
-      <div class="row">
-        <label><input type="radio" name="fmt" value="perMode" checked /> One file per (collection × mode)</label>
-        <label><input type="radio" name="fmt" value="single" /> Single file with $extensions</label>
-      </div>
-      <div style="margin-top:8px;">
-        <button id="exportBtn">Export</button>
-      </div>
-    </fieldset>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DTCG Import/Export</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --ink: #111827;
+      --ink-subtle: #4b5563;
+      --ink-muted: #6b7280;
+      --surface: #f9fafb;
+      --accent: #1e88e5;
+      --accent-ink: #ffffff;
+      --border: #e5e7eb
+    }
 
-    <h4>Log</h4>
-    <div id="log"></div>
-    <script src="./ui.js"></script>
-  </body>
+    html,
+    body {
+      height: 100%;
+      margin: 0
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      line-height: 1.4
+    }
+
+    /* Force the working area to occupy all available space */
+    .shell {
+      height: 100vh;
+      /* ensures full iframe height */
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+      grid-template-rows: 1fr;
+      gap: 12px;
+      padding: 12px;
+      box-sizing: border-box;
+      grid-auto-flow: column;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 10px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px 4px 12px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      margin: 0 0 2px 0
+    }
+
+    .title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0
+    }
+
+    .panel-body {
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+      /* ← make body fill panel */
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center
+    }
+
+    .row>* {
+      flex: 1;
+      min-width: 0
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--ink-subtle);
+      display: block;
+      margin-bottom: 4px
+    }
+
+    input[type="text"],
+    select,
+    input[type="file"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 12px;
+      box-sizing: border-box
+    }
+
+    button {
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px
+    }
+
+    button[disabled] {
+      opacity: .5;
+      cursor: not-allowed
+    }
+
+    .muted {
+      color: var(--ink-muted);
+      font-size: 12px
+    }
+
+    /* Middle column raw view */
+    pre {
+      margin: 0;
+      padding: 12px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      overflow: auto;
+      white-space: pre;
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+      /* ← stretch */
+      height: 100%;
+    }
+
+    /* Right column log */
+    #log {
+      padding: 12px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      overflow: auto;
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+      /* ← stretch */
+      height: 100%;
+    }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    .row-center {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <!-- Left: Import + Export -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="eyebrow">Actions</div>
+            <h2 class="title">Import & Export</h2>
+          </div>
+        </div>
+        <div class="panel-body">
+          <!-- Import (file only) -->
+          <div class="stack">
+            <div class="eyebrow">Import DTCG</div>
+            <div>
+              <label>Choose a DTCG JSON file</label>
+              <input id="file" type="file" accept=".json,application/json" />
+            </div>
+            <div class="row">
+              <button id="importBtn" disabled>Import</button>
+            </div>
+            <div class="muted">Imports collections/modes as defined in the file.</div>
+          </div>
+
+          <!-- Export -->
+          <div class="stack" style="border-top:1px solid var(--border);padding-top:12px;">
+            <div class="eyebrow">Export DTCG</div>
+            <div class="row-center">
+              <label><input type="checkbox" id="exportAllChk" /> Export all collections & modes into a single
+                file</label>
+              <button id="refreshBtn" style="background:#6b7280">Refresh</button>
+            </div>
+            <div class="stack" id="exportPickers">
+              <div>
+                <label>Collection</label>
+                <select id="collectionSelect"></select>
+              </div>
+              <div>
+                <label>Mode (within collection)</label>
+                <select id="modeSelect"></select>
+              </div>
+            </div>
+            <div class="row">
+              <button id="exportBtn" disabled>Export</button>
+            </div>
+            <div class="muted">Select a collection and mode, or check “Export all”.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Middle: Raw Figma Collections -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="eyebrow">Reference</div>
+            <h2 class="title">Raw Figma Collections</h2>
+          </div>
+        </div>
+        <div class="panel-body">
+          <pre id="raw"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Log -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="eyebrow">Diagnostics</div>
+            <h2 class="title">Log</h2>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>"use strict";
+(() => {
+  // src/app/ui.ts
+  var logEl = document.getElementById("log");
+  var rawEl = document.getElementById("raw");
+  var exportAllChk = document.getElementById("exportAllChk");
+  var collectionSelect = document.getElementById("collectionSelect");
+  var modeSelect = document.getElementById("modeSelect");
+  var fileInput = document.getElementById("file");
+  var importBtn = document.getElementById("importBtn");
+  var exportBtn = document.getElementById("exportBtn");
+  var exportPickers = document.getElementById("exportPickers");
+  var refreshBtn = document.getElementById("refreshBtn");
+  document.addEventListener("DOMContentLoaded", function() {
+    parent.postMessage({ pluginMessage: { type: "UI_READY" } }, "*");
+  });
+  function log(msg) {
+    var t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
+    var line = document.createElement("div");
+    line.textContent = "[" + t + "] " + msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function postToPlugin(message) {
+    parent.postMessage({ pluginMessage: message }, "*");
+  }
+  function clearSelect(sel) {
+    while (sel.options.length > 0) sel.remove(0);
+  }
+  function setDisabledStates() {
+    if (importBtn && fileInput) {
+      var hasFile = !!(fileInput.files && fileInput.files.length > 0);
+      importBtn.disabled = !hasFile;
+    }
+    if (exportBtn && exportAllChk && collectionSelect && modeSelect && exportPickers) {
+      var exportAll = !!exportAllChk.checked;
+      if (exportAll) {
+        exportBtn.disabled = false;
+        exportPickers.style.opacity = "0.5";
+      } else {
+        exportPickers.style.opacity = "1";
+        var hasSelection = collectionSelect.value.length > 0 && modeSelect.value.length > 0;
+        exportBtn.disabled = !hasSelection;
+      }
+    }
+  }
+  function populateCollections(data) {
+    if (!collectionSelect || !modeSelect) return;
+    clearSelect(collectionSelect);
+    var i;
+    for (i = 0; i < data.collections.length; i++) {
+      var c = data.collections[i];
+      var opt = document.createElement("option");
+      opt.value = c.name;
+      opt.textContent = c.name;
+      collectionSelect.appendChild(opt);
+    }
+    onCollectionChange(data);
+  }
+  function onCollectionChange(data) {
+    if (!collectionSelect || !modeSelect) return;
+    var selected = collectionSelect.value;
+    clearSelect(modeSelect);
+    var i;
+    for (i = 0; i < data.collections.length; i++) {
+      var c = data.collections[i];
+      if (c.name === selected) {
+        var j;
+        for (j = 0; j < c.modes.length; j++) {
+          var m = c.modes[j];
+          var opt = document.createElement("option");
+          opt.value = m.name;
+          opt.textContent = m.name;
+          modeSelect.appendChild(opt);
+        }
+        break;
+      }
+    }
+    setDisabledStates();
+  }
+  function prettyJson(obj) {
+    try {
+      return JSON.stringify(obj, null, 2);
+    } catch (_e) {
+      return String(obj);
+    }
+  }
+  if (collectionSelect) collectionSelect.addEventListener("change", function() {
+    postToPlugin({ type: "FETCH_COLLECTIONS" });
+  });
+  if (modeSelect) modeSelect.addEventListener("change", setDisabledStates);
+  if (fileInput) fileInput.addEventListener("change", setDisabledStates);
+  if (exportAllChk) exportAllChk.addEventListener("change", setDisabledStates);
+  if (refreshBtn) refreshBtn.addEventListener("click", function() {
+    postToPlugin({ type: "FETCH_COLLECTIONS" });
+  });
+  (function() {
+    var importBtnEl = document.getElementById("importBtn");
+    var fileInputEl0 = document.getElementById("file");
+    if (importBtnEl instanceof HTMLButtonElement && fileInputEl0 instanceof HTMLInputElement) {
+      const button = importBtnEl;
+      const input = fileInputEl0;
+      button.addEventListener("click", function() {
+        if (!input.files || input.files.length === 0) {
+          log("Select a JSON file first.");
+          return;
+        }
+        var reader = new FileReader();
+        reader.onload = function() {
+          try {
+            var text = String(reader.result);
+            var json = JSON.parse(text);
+            postToPlugin({ type: "IMPORT_DTCG", payload: { json } });
+            log("Import requested.");
+          } catch (e) {
+            var msg = e instanceof Error ? e.message : String(e);
+            log("Failed to parse JSON: " + msg);
+          }
+        };
+        reader.readAsText(input.files[0]);
+      });
+    }
+  })();
+  (function() {
+    var exportBtnEl = document.getElementById("exportBtn");
+    var exportAllEl = document.getElementById("exportAllChk");
+    var collSelEl = document.getElementById("collectionSelect");
+    var modeSelEl = document.getElementById("modeSelect");
+    if (exportBtnEl instanceof HTMLButtonElement) {
+      exportBtnEl.addEventListener("click", function() {
+        var exportAll = !!(exportAllEl instanceof HTMLInputElement && exportAllEl.checked);
+        var payload = { exportAll };
+        if (!exportAll && collSelEl instanceof HTMLSelectElement && modeSelEl instanceof HTMLSelectElement) {
+          payload.collection = collSelEl.value;
+          payload.mode = modeSelEl.value;
+          if (!(payload.collection && payload.mode)) {
+            log('Pick collection and mode or use "Export all".');
+            return;
+          }
+        }
+        postToPlugin({ type: "EXPORT_DTCG", payload });
+        if (exportAll) log("Export all requested.");
+        else log('Export requested for "' + payload.collection + '" / "' + payload.mode + '".');
+      });
+    }
+  })();
+  window.onmessage = function(event) {
+    var msg = event.data && event.data.pluginMessage ? event.data.pluginMessage : null;
+    if (!msg) return;
+    if (msg.type === "ERROR") {
+      log("ERROR: " + msg.payload.message);
+      return;
+    }
+    if (msg.type === "INFO") {
+      log(msg.payload.message);
+      return;
+    }
+    if (msg.type === "EXPORT_RESULT") {
+      var k;
+      for (k = 0; k < msg.payload.files.length; k++) {
+        var f = msg.payload.files[k];
+        var a = document.createElement("a");
+        var blob = new Blob([prettyJson(f.json)], { type: "application/json" });
+        a.href = URL.createObjectURL(blob);
+        a.download = f.name;
+        a.textContent = "Download " + f.name;
+        var div = document.createElement("div");
+        div.appendChild(a);
+        logEl.appendChild(div);
+      }
+      log("Export ready.");
+      return;
+    }
+    if (msg.type === "COLLECTIONS_DATA") {
+      populateCollections({ collections: msg.payload.collections });
+      setDisabledStates();
+      return;
+    }
+    if (msg.type === "RAW_COLLECTIONS_TEXT") {
+      rawEl.textContent = msg.payload.text;
+      return;
+    }
+  };
+  rawEl.textContent = "Loading variable collections\u2026";
+  setDisabledStates();
+  postToPlugin({ type: "UI_READY" });
+})();
+//# sourceMappingURL=ui.js.map
+</script>
+</body>
+
 </html>
