@@ -15,3 +15,12 @@ dist/ui.js
 dist/ui.html
 dist/main.js.map
 dist/main.js
+dist/main.js
+dist/main.js.map
+dist/ui.html
+dist/ui.js
+dist/ui.js.map
+node_modules/.DS_Store
+node_modules/@esbuild/.DS_Store
+node_modules/esbuild/.DS_Store
+src/.DS_Store

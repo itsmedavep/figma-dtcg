@@ -209,12 +209,6 @@
       justify-content: space-between;
     }
 
-    #refreshBtn {
-      margin: .5rem auto;
-      width: 45%;
-      border-radius: .25rem;
-      background: #6b7280;
-    }
 
     /* Bottom drawer (Log) spans all columns */
     .drawer {
@@ -420,12 +414,15 @@
             <div class="eyebrow">Reference</div>
             <h2 class="title">Raw Figma Collections</h2>
           </div>
-          <button id="copyRawBtn" title="Copy raw collections">Copy</button>
+          <div id="actions">
+            <button id="copyRawBtn" title="Copy raw collections">Copy</button>
+            <button id="refreshBtn">Refresh</button>
+          </div>
         </div>
         <div class="panel-body">
           <pre id="raw"></pre>
         </div>
-        <button id="refreshBtn">Refresh</button>
+
       </div>
     </div>
 
