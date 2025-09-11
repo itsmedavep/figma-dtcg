@@ -209,6 +209,7 @@ export function readDtcgToIR(root: unknown): TokenGraph {
       }
 
 
+
       // Primitives (respect declared type; no color coercion here)
       const t2: PrimitiveType = groupType ?? guessTypeFromValue(rawVal);
       let valObj: ValueOrAlias | null = null;

@@ -43,7 +43,7 @@ function tokenHasDirectValue(t: TokenNode): boolean {
 function tokenHasAtLeastOneValidDirectValue(t: TokenNode): boolean {
   const byCtx = t.byContext || {};
   for (const ctx in byCtx) {
-    const v = byCtx[ctx] as any;
+    const v = (byCtx as any)[ctx];
     if (!v || v.kind === 'alias') continue;
 
     if (t.type === 'color') {
@@ -57,6 +57,7 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode): boolean {
   }
   return false;
 }
+
 
 
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
@@ -264,7 +265,16 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     } else {
       logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — needs a ${t.type} $value or an alias reference.`);
     }
+
+    // Do NOT create a collection/variable unless we have at least one *valid* direct value.
+    // This does not affect alias-only tokens (handled in Pass 1b).
+    if (!tokenHasAtLeastOneValidDirectValue(t)) {
+      logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
+      continue;
+    }
+
   }
+
 
   // helper to ensure collection exists (only when we actually create a var)
   function ensureCollection(name: string): VariableCollection {
@@ -518,21 +528,22 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       }
       else if (val.kind === 'color') {
         if (!isValidDtcgColorValueObject(val.value)) {
-          logWarn(`Skipped setting color for “${node.path.join('/')}” in “${ctx}” — value must be a color object with { colorSpace, components[3] }.`);
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — $value must be a color object with { colorSpace, components[3] }.`);
           continue;
         }
 
         // STRICT: components/alpha must be within [0..1]; do not clamp here
         const range = isDtcgColorInUnitRange(val.value);
         if (!range.ok) {
-          logWarn(`Skipped setting color for “${node.path.join('/')}” in “${ctx}” — ${range.reason}; components/alpha must be within [0..1].`);
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — ${range.reason}; components/alpha must be within [0..1].`);
           continue;
         }
 
-        const norm = normalizeDtcgColorValue(val.value); // safe to normalize now
+        const norm = normalizeDtcgColorValue(val.value); // safe: only epsilon clamping now
         maybeWarnColorMismatch(node, ctx, typeof norm.hex === 'string' ? norm.hex : null);
         const rgba = dtcgToFigmaRGBA(norm, profile);
         targetVar.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
+
 
       } else if (val.kind === 'number' || val.kind === 'string' || val.kind === 'boolean') {
         targetVar.setValueForMode(modeId, val.value);
