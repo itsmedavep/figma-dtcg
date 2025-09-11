@@ -276,3 +276,26 @@ export function normalizeDtcgColorValue(input: {
     ...(typeof input.hex === "string" ? { hex: input.hex } : {})
   };
 }
+
+// STRICT range check: components and alpha must be in [0..1] with no clamping.
+export function isDtcgColorInUnitRange(input: {
+  components?: [number, number, number] | number[];
+  alpha?: number;
+}): { ok: boolean; reason?: string } {
+  if (!input || !Array.isArray(input.components) || input.components.length < 3) {
+    return { ok: false, reason: 'components missing' };
+  }
+  for (let i = 0; i < 3; i++) {
+    const n = Number(input.components[i]);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      return { ok: false, reason: `component[${i}] out of range (${input.components[i]})` };
+    }
+  }
+  if (typeof input.alpha === 'number') {
+    const a = Number(input.alpha);
+    if (!Number.isFinite(a) || a < 0 || a > 1) {
+      return { ok: false, reason: `alpha out of range (${input.alpha})` };
+    }
+  }
+  return { ok: true };
+}

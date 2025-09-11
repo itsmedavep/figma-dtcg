@@ -9,7 +9,7 @@ import {
   ctxKey,
   type ColorValue
 } from '../core/ir';
-import { hexToDtcgColor } from '../core/color';
+import { hexToDtcgColor, isDtcgColorInUnitRange } from '../core/color';
 
 // ---------- lightweight logging (no toasts) ----------
 function logInfo(msg: string) {
@@ -161,12 +161,13 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         (comFigma as any).__jsonCollection = (path[0] ?? '');
         (comFigma as any).__jsonKey = path.slice(1).join('/');
 
-        tokens.push({
-          path: path.slice(),                 // ← keep EXACT JSON keys (no normalization)
-          type: groupType ?? 'string',
-          byContext: byCtx,
-          ...(ext ? { extensions: { ...ext, 'com.figma': comFigma } } : {})
-        });
+        // ← keep EXACT JSON keys (no normalization)
+        // tokens.push({
+        //   path: path.slice(),                 
+        //   type: groupType ?? 'string',
+        //   byContext: byCtx,
+        //   ...(ext ? { extensions: { ...ext, 'com.figma': comFigma } } : {})
+        // });
 
 
         tokens.push({
@@ -181,12 +182,20 @@ export function readDtcgToIR(root: unknown): TokenGraph {
       // Colors: ONLY when $type (inherited or local) is 'color'
       if (groupType === 'color') {
         const parsed = readColorValue(rawVal);
+        const { irPath, ctx } = computePathAndCtx(path, obj);
+
         if (!parsed) {
-          const { irPath } = computePathAndCtx(path, obj);
           logWarn(`Skipped invalid color for “${irPath.join('/')}” — expected hex or color object.`);
           return;
         }
-        const { irPath, ctx } = computePathAndCtx(path, obj);
+
+        // STRICT: components/alpha must be within [0..1]; do not clamp during import
+        const range = isDtcgColorInUnitRange(parsed);
+        if (!range.ok) {
+          logWarn(`Skipped invalid color for “${irPath.join('/')}” — ${range.reason}; components/alpha must be within [0..1].`);
+          return;
+        }
+
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'color', value: parsed };
 
@@ -198,6 +207,7 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         });
         return;
       }
+
 
       // Primitives (respect declared type; no color coercion here)
       const t2: PrimitiveType = groupType ?? guessTypeFromValue(rawVal);

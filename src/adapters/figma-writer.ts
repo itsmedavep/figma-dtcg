@@ -8,7 +8,8 @@ import {
   dtcgToFigmaRGBA,
   type DocumentProfile,
   isValidDtcgColorValueObject,
-  normalizeDtcgColorValue
+  normalizeDtcgColorValue,
+  isDtcgColorInUnitRange
 } from '../core/color';
 
 // ---------- logging to UI (no toasts) ----------
@@ -36,6 +37,27 @@ function tokenHasDirectValue(t: TokenNode): boolean {
   }
   return false;
 }
+
+// True if token has at least one *settable* direct value in any context.
+// (Color requires in-range components/alpha; other primitives just need correct kind.)
+function tokenHasAtLeastOneValidDirectValue(t: TokenNode): boolean {
+  const byCtx = t.byContext || {};
+  for (const ctx in byCtx) {
+    const v = byCtx[ctx] as any;
+    if (!v || v.kind === 'alias') continue;
+
+    if (t.type === 'color') {
+      if (v.kind !== 'color') continue;
+      if (!isValidDtcgColorValueObject(v.value)) continue;
+      const range = isDtcgColorInUnitRange(v.value);
+      if (range.ok) return true;
+    } else if (t.type === 'number' || t.type === 'string' || t.type === 'boolean') {
+      if (v.kind === t.type) return true;
+    }
+  }
+  return false;
+}
+
 
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
   if (t === 'color') return 'COLOR';
@@ -274,7 +296,14 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     const collectionName = t.path[0];
     const varName = varNameFromPath(t.path);
 
+    // Do NOT create a collection or variable unless we have at least one *valid* direct value.
+    if (!tokenHasAtLeastOneValidDirectValue(t)) {
+      logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
+      continue;
+    }
+
     const col = ensureCollection(collectionName);
+
 
     // find existing
     let existingVarId: string | null = null;
@@ -489,10 +518,18 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       }
       else if (val.kind === 'color') {
         if (!isValidDtcgColorValueObject(val.value)) {
-          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — $value must be a color object with { colorSpace, components[3] }.`);
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in “${ctx}” — value must be a color object with { colorSpace, components[3] }.`);
           continue;
         }
-        const norm = normalizeDtcgColorValue(val.value);
+
+        // STRICT: components/alpha must be within [0..1]; do not clamp here
+        const range = isDtcgColorInUnitRange(val.value);
+        if (!range.ok) {
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in “${ctx}” — ${range.reason}; components/alpha must be within [0..1].`);
+          continue;
+        }
+
+        const norm = normalizeDtcgColorValue(val.value); // safe to normalize now
         maybeWarnColorMismatch(node, ctx, typeof norm.hex === 'string' ? norm.hex : null);
         const rgba = dtcgToFigmaRGBA(norm, profile);
         targetVar.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
@@ -501,5 +538,15 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         targetVar.setValueForMode(modeId, val.value);
       }
     }
+    // After Pass 2 and after setting values
+    for (const name of Object.keys(colByName)) {
+      const col = colByName[name];
+      if (col && col.variableIds.length === 0) {
+        try { col.remove(); } catch { /* ignore */ }
+        knownCollections.delete(name);
+        delete colByName[name];
+      }
+    }
+
   }
 }
