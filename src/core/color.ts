@@ -215,3 +215,64 @@ export function hexToDtcgColor(hex: string): ColorValue {
   var comps: [number, number, number] = [rgba.r, rgba.g, rgba.b];
   return { colorSpace: 'srgb', components: comps, alpha: rgba.a, hex: toHex6FromSrgb({ r: rgba.r, g: rgba.g, b: rgba.b }) };
 }
+
+
+// ==== DTCG color guards & normalization ===================================
+
+/**
+ * Lightweight structural check for a DTCG color object.
+ * Accepts { components[3], colorSpace?, alpha?, hex? }.
+ * (colorSpace may be absent; we'll default it during normalization.)
+ */
+export function isValidDtcgColorValueObject(v: unknown): v is {
+  colorSpace?: string;
+  components?: unknown;
+  alpha?: unknown;
+  hex?: unknown;
+} {
+  if (!v || typeof v !== "object") return false;
+  const o = v as any;
+  if (!Array.isArray(o.components) || o.components.length < 3) return false;
+  if (typeof o.components[0] !== "number" ||
+    typeof o.components[1] !== "number" ||
+    typeof o.components[2] !== "number") return false;
+  return true;
+}
+
+/**
+ * Normalize a DTCG color object into your internal ColorValue:
+ * - clamps components/alpha to [0,1]
+ * - preserves hex when present (no rounding/quantization)
+ * - defaults missing colorSpace to "srgb"
+ */
+export function normalizeDtcgColorValue(input: {
+  colorSpace?: string;
+  components: [number, number, number] | number[];
+  alpha?: number;
+  hex?: string;
+}): ColorValue {
+  function clamp01(x: number): number {
+    if (!Number.isFinite(x)) return 0;
+    if (x < 0) return 0;
+    if (x > 1) return 1;
+    return x;
+  }
+  const comps = [
+    clamp01(Number(input.components[0])),
+    clamp01(Number(input.components[1])),
+    clamp01(Number(input.components[2]))
+  ] as [number, number, number];
+
+  const alpha =
+    typeof input.alpha === "number" ? clamp01(input.alpha) : undefined;
+
+  // Honor provided colorSpace when it's one of the supported ones; default to srgb
+  const cs = input.colorSpace === "display-p3" ? "display-p3" : "srgb";
+
+  return {
+    colorSpace: cs,
+    components: comps,
+    ...(alpha !== undefined ? { alpha } : {}),
+    ...(typeof input.hex === "string" ? { hex: input.hex } : {})
+  };
+}

@@ -1,124 +1,363 @@
 // src/adapters/figma-writer.ts
 // Apply IR TokenGraph -> Figma variables (create/update, then set per-mode values)
 
-import { dtcgToFigmaRGBA, type DocumentProfile } from '../core/color';
-import { toDot } from '../core/normalize';
-import { type TokenGraph, type TokenNode, type ValueOrAlias, type PrimitiveType, ctxKey } from '../core/ir';
+import { toDot, slugSegment } from '../core/normalize';
+import { type TokenGraph, type TokenNode, type ValueOrAlias, type PrimitiveType } from '../core/ir';
 
+import {
+  dtcgToFigmaRGBA,
+  type DocumentProfile,
+  isValidDtcgColorValueObject,
+  normalizeDtcgColorValue
+} from '../core/color';
+
+// ---------- logging to UI (no toasts) ----------
+function logInfo(msg: string) {
+  try { figma.ui?.postMessage({ type: 'INFO', payload: { message: msg } }); } catch { /* ignore */ }
+}
+function logWarn(msg: string) { logInfo('Warning: ' + msg); }
+function logError(msg: string) { logInfo('Error: ' + msg); }
+
+// ---------- helpers ----------
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
   if (t === 'color') return 'COLOR';
   if (t === 'number') return 'FLOAT';
   if (t === 'string') return 'STRING';
   return 'BOOLEAN';
 }
-
 function forEachKey<T>(obj: { [k: string]: T }): string[] {
-  var out: string[] = [];
-  var k: string;
-  for (k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
+  const out: string[] = [];
+  for (const k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
   return out;
 }
 
+// Token has at least one valid color object among its contexts
+function tokenHasRenderableColor(t: TokenNode): boolean {
+  const byCtx = t.byContext || {};
+  for (const k in byCtx) {
+    const v = byCtx[k] as any;
+    if (v && v.kind === 'color' && isValidDtcgColorValueObject(v.value)) return true;
+  }
+  return false;
+}
+// Token has at least one alias among its contexts
+function tokenHasAlias(t: TokenNode): boolean {
+  const byCtx = t.byContext || {};
+  for (const k in byCtx) {
+    const v = byCtx[k] as any;
+    if (v && v.kind === 'alias') return true;
+  }
+  return false;
+}
+
+// Compare value-hex vs extensions-hex and warn (but prefer $value)
+function maybeWarnColorMismatch(t: TokenNode, ctx: string, importedHexOrNull: string | null): void {
+  try {
+    const extAll = t.extensions && typeof t.extensions === 'object' ? (t.extensions as any)['com.figma'] : undefined;
+    if (!extAll || typeof extAll !== 'object') return;
+
+    let hintHex: string | undefined;
+    if (typeof extAll.hex === 'string') hintHex = extAll.hex;
+    const pc = extAll.perContext && typeof extAll.perContext === 'object' ? extAll.perContext : undefined;
+    if (!hintHex && pc && pc[ctx] && typeof pc[ctx].hex === 'string') hintHex = pc[ctx].hex;
+
+    if (!hintHex || !importedHexOrNull) return;
+    const a = hintHex.trim().toLowerCase();
+    const b = importedHexOrNull.trim().toLowerCase();
+    if (a !== b) logWarn(`color mismatch for “${t.path.join('/')}” in ${ctx}. Using $value (${b}) over $extensions (${a}).`);
+  } catch { /* never throw from logging */ }
+}
+
+// Normalize alias path segments (array or string) and adjust first segment:
+// - If first segment matches a known collection, keep it.
+// - Else if it matches a slug of a known collection, replace with the display name.
+// - Else treat as relative to the current token’s collection and prefix it.
+function normalizeAliasSegments(
+  rawPath: string[] | string,
+  currentCollection: string,
+  displayBySlug: { [slug: string]: string },
+  knownCollections: Set<string>
+): string[] {
+  const segs = Array.isArray(rawPath)
+    ? rawPath.slice()
+    : String(rawPath).split('.').map(s => s.trim()).filter(Boolean);
+
+  if (segs.length === 0) return [currentCollection];
+
+  const first = segs[0];
+  if (knownCollections.has(first)) return segs;
+
+  const mapped = displayBySlug[first];
+  if (mapped && knownCollections.has(mapped)) {
+    segs[0] = mapped;
+    return segs;
+  }
+
+  // relative → prefix current collection
+  return [currentCollection, ...segs];
+}
+
 export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
-  var profile = figma.root.documentColorProfile as DocumentProfile;
-  var variablesApi = figma.variables;
+  const profile = figma.root.documentColorProfile as DocumentProfile;
+  const variablesApi = figma.variables;
 
-  // Load existing collections
-  var existing = await variablesApi.getLocalVariableCollectionsAsync();
-  var colByName: { [name: string]: VariableCollection } = {};
-  var ci = 0;
-  for (ci = 0; ci < existing.length; ci++) colByName[existing[ci].name] = existing[ci];
+  // ---- snapshot existing collections + variables
+  const existingCollections = await variablesApi.getLocalVariableCollectionsAsync();
+  const colByName: { [name: string]: VariableCollection } = {};
+  for (const c of existingCollections) colByName[c.name] = c;
 
-  // Pass 1: ensure collections and variables exist; build path->id map
-  var idByPath: { [dot: string]: string } = {};
+  // Build existing variables map keyed by BOTH display and slug collection names
+  const existing = await variablesApi.getLocalVariableCollectionsAsync();
+  const existingVarIdByPathDot: { [dot: string]: string } = {};
+  for (const c of existing) {
+    const cDisplay = c.name;
+    const cSlug = slugSegment(cDisplay);
+    for (const vid of c.variableIds) {
+      const v = await variablesApi.getVariableByIdAsync(vid);
+      if (!v) continue;
+      const varSegs = v.name.split('/');
+      existingVarIdByPathDot[toDot([cDisplay, ...varSegs])] = v.id;
+      existingVarIdByPathDot[toDot([cSlug, ...varSegs])] = v.id;
+    }
+  }
 
-  var i = 0;
-  for (i = 0; i < graph.tokens.length; i++) {
-    var t = graph.tokens[i];
+  // ---- build slug→display mapping for collections (existing + incoming)
+  const knownCollections = new Set<string>(Object.keys(colByName));
+  const displayBySlug: { [slug: string]: string } = {};
+  for (const name of knownCollections) displayBySlug[slugSegment(name)] = name;
+  for (const t of graph.tokens) {
+    const name = t.path[0];
+    knownCollections.add(name);
+    displayBySlug[slugSegment(name)] = name;
+  }
 
+  // ---- buckets for Pass 1a (direct values) and 1b (alias-only)
+  const directTokens: TokenNode[] = [];
+  const aliasOnlyTokens: TokenNode[] = [];
+
+  for (const t of graph.tokens) {
+    if (t.type === 'color') {
+      const hasColor = tokenHasRenderableColor(t);
+      const hasAlias = tokenHasAlias(t);
+      if (hasColor) directTokens.push(t);
+      else if (hasAlias) aliasOnlyTokens.push(t);
+      else {
+        logWarn(`Skipped color token “${t.path.join('/')}” — needs a color object in $value or an alias reference.`);
+      }
+    } else {
+      // primitives are always direct
+      directTokens.push(t);
+    }
+  }
+
+  // helper to ensure collection exists (only when we actually create a var)
+  function ensureCollection(name: string): VariableCollection {
+    let col = colByName[name];
+    if (!col) {
+      col = variablesApi.createVariableCollection(name);
+      colByName[name] = col;
+      knownCollections.add(name);
+      displayBySlug[slugSegment(name)] = name;
+    }
+    return col;
+  }
+
+  // ---- Pass 1a: create direct-value variables, collect ids
+  const idByPath: { [dot: string]: string } = {};
+
+  function varNameFromPath(path: string[]): string {
+    // everything after the collection joined with '/'
+    return path.slice(1).join('/') || (path[0] || 'token');
+  }
+
+  for (const t of directTokens) {
     if (t.path.length < 1) continue;
-    var collectionName = t.path[0];
+    const collectionName = t.path[0];
+    const varName = varNameFromPath(t.path);
 
-    var collection = colByName[collectionName];
-    if (!collection) {
-      collection = variablesApi.createVariableCollection(collectionName);
-      colByName[collectionName] = collection;
-    }
+    const col = ensureCollection(collectionName);
 
-    // variable name is everything after collection joined with '/'
-    var j = 1, varName = '';
-    for (j = 1; j < t.path.length; j++) {
-      if (j > 1) varName += '/';
-      varName += t.path[j];
-    }
-
-    // try to find existing variable by name
-    var existingVarId: string | null = null;
-    var k = 0;
-    for (k = 0; k < collection.variableIds.length; k++) {
-      var cand = await variablesApi.getVariableByIdAsync(collection.variableIds[k]);
+    // find existing
+    let existingVarId: string | null = null;
+    for (const vid of col.variableIds) {
+      const cand = await variablesApi.getVariableByIdAsync(vid);
       if (cand && cand.name === varName) { existingVarId = cand.id; break; }
     }
 
-    var createdOrFound: Variable;
+    let v: Variable;
     if (existingVarId) {
-      var got = await variablesApi.getVariableByIdAsync(existingVarId);
+      const got = await variablesApi.getVariableByIdAsync(existingVarId);
       if (!got) continue;
-      createdOrFound = got;
+      v = got;
     } else {
-      var variableType = resolvedTypeFor(t.type);
-      createdOrFound = variablesApi.createVariable(varName, collection, variableType);
+      v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
     }
 
-    idByPath[toDot(t.path)] = createdOrFound.id;
+    // Index by display AND slug collection names so either alias form resolves
+    idByPath[toDot(t.path)] = v.id;
+    idByPath[toDot([slugSegment(t.path[0]), ...t.path.slice(1)])] = v.id;
   }
 
-  // Build mode id lookup by (collectionName, modeName)
-  var modeIdByKey: { [key: string]: string } = {};
-  var cols = await variablesApi.getLocalVariableCollectionsAsync();
-  var cii = 0;
-  for (cii = 0; cii < cols.length; cii++) {
-    var c = cols[cii];
-    var mi = 0;
-    for (mi = 0; mi < c.modes.length; mi++) {
-      var k2 = c.name + '/' + c.modes[mi].name;
-      modeIdByKey[k2] = c.modes[mi].modeId;
+  // Map slug -> display for collections we just created/ensured
+  const slugToDisplay: { [slug: string]: string } = {};
+  for (const name in colByName) {
+    if (!Object.prototype.hasOwnProperty.call(colByName, name)) continue;
+    slugToDisplay[slugSegment(name)] = name;
+  }
+
+  // ---- Pass 1b: create alias-only variables in ROUNDS so intra-collection chains work
+  const pending: TokenNode[] = aliasOnlyTokens.slice();
+  const createdInP1b: string[] = []; // dot-paths we created in this pass
+  while (pending.length) {
+    let progress = false;
+    const nextRound: TokenNode[] = [];
+
+    for (const t of pending) {
+      const collectionName = t.path[0];
+      const varName = varNameFromPath(t.path);
+
+      // Is ANY alias context resolvable now? (newly created, direct, or existing doc)
+      let resolvable = false;
+      const ctxKeys = forEachKey(t.byContext);
+      for (const ctx of ctxKeys) {
+        const val = (t.byContext as any)[ctx];
+        if (!val || val.kind !== 'alias') continue;
+
+        const segs = normalizeAliasSegments(val.path, collectionName, displayBySlug, knownCollections);
+        const dot = toDot(segs);
+
+        if (idByPath[dot] || existingVarIdByPathDot[dot]) {
+          resolvable = true;
+          break;
+        }
+      }
+
+      if (!resolvable) {
+        // hold for next round
+        nextRound.push(t);
+        continue;
+      }
+
+      // Create the variable now (even if its value will be set in Pass 2)
+      const col = ensureCollection(collectionName);
+
+      // find existing
+      let existingVarId: string | null = null;
+      for (const vid of col.variableIds) {
+        const cand = await variablesApi.getVariableByIdAsync(vid);
+        if (cand && cand.name === varName) { existingVarId = cand.id; break; }
+      }
+
+      let v: Variable;
+      if (existingVarId) {
+        const got = await variablesApi.getVariableByIdAsync(existingVarId);
+        if (!got) continue;
+        v = got;
+      } else {
+        v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
+      }
+
+      // Index by display AND slug collection names so either alias form resolves
+      idByPath[toDot(t.path)] = v.id;
+      idByPath[toDot([slugSegment(t.path[0]), ...t.path.slice(1)])] = v.id;
+
+      createdInP1b.push(toDot(t.path));
+      progress = true;
+    }
+
+    if (!progress) {
+      // Nothing more could be created; warn & drop what’s left
+      for (const t of nextRound) {
+        logWarn(`Alias target not found for “${t.path.join('/')}”. Variable not created.`);
+      }
+      break;
+    }
+
+    // Continue with whatever is still pending
+    pending.length = 0;
+    Array.prototype.push.apply(pending, nextRound);
+  }
+
+  // ---- Build mode id lookup (collectionName/modeName → modeId)
+  const modeIdByKey: { [key: string]: string } = {};
+  const colsPost = await variablesApi.getLocalVariableCollectionsAsync();
+  for (const c of colsPost) {
+    for (const m of c.modes) {
+      modeIdByKey[c.name + '/' + m.name] = m.modeId;
     }
   }
 
-  // Pass 2: set values (including aliases)
-  for (i = 0; i < graph.tokens.length; i++) {
-    var node = graph.tokens[i];
+  // ---- Pass 2: set values (including aliases)
+  for (const node of graph.tokens) {
+    const varId = idByPath[toDot(node.path)];
+    if (!varId) continue; // not created (e.g., unresolved alias)
 
-    var dot = toDot(node.path);
-    var varId = idByPath[dot];
-    if (!varId) continue;
-
-    var targetVar = await variablesApi.getVariableByIdAsync(varId);
+    const targetVar = await variablesApi.getVariableByIdAsync(varId);
     if (!targetVar) continue;
 
-    var ctxKeys = forEachKey(node.byContext);
-    var z = 0;
-    for (z = 0; z < ctxKeys.length; z++) {
-      var ctx = ctxKeys[z];
-      var val = node.byContext[ctx];
+    const ctxKeys = forEachKey(node.byContext);
+    for (const ctx of ctxKeys) {
+      const val = node.byContext[ctx] as any;
 
-      var modeId = modeIdByKey[ctx];
+      // ensure mode exists (default "Mode 1" when missing)
+      let modeId = modeIdByKey[ctx];
+      if (!modeId) {
+        const parts = ctx.split('/');
+        const cName = parts[0];
+        const mName = parts.slice(1).join('/') || 'Mode 1';
+        const col = colByName[cName];
+        if (col) {
+          const found = col.modes.find(m => m.name === mName);
+          modeId = found ? found.modeId : col.addMode(mName);
+          modeIdByKey[ctx] = modeId;
+        }
+      }
       if (!modeId) continue;
 
       if (val.kind === 'alias') {
-        var targetId = idByPath[toDot(val.path)];
-        if (!targetId) continue;
-        var alias = await variablesApi.createVariableAliasByIdAsync(targetId);
-        targetVar.setValueForMode(modeId, alias);
-      } else if (val.kind === 'color') {
-        var rgba = dtcgToFigmaRGBA(val.value, profile);
+        const currentCollection = node.path[0];
+
+        // Build candidates (as-written, relative, slug→display)
+        const rawSegs = Array.isArray(val.path)
+          ? (val.path as string[]).slice()
+          : String(val.path).split('.').map(s => s.trim()).filter(Boolean);
+
+        const candidates: string[][] = [];
+        if (rawSegs.length > 0) candidates.push(rawSegs);
+        candidates.push([currentCollection, ...rawSegs]);
+        if (rawSegs.length > 0 && displayBySlug[rawSegs[0]]) {
+          candidates.push([displayBySlug[rawSegs[0]], ...rawSegs.slice(1)]);
+        }
+
+        let targetId: string | undefined;
+        for (const cand of candidates) {
+          const dotKey = toDot(cand);
+          targetId = idByPath[dotKey] || existingVarIdByPathDot[dotKey];
+          if (targetId) break;
+        }
+
+        if (!targetId) {
+          // If a token was created only because we thought it was resolvable but this ctx isn’t,
+          // just skip setting this ctx; other contexts may still be valid.
+          logWarn(`Alias target not found while setting “${node.path.join('/')}” in ${ctx}. Skipped this context.`);
+          continue;
+        }
+
+        const aliasObj = await variablesApi.createVariableAliasByIdAsync(targetId);
+        targetVar.setValueForMode(modeId, aliasObj);
+        continue;
+      }
+      else if (val.kind === 'color') {
+        if (!isValidDtcgColorValueObject(val.value)) {
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — $value must be a color object with { colorSpace, components[3] }.`);
+          continue;
+        }
+        const norm = normalizeDtcgColorValue(val.value);
+        maybeWarnColorMismatch(node, ctx, typeof norm.hex === 'string' ? norm.hex : null);
+        const rgba = dtcgToFigmaRGBA(norm, profile);
         targetVar.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
-      } else if (val.kind === 'number') {
-        targetVar.setValueForMode(modeId, val.value);
-      } else if (val.kind === 'string') {
-        targetVar.setValueForMode(modeId, val.value);
-      } else if (val.kind === 'boolean') {
+
+      } else if (val.kind === 'number' || val.kind === 'string' || val.kind === 'boolean') {
         targetVar.setValueForMode(modeId, val.value);
       }
     }

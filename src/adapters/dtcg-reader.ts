@@ -2,8 +2,76 @@
 // DTCG JSON -> IR TokenGraph (handles aliases, simple $type inheritance)
 
 import { type TokenGraph, type TokenNode, type PrimitiveType, type ValueOrAlias, ctxKey, type ColorValue } from '../core/ir';
-import { parseAliasString, slugSegment } from '../core/normalize';
+import { parseAliasString, slugSegment, canonicalPath } from '../core/normalize';
 import { hexToDtcgColor } from '../core/color';
+
+// Extract minimal Figma metadata from $extensions.com.figma (if present)
+function readComFigma(o: unknown): { collectionName?: string; modeName?: string; variableName?: string } | null {
+  if (!o || typeof o !== 'object') return null;
+  const ext = (o as any)['$extensions'];
+  if (!ext || typeof ext !== 'object') return null;
+  const org = (ext as any)['com.figma'];
+  if (!org || typeof org !== 'object') return null;
+
+  const out: any = {};
+  if (typeof org.collectionName === 'string') out.collectionName = org.collectionName;
+  if (typeof org.modeName === 'string') out.modeName = org.modeName;
+  if (typeof org.variableName === 'string') out.variableName = org.variableName;
+  return out;
+}
+
+/**
+ * Compute IR path and ctx for a token based on:
+ *  - $extensions.com.figma.collectionName / modeName / variableName (if present)
+ *  - otherwise W3C group path (first segment = collection, rest join to variable)
+ *  - flat tokens (single segment) go under "tokens" collection by default
+ *  - default Figma mode when missing = "Mode 1"
+ */
+function computePathAndCtx(currentPath: string[], rawNode: unknown): { irPath: string[]; ctx: string } {
+  const meta = readComFigma(rawNode) || {};
+  const leaf = currentPath[currentPath.length - 1] || 'token';
+
+  let collection: string;
+  let varName: string;
+
+  if (meta.collectionName) {
+    collection = meta.collectionName;
+    if (meta.variableName && meta.variableName.trim().length > 0) {
+      varName = meta.variableName;
+    } else if (currentPath.length > 1) {
+      varName = currentPath.slice(1).join('/');
+    } else {
+      varName = leaf;
+    }
+  } else {
+    if (currentPath.length > 1) {
+      collection = currentPath[0];
+      varName = currentPath.slice(1).join('/');
+    } else {
+      // flat token → put into a safe default collection
+      collection = 'tokens';
+      varName = leaf;
+    }
+  }
+
+  let irPath: string[];
+  if (meta.collectionName) {
+    // Preserve exact collection + variable names from metadata (no slugging)
+    const segs = (meta.variableName && meta.variableName.trim().length > 0
+      ? meta.variableName
+      : varName
+    ).split('/').map(s => s.trim()).filter(s => s.length > 0);
+    irPath = [collection, ...segs];
+  } else {
+    // No metadata → fall back to canonical/slugged path from group keys
+    irPath = canonicalPath(collection, varName);
+  }
+
+  const mode = meta.modeName || 'Mode 1';
+  const ctx = ctxKey(collection, mode);
+  return { irPath, ctx };
+}
+
 
 function guessTypeFromValue(v: unknown): PrimitiveType {
   if (typeof v === 'number') return 'number';
@@ -79,41 +147,44 @@ export function readDtcgToIR(root: unknown): TokenGraph {
 
       // alias?
       if (typeof rawVal === 'string') {
-        var ref = parseAliasString(rawVal);
+        const ref = parseAliasString(rawVal);
         if (ref && ref.length > 0) {
+          const { irPath, ctx } = computePathAndCtx(path, obj);
+          const byCtx: { [k: string]: ValueOrAlias } = {};
+          byCtx[ctx] = { kind: 'alias', path: ref };
+
           tokens.push({
-            path: path.slice(0),
+            path: irPath,
             type: groupType ? groupType : 'string',
-            byContext: (function () {
-              var o: { [k: string]: ValueOrAlias } = {};
-              o[defaultCtx] = { kind: 'alias', path: ref };
-              return o;
-              extensions: readExtensions(obj)
-            })()
+            byContext: byCtx,
+            // keep original $extensions if present (round-trip friendly)
+            ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
           });
           return;
         }
       }
 
+
       // color object or hex
       if (isColorObject(rawVal) || typeof rawVal === 'string') {
-        var value = readColorValue(rawVal);
+        const value = readColorValue(rawVal);
+        const { irPath, ctx } = computePathAndCtx(path, obj);
+        const byCtx: { [k: string]: ValueOrAlias } = {};
+        byCtx[ctx] = { kind: 'color', value };
+
         tokens.push({
-          path: path.slice(0),
+          path: irPath,
           type: 'color',
-          byContext: (function () {
-            var o: { [k: string]: ValueOrAlias } = {};
-            o[defaultCtx] = { kind: 'color', value: value };
-            return o;
-            extensions: readExtensions(obj)
-          })()
+          byContext: byCtx,
+          ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
         return;
       }
 
+
       // primitives
-      var t2 = groupType ? groupType : guessTypeFromValue(rawVal);
-      var valObj: ValueOrAlias | null = null;
+      const t2 = groupType ? groupType : guessTypeFromValue(rawVal);
+      let valObj: ValueOrAlias | null = null;
       if (t2 === 'number' && typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
       else if (t2 === 'boolean' && typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
       else if (t2 === 'string' && typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
@@ -122,18 +193,19 @@ export function readDtcgToIR(root: unknown): TokenGraph {
       else if (typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
 
       if (valObj) {
+        const { irPath, ctx } = computePathAndCtx(path, obj);
+        const byCtx: { [k: string]: ValueOrAlias } = {};
+        byCtx[ctx] = valObj;
+
         tokens.push({
-          path: path.slice(0),
+          path: irPath,
           type: t2,
-          byContext: (function () {
-            var o: { [k: string]: ValueOrAlias } = {};
-            o[defaultCtx] = valObj as ValueOrAlias;
-            return o;
-            extensions: readExtensions(obj)
-          })()
+          byContext: byCtx,
+          ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
       }
       return;
+
     }
 
     // groups
