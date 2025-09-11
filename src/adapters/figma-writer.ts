@@ -50,15 +50,6 @@ function forEachKey<T>(obj: { [k: string]: T } | undefined): string[] {
   return out;
 }
 
-// Token has at least one valid color object among its contexts
-function tokenHasRenderableColor(t: TokenNode): boolean {
-  const byCtx = t.byContext || {};
-  for (const k in byCtx) {
-    const v = byCtx[k] as any;
-    if (v && v.kind === 'color' && isValidDtcgColorValueObject(v.value)) return true;
-  }
-  return false;
-}
 // Token has at least one alias among its contexts
 function tokenHasAlias(t: TokenNode): boolean {
   const byCtx = t.byContext || {};
@@ -116,9 +107,10 @@ function normalizeAliasSegments(
   return [currentCollection, ...segs];
 }
 
-// ---- NEW: strict name check helper (extensions vs JSON path)
+// ---- Strict name check helper (extensions vs JSON path)
+// If $extensions.com.figma has names, they must EXACTLY match JSON group/key.
+// If top-level names are missing, fall back to a matching perContext (or first perContext) entry.
 function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
-  // Only care about com.figma per your constraint
   const ext = t.extensions && typeof t.extensions === 'object'
     ? (t.extensions as any)['com.figma']
     : undefined;
@@ -126,48 +118,37 @@ function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
   if (!ext || typeof ext !== 'object') return { ok: true };
 
   const pathCollection = t.path[0];
-  const pathVariable = t.path.slice(1).join('/'); // exact JSON key
+  const pathVariable = t.path.slice(1).join('/');
 
-  // Prefer top-level names when present
   let expectedCollection: string | undefined =
     typeof (ext as any).collectionName === 'string' ? (ext as any).collectionName : undefined;
   let expectedVariable: string | undefined =
     typeof (ext as any).variableName === 'string' ? (ext as any).variableName : undefined;
 
-  // If not present at top-level, fall back to ANY perContext entry (even if IR has no contexts)
+  // optional fallback to perContext
   if (!expectedCollection || !expectedVariable) {
     const per = (ext as any).perContext;
     if (per && typeof per === 'object') {
-      // Try to use a context that actually exists on this token first…
       const ctxKeys = forEachKey(t.byContext);
       let ctxToUse: string | undefined;
-
       for (const k of ctxKeys) {
-        if (per[k] && typeof per[k] === 'object') { ctxToUse = k; break; }
+        if ((per as any)[k] && typeof (per as any)[k] === 'object') { ctxToUse = k; break; }
       }
-      // …otherwise just take the first perContext entry available
       if (!ctxToUse) {
-        for (const k in per) {
-          if (Object.prototype.hasOwnProperty.call(per, k) && per[k] && typeof per[k] === 'object') {
-            ctxToUse = k;
-            break;
+        for (const k in per as Record<string, unknown>) {
+          if (Object.prototype.hasOwnProperty.call(per, k) && (per as any)[k] && typeof (per as any)[k] === 'object') {
+            ctxToUse = k as string; break;
           }
         }
       }
-
       if (ctxToUse) {
-        const ctxData = per[ctxToUse] as any;
-        if (!expectedCollection && typeof ctxData.collectionName === 'string') {
-          expectedCollection = ctxData.collectionName;
-        }
-        if (!expectedVariable && typeof ctxData.variableName === 'string') {
-          expectedVariable = ctxData.variableName;
-        }
+        const ctxData = (per as any)[ctxToUse] as any;
+        if (!expectedCollection && typeof ctxData.collectionName === 'string') expectedCollection = ctxData.collectionName;
+        if (!expectedVariable && typeof ctxData.variableName === 'string') expectedVariable = ctxData.variableName;
       }
     }
   }
 
-  // If extensions carry names, they must match EXACTLY; if absent, we don't enforce.
   if (typeof expectedCollection === 'string' && expectedCollection !== pathCollection) {
     return {
       ok: false,
@@ -176,7 +157,6 @@ function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
         `doesn’t match JSON group (“${pathCollection}”).`
     };
   }
-
   if (typeof expectedVariable === 'string' && expectedVariable !== pathVariable) {
     return {
       ok: false,
@@ -185,10 +165,8 @@ function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
         `doesn’t match JSON key (“${pathVariable}”).`
     };
   }
-
   return { ok: true };
 }
-
 
 export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const profile = figma.root.documentColorProfile as DocumentProfile;
@@ -224,11 +202,22 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     displayBySlug[slugSegment(name)] = name;
   }
 
+  // *********** HARD FILTER: drop any token whose names don’t match $extensions ***********
+  const validTokens: TokenNode[] = [];
+  for (const t of graph.tokens) {
+    const chk = namesMatchExtensions(t);
+    if (!chk.ok) {
+      logWarn(chk.reason!);
+      continue; // completely drop from create + set passes
+    }
+    validTokens.push(t);
+  }
+
   // ---- buckets for Pass 1a (direct values) and 1b (alias-only)
   const directTokens: TokenNode[] = [];
   const aliasOnlyTokens: TokenNode[] = [];
 
-  for (const t of graph.tokens) {
+  for (const t of validTokens) {
     const hasDirect = tokenHasDirectValue(t);
     const hasAlias = tokenHasAlias(t);
 
@@ -263,10 +252,6 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
   for (const t of directTokens) {
     if (t.path.length < 1) continue;
-
-    // NEW: enforce strict name match vs $extensions (when present)
-    const nameChk = namesMatchExtensions(t);
-    if (!nameChk.ok) { logWarn(nameChk.reason!); continue; }
 
     const collectionName = t.path[0];
     const varName = varNameFromPath(t.path);
@@ -303,16 +288,11 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
   // ---- Pass 1b: create alias-only variables in ROUNDS so intra-collection chains work
   const pending: TokenNode[] = aliasOnlyTokens.slice();
-  const createdInP1b: string[] = []; // dot-paths we created in this pass
   while (pending.length) {
     let progress = false;
     const nextRound: TokenNode[] = [];
 
     for (const t of pending) {
-      // NEW: enforce strict name match vs $extensions (when present)
-      const nameChk = namesMatchExtensions(t);
-      if (!nameChk.ok) { logWarn(nameChk.reason!); continue; }
-
       const collectionName = t.path[0];
       const varName = varNameFromPath(t.path);
 
@@ -368,7 +348,6 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       idByPath[t.path.join('.')] = v.id;
       idByPath[[slugSegment(t.path[0]), ...t.path.slice(1)].join('.')] = v.id;
 
-      createdInP1b.push(t.path.join('.'));
       progress = true;
     }
 
@@ -395,9 +374,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   }
 
   // ---- Pass 2: set values (including aliases)
-  for (const node of graph.tokens) {
+  for (const node of validTokens) {
     const varId = idByPath[node.path.join('.')];
-    if (!varId) continue; // not created (e.g., unresolved alias or name mismatch)
+    if (!varId) continue; // not created (e.g., unresolved alias)
 
     const targetVar = await variablesApi.getVariableByIdAsync(varId);
     if (!targetVar) continue;
