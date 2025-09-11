@@ -1,8 +1,8 @@
 // src/adapters/figma-writer.ts
 // Apply IR TokenGraph -> Figma variables (create/update, then set per-mode values)
 
-import { toDot, slugSegment } from '../core/normalize';
-import { type TokenGraph, type TokenNode, type ValueOrAlias, type PrimitiveType } from '../core/ir';
+import { slugSegment } from '../core/normalize';
+import { type TokenGraph, type TokenNode, type PrimitiveType } from '../core/ir';
 
 import {
   dtcgToFigmaRGBA,
@@ -107,42 +107,93 @@ function normalizeAliasSegments(
   return [currentCollection, ...segs];
 }
 
-// ---- Strict name check helper (extensions vs JSON path)
-// If $extensions.com.figma has names, they must EXACTLY match JSON group/key.
-// If top-level names are missing, fall back to a matching perContext (or first perContext) entry.
+// ---- strict name check helper (extensions vs JSON path)
 function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
+  // Only care about com.figma
   const ext = t.extensions && typeof t.extensions === 'object'
     ? (t.extensions as any)['com.figma']
     : undefined;
 
   if (!ext || typeof ext !== 'object') return { ok: true };
 
-  // Prefer the raw JSON identifiers captured by the reader; fallback to current path if absent
-  const jsonCollection =
-    typeof (ext as any).__jsonCollection === 'string' ? (ext as any).__jsonCollection : t.path[0];
-  const jsonKey =
-    typeof (ext as any).__jsonKey === 'string' ? (ext as any).__jsonKey : t.path.slice(1).join('/');
+  const pathCollection = t.path[0];
+  const pathVariable = t.path.slice(1).join('/'); // exact JSON key
 
-  const extCollection =
+  let expectedCollection: string | undefined =
     typeof (ext as any).collectionName === 'string' ? (ext as any).collectionName : undefined;
-  const extVariable =
+  let expectedVariable: string | undefined =
     typeof (ext as any).variableName === 'string' ? (ext as any).variableName : undefined;
 
-  if (extCollection && extCollection !== jsonCollection) {
+  // Per your note: you only use com.figma; still, if top-level absent but perContext exists, be lenient
+  if (!expectedCollection || !expectedVariable) {
+    const per = (ext as any).perContext;
+    if (per && typeof per === 'object') {
+      const ctxKeys = forEachKey(t.byContext);
+      let ctxToUse: string | undefined;
+
+      for (const k of ctxKeys) {
+        if (per[k] && typeof per[k] === 'object') { ctxToUse = k; break; }
+      }
+      if (!ctxToUse) {
+        for (const k in per) {
+          if (Object.prototype.hasOwnProperty.call(per, k) && per[k] && typeof per[k] === 'object') {
+            ctxToUse = k; break;
+          }
+        }
+      }
+
+      if (ctxToUse) {
+        const ctxData = per[ctxToUse] as any;
+        if (!expectedCollection && typeof ctxData.collectionName === 'string') expectedCollection = ctxData.collectionName;
+        if (!expectedVariable && typeof ctxData.variableName === 'string') expectedVariable = ctxData.variableName;
+      }
+    }
+  }
+
+  if (typeof expectedCollection === 'string' && expectedCollection !== pathCollection) {
     return {
       ok: false,
-      reason: `Skipping “${[jsonCollection, jsonKey].join('/')}” — $extensions.com.figma.collectionName (“${extCollection}”) doesn’t match JSON group (“${jsonCollection}”).`
+      reason:
+        `Skipping “${t.path.join('/')}” — $extensions.com.figma.collectionName (“${expectedCollection}”) ` +
+        `doesn’t match JSON group (“${pathCollection}”).`
     };
   }
-  if (extVariable && extVariable !== jsonKey) {
+
+  if (typeof expectedVariable === 'string' && expectedVariable !== pathVariable) {
     return {
       ok: false,
-      reason: `Skipping “${[jsonCollection, jsonKey].join('/')}” — $extensions.com.figma.variableName (“${extVariable}”) doesn’t match JSON key (“${jsonKey}”).`
+      reason:
+        `Skipping “${t.path.join('/')}” — $extensions.com.figma.variableName (“${expectedVariable}”) ` +
+        `doesn’t match JSON key (“${pathVariable}”).`
     };
   }
+
   return { ok: true };
 }
 
+// --- Key indexing helpers: index display + slug for BOTH collection and variable segments
+function dot(segs: string[]): string { return segs.join('.'); }
+
+function indexVarKeys(
+  map: { [k: string]: string },
+  collectionDisplay: string,
+  varSegsRaw: string[],
+  varId: string
+): void {
+  const colDisp = collectionDisplay;
+  const colSlug = slugSegment(collectionDisplay);
+  const varRaw = varSegsRaw;
+  const varSlug = varSegsRaw.map(s => slugSegment(s));
+
+  // 1) Display collection + Raw variable segs
+  map[dot([colDisp, ...varRaw])] = varId;
+  // 2) Display collection + Slugged variable segs
+  map[dot([colDisp, ...varSlug])] = varId;
+  // 3) Slugged collection + Raw variable segs
+  map[dot([colSlug, ...varRaw])] = varId;
+  // 4) Slugged collection + Slugged variable segs
+  map[dot([colSlug, ...varSlug])] = varId;
+}
 
 export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const profile = figma.root.documentColorProfile as DocumentProfile;
@@ -153,18 +204,16 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const colByName: { [name: string]: VariableCollection } = {};
   for (const c of existingCollections) colByName[c.name] = c;
 
-  // Build existing variables map keyed by BOTH display and slug collection names
+  // Build existing variables map keyed by display/slug *for collection and variable segments*
   const existing = await variablesApi.getLocalVariableCollectionsAsync();
   const existingVarIdByPathDot: { [dot: string]: string } = {};
   for (const c of existing) {
     const cDisplay = c.name;
-    const cSlug = slugSegment(cDisplay);
     for (const vid of c.variableIds) {
       const v = await variablesApi.getVariableByIdAsync(vid);
       if (!v) continue;
-      const varSegs = v.name.split('/');
-      existingVarIdByPathDot[[cDisplay, ...varSegs].join('.')] = v.id;
-      existingVarIdByPathDot[[cSlug, ...varSegs].join('.')] = v.id;
+      const varSegs = v.name.split('/'); // keep exact segs as Figma stores them
+      indexVarKeys(existingVarIdByPathDot, cDisplay, varSegs, v.id);
     }
   }
 
@@ -178,22 +227,11 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     displayBySlug[slugSegment(name)] = name;
   }
 
-  // *********** HARD FILTER: drop any token whose names don’t match $extensions ***********
-  const validTokens: TokenNode[] = [];
-  for (const t of graph.tokens) {
-    const chk = namesMatchExtensions(t);
-    if (!chk.ok) {
-      logWarn(chk.reason!);
-      continue; // completely drop from create + set passes
-    }
-    validTokens.push(t);
-  }
-
   // ---- buckets for Pass 1a (direct values) and 1b (alias-only)
   const directTokens: TokenNode[] = [];
   const aliasOnlyTokens: TokenNode[] = [];
 
-  for (const t of validTokens) {
+  for (const t of graph.tokens) {
     const hasDirect = tokenHasDirectValue(t);
     const hasAlias = tokenHasAlias(t);
 
@@ -229,6 +267,10 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   for (const t of directTokens) {
     if (t.path.length < 1) continue;
 
+    // enforce strict name match vs $extensions (when present)
+    const nameChk = namesMatchExtensions(t);
+    if (!nameChk.ok) { logWarn(nameChk.reason!); continue; }
+
     const collectionName = t.path[0];
     const varName = varNameFromPath(t.path);
 
@@ -250,16 +292,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
     }
 
-    // Index by display AND slug collection names so either alias form resolves
-    idByPath[[...t.path].join('.')] = v.id;
-    idByPath[[slugSegment(t.path[0]), ...t.path.slice(1)].join('.')] = v.id;
-  }
-
-  // Map slug -> display for collections we just created/ensured
-  const slugToDisplay: { [slug: string]: string } = {};
-  for (const name in colByName) {
-    if (!Object.prototype.hasOwnProperty.call(colByName, name)) continue;
-    slugToDisplay[slugSegment(name)] = name;
+    // Index display & slug for BOTH collection and variable segments
+    const varSegs = varName.split('/');
+    indexVarKeys(idByPath, collectionName, varSegs, v.id);
   }
 
   // ---- Pass 1b: create alias-only variables in ROUNDS so intra-collection chains work
@@ -269,12 +304,26 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     const nextRound: TokenNode[] = [];
 
     for (const t of pending) {
+      // enforce strict name match vs $extensions (when present)
+      const nameChk = namesMatchExtensions(t);
+      if (!nameChk.ok) { logWarn(nameChk.reason!); continue; }
+
       const collectionName = t.path[0];
       const varName = varNameFromPath(t.path);
 
       // Self keys (display + slug) for skipping self-alias resolvability
-      const selfDotA = t.path.join('.');
-      const selfDotB = [slugSegment(t.path[0]), ...t.path.slice(1)].join('.');
+      const selfVarSegs = varName.split('/');
+      const selfKeys = new Set<string>();
+      (function addSelfKeys() {
+        const colDisp = collectionName;
+        const colSlug = slugSegment(collectionName);
+        const varRaw = selfVarSegs;
+        const varSlug = selfVarSegs.map(s => slugSegment(s));
+        selfKeys.add(dot([colDisp, ...varRaw]));
+        selfKeys.add(dot([colDisp, ...varSlug]));
+        selfKeys.add(dot([colSlug, ...varRaw]));
+        selfKeys.add(dot([colSlug, ...varSlug]));
+      })();
 
       // Is ANY alias context resolvable now? (newly created, direct, or existing doc) — excluding self
       let resolvable = false;
@@ -284,10 +333,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         if (!val || val.kind !== 'alias') continue;
 
         const segs = normalizeAliasSegments(val.path, collectionName, displayBySlug, knownCollections);
-        const aliasDot = segs.join('.');
+        const aliasDot = dot(segs);
 
-        // ignore self-alias
-        if (aliasDot === selfDotA || aliasDot === selfDotB) continue;
+        if (selfKeys.has(aliasDot)) continue; // ignore self-alias
 
         if (idByPath[aliasDot] || existingVarIdByPathDot[aliasDot]) {
           resolvable = true;
@@ -320,9 +368,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
       }
 
-      // Index by display AND slug collection names so either alias form resolves
-      idByPath[t.path.join('.')] = v.id;
-      idByPath[[slugSegment(t.path[0]), ...t.path.slice(1)].join('.')] = v.id;
+      // Index display & slug for BOTH collection and variable segments
+      const varSegs = varName.split('/');
+      indexVarKeys(idByPath, collectionName, varSegs, v.id);
 
       progress = true;
     }
@@ -350,9 +398,27 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   }
 
   // ---- Pass 2: set values (including aliases)
-  for (const node of validTokens) {
-    const varId = idByPath[node.path.join('.')];
-    if (!varId) continue; // not created (e.g., unresolved alias)
+  for (const node of graph.tokens) {
+    // resolve our variable id via any of the 4 keys we indexed
+    const collectionName = node.path[0];
+    const varName = node.path.slice(1).join('/');
+    const varSegs = varName.split('/');
+    const possibleSelfKeys: string[] = [];
+    (function addSelfKeys() {
+      const colDisp = collectionName;
+      const colSlug = slugSegment(collectionName);
+      const varRaw = varSegs;
+      const varSlug = varSegs.map(s => slugSegment(s));
+      possibleSelfKeys.push(
+        dot([colDisp, ...varRaw]),
+        dot([colDisp, ...varSlug]),
+        dot([colSlug, ...varRaw]),
+        dot([colSlug, ...varSlug]),
+      );
+    })();
+    let varId: string | undefined;
+    for (const k of possibleSelfKeys) { varId = idByPath[k]; if (varId) break; }
+    if (!varId) continue; // not created (e.g., unresolved alias or name mismatch)
 
     const targetVar = await variablesApi.getVariableByIdAsync(varId);
     if (!targetVar) continue;
@@ -377,9 +443,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       if (!modeId) continue;
 
       if (val.kind === 'alias') {
-        const currentCollection = node.path[0];
+        const currentCollection = collectionName;
 
-        // Build candidates (as-written, relative, slug→display)
+        // Build candidates (as-written, relative, slug→display for first seg).
         const rawSegs = Array.isArray(val.path)
           ? (val.path as string[]).slice()
           : String(val.path).split('.').map(s => s.trim()).filter(Boolean);
@@ -393,8 +459,16 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
         let targetId: string | undefined;
         for (const cand of candidates) {
-          const dotKey = cand.join('.');
-          targetId = idByPath[dotKey] || existingVarIdByPathDot[dotKey];
+          // Try exact, and also a fully-slugged form (for non-color types referencing other collections)
+          const exact = dot(cand);
+          const fullySlugged = dot([slugSegment(cand[0] || ''), ...cand.slice(1).map(s => slugSegment(s))]);
+
+          targetId =
+            idByPath[exact] ||
+            idByPath[fullySlugged] ||
+            existingVarIdByPathDot[exact] ||
+            existingVarIdByPathDot[fullySlugged];
+
           if (targetId) break;
         }
 
