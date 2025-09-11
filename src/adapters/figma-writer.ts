@@ -265,14 +265,6 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     } else {
       logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — needs a ${t.type} $value or an alias reference.`);
     }
-
-    // Do NOT create a collection/variable unless we have at least one *valid* direct value.
-    // This does not affect alias-only tokens (handled in Pass 1b).
-    if (!tokenHasAtLeastOneValidDirectValue(t)) {
-      logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
-      continue;
-    }
-
   }
 
 
@@ -308,7 +300,7 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
     // Do NOT create a collection or variable unless we have at least one *valid* direct value.
     if (!tokenHasAtLeastOneValidDirectValue(t)) {
-      logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
+      logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
       continue;
     }
 
@@ -549,15 +541,14 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         targetVar.setValueForMode(modeId, val.value);
       }
     }
-    // After Pass 2 and after setting values
-    for (const name of Object.keys(colByName)) {
-      const col = colByName[name];
-      if (col && col.variableIds.length === 0) {
-        try { col.remove(); } catch { /* ignore */ }
-        knownCollections.delete(name);
-        delete colByName[name];
-      }
+  }
+  // After Pass 2 and after setting values
+  for (const name of Object.keys(colByName)) {
+    const col = colByName[name];
+    if (col && col.variableIds.length === 0) {
+      try { col.remove(); } catch { /* ignore */ }
+      knownCollections.delete(name);
+      delete colByName[name];
     }
-
   }
 }
