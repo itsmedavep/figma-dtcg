@@ -17,7 +17,7 @@
       --border: #e5e7eb;
       --drawer-h: 260px;
       /* bottom log drawer height */
-      --drawer-collapsed-h: 28px;
+      --drawer-collapsed-h: 2rem;
       /* slim bar height when collapsed */
     }
 
@@ -156,18 +156,41 @@
 
     button {
       padding: 10px 12px;
-      border: 0;
-      border-radius: 10px;
-      background: var(--accent);
-      color: var(--accent-ink);
+      border: 2;
+      border-radius: .25rem;
+      border-color: var(--accent);
+      color: #000000;
       font-weight: 600;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 16px;
+      background: ffffff;
     }
 
     button[disabled] {
       opacity: .5;
       cursor: not-allowed;
+    }
+
+    .css-button-neumorphic {
+      min-width: 130px;
+      height: 40px;
+      color: #fff;
+      padding: 5px 10px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      display: inline-block;
+      outline: none;
+      border-radius: 5px;
+      border: none;
+      background: #efefef;
+      box-shadow: 2px 2px 4px #c8d0e7, -1px -1px 3px #fff;
+      color: #585858;
+    }
+
+    .css-button-neumorphic:active {
+      box-shadow: inset 1px 1px 3px #c8d0e7, inset -1px -1px 3px #fff;
     }
 
     .muted {
@@ -377,7 +400,7 @@
               <input id="file" type="file" accept=".json,application/json" />
             </div>
             <div class="row">
-              <button id="importBtn" disabled>Import</button>
+              <button id="importBtn" class="css-button-neumorphic">Import</button>
             </div>
             <div class="muted">Imports collections/modes as defined in the file.</div>
           </div>
@@ -399,7 +422,7 @@
                 <label><input type="checkbox" id="exportAllChk" /> Export all collections &amp; modes into a single
                   file</label>
                 <div class="muted">Select a collection and mode, or check “Export all”.</div>
-                <button id="exportBtn" disabled>Export</button>
+                <button id="exportBtn" class="css-button-neumorphic">Export</button>
               </div>
             </div>
           </div>

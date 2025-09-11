@@ -19,14 +19,33 @@ function logWarn(msg: string) { logInfo('Warning: ' + msg); }
 function logError(msg: string) { logInfo('Error: ' + msg); }
 
 // ---------- helpers ----------
+
+// Token has at least one non-alias, correctly-typed value in any context
+function tokenHasDirectValue(t: TokenNode): boolean {
+  const byCtx = t.byContext || {};
+  for (const k in byCtx) {
+    const v = byCtx[k] as any;
+    if (!v) continue;
+
+    if (t.type === 'color') {
+      if (v.kind === 'color' && isValidDtcgColorValueObject(v.value)) return true;
+    } else {
+      // number/string/boolean must match kind exactly
+      if (v.kind === t.type) return true;
+    }
+  }
+  return false;
+}
+
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
   if (t === 'color') return 'COLOR';
   if (t === 'number') return 'FLOAT';
   if (t === 'string') return 'STRING';
   return 'BOOLEAN';
 }
-function forEachKey<T>(obj: { [k: string]: T }): string[] {
+function forEachKey<T>(obj: { [k: string]: T } | undefined): string[] {
   const out: string[] = [];
+  if (!obj) return out;
   for (const k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
   return out;
 }
@@ -64,7 +83,7 @@ function maybeWarnColorMismatch(t: TokenNode, ctx: string, importedHexOrNull: st
     if (!hintHex || !importedHexOrNull) return;
     const a = hintHex.trim().toLowerCase();
     const b = importedHexOrNull.trim().toLowerCase();
-    if (a !== b) logWarn(`color mismatch for “${t.path.join('/')}” in ${ctx}. Using $value (${b}) over $extensions (${a}).`);
+    if (a !== b) logWarn(`color mismatch for “${t.path.join('/')}” in ${ctx}. Using $value over $extensions.`);
   } catch { /* never throw from logging */ }
 }
 
@@ -97,6 +116,80 @@ function normalizeAliasSegments(
   return [currentCollection, ...segs];
 }
 
+// ---- NEW: strict name check helper (extensions vs JSON path)
+function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
+  // Only care about com.figma per your constraint
+  const ext = t.extensions && typeof t.extensions === 'object'
+    ? (t.extensions as any)['com.figma']
+    : undefined;
+
+  if (!ext || typeof ext !== 'object') return { ok: true };
+
+  const pathCollection = t.path[0];
+  const pathVariable = t.path.slice(1).join('/'); // exact JSON key
+
+  // Prefer top-level names when present
+  let expectedCollection: string | undefined =
+    typeof (ext as any).collectionName === 'string' ? (ext as any).collectionName : undefined;
+  let expectedVariable: string | undefined =
+    typeof (ext as any).variableName === 'string' ? (ext as any).variableName : undefined;
+
+  // If not present at top-level, fall back to ANY perContext entry (even if IR has no contexts)
+  if (!expectedCollection || !expectedVariable) {
+    const per = (ext as any).perContext;
+    if (per && typeof per === 'object') {
+      // Try to use a context that actually exists on this token first…
+      const ctxKeys = forEachKey(t.byContext);
+      let ctxToUse: string | undefined;
+
+      for (const k of ctxKeys) {
+        if (per[k] && typeof per[k] === 'object') { ctxToUse = k; break; }
+      }
+      // …otherwise just take the first perContext entry available
+      if (!ctxToUse) {
+        for (const k in per) {
+          if (Object.prototype.hasOwnProperty.call(per, k) && per[k] && typeof per[k] === 'object') {
+            ctxToUse = k;
+            break;
+          }
+        }
+      }
+
+      if (ctxToUse) {
+        const ctxData = per[ctxToUse] as any;
+        if (!expectedCollection && typeof ctxData.collectionName === 'string') {
+          expectedCollection = ctxData.collectionName;
+        }
+        if (!expectedVariable && typeof ctxData.variableName === 'string') {
+          expectedVariable = ctxData.variableName;
+        }
+      }
+    }
+  }
+
+  // If extensions carry names, they must match EXACTLY; if absent, we don't enforce.
+  if (typeof expectedCollection === 'string' && expectedCollection !== pathCollection) {
+    return {
+      ok: false,
+      reason:
+        `Skipping “${t.path.join('/')}” — $extensions.com.figma.collectionName (“${expectedCollection}”) ` +
+        `doesn’t match JSON group (“${pathCollection}”).`
+    };
+  }
+
+  if (typeof expectedVariable === 'string' && expectedVariable !== pathVariable) {
+    return {
+      ok: false,
+      reason:
+        `Skipping “${t.path.join('/')}” — $extensions.com.figma.variableName (“${expectedVariable}”) ` +
+        `doesn’t match JSON key (“${pathVariable}”).`
+    };
+  }
+
+  return { ok: true };
+}
+
+
 export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const profile = figma.root.documentColorProfile as DocumentProfile;
   const variablesApi = figma.variables;
@@ -116,8 +209,8 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       const v = await variablesApi.getVariableByIdAsync(vid);
       if (!v) continue;
       const varSegs = v.name.split('/');
-      existingVarIdByPathDot[toDot([cDisplay, ...varSegs])] = v.id;
-      existingVarIdByPathDot[toDot([cSlug, ...varSegs])] = v.id;
+      existingVarIdByPathDot[[cDisplay, ...varSegs].join('.')] = v.id;
+      existingVarIdByPathDot[[cSlug, ...varSegs].join('.')] = v.id;
     }
   }
 
@@ -136,17 +229,15 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const aliasOnlyTokens: TokenNode[] = [];
 
   for (const t of graph.tokens) {
-    if (t.type === 'color') {
-      const hasColor = tokenHasRenderableColor(t);
-      const hasAlias = tokenHasAlias(t);
-      if (hasColor) directTokens.push(t);
-      else if (hasAlias) aliasOnlyTokens.push(t);
-      else {
-        logWarn(`Skipped color token “${t.path.join('/')}” — needs a color object in $value or an alias reference.`);
-      }
-    } else {
-      // primitives are always direct
+    const hasDirect = tokenHasDirectValue(t);
+    const hasAlias = tokenHasAlias(t);
+
+    if (hasDirect) {
       directTokens.push(t);
+    } else if (hasAlias) {
+      aliasOnlyTokens.push(t);
+    } else {
+      logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — needs a ${t.type} $value or an alias reference.`);
     }
   }
 
@@ -172,6 +263,11 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
   for (const t of directTokens) {
     if (t.path.length < 1) continue;
+
+    // NEW: enforce strict name match vs $extensions (when present)
+    const nameChk = namesMatchExtensions(t);
+    if (!nameChk.ok) { logWarn(nameChk.reason!); continue; }
+
     const collectionName = t.path[0];
     const varName = varNameFromPath(t.path);
 
@@ -194,8 +290,8 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     }
 
     // Index by display AND slug collection names so either alias form resolves
-    idByPath[toDot(t.path)] = v.id;
-    idByPath[toDot([slugSegment(t.path[0]), ...t.path.slice(1)])] = v.id;
+    idByPath[[...t.path].join('.')] = v.id;
+    idByPath[[slugSegment(t.path[0]), ...t.path.slice(1)].join('.')] = v.id;
   }
 
   // Map slug -> display for collections we just created/ensured
@@ -213,10 +309,18 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     const nextRound: TokenNode[] = [];
 
     for (const t of pending) {
+      // NEW: enforce strict name match vs $extensions (when present)
+      const nameChk = namesMatchExtensions(t);
+      if (!nameChk.ok) { logWarn(nameChk.reason!); continue; }
+
       const collectionName = t.path[0];
       const varName = varNameFromPath(t.path);
 
-      // Is ANY alias context resolvable now? (newly created, direct, or existing doc)
+      // Self keys (display + slug) for skipping self-alias resolvability
+      const selfDotA = t.path.join('.');
+      const selfDotB = [slugSegment(t.path[0]), ...t.path.slice(1)].join('.');
+
+      // Is ANY alias context resolvable now? (newly created, direct, or existing doc) — excluding self
       let resolvable = false;
       const ctxKeys = forEachKey(t.byContext);
       for (const ctx of ctxKeys) {
@@ -224,9 +328,12 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         if (!val || val.kind !== 'alias') continue;
 
         const segs = normalizeAliasSegments(val.path, collectionName, displayBySlug, knownCollections);
-        const dot = toDot(segs);
+        const aliasDot = segs.join('.');
 
-        if (idByPath[dot] || existingVarIdByPathDot[dot]) {
+        // ignore self-alias
+        if (aliasDot === selfDotA || aliasDot === selfDotB) continue;
+
+        if (idByPath[aliasDot] || existingVarIdByPathDot[aliasDot]) {
           resolvable = true;
           break;
         }
@@ -258,10 +365,10 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       }
 
       // Index by display AND slug collection names so either alias form resolves
-      idByPath[toDot(t.path)] = v.id;
-      idByPath[toDot([slugSegment(t.path[0]), ...t.path.slice(1)])] = v.id;
+      idByPath[t.path.join('.')] = v.id;
+      idByPath[[slugSegment(t.path[0]), ...t.path.slice(1)].join('.')] = v.id;
 
-      createdInP1b.push(toDot(t.path));
+      createdInP1b.push(t.path.join('.'));
       progress = true;
     }
 
@@ -289,8 +396,8 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
   // ---- Pass 2: set values (including aliases)
   for (const node of graph.tokens) {
-    const varId = idByPath[toDot(node.path)];
-    if (!varId) continue; // not created (e.g., unresolved alias)
+    const varId = idByPath[node.path.join('.')];
+    if (!varId) continue; // not created (e.g., unresolved alias or name mismatch)
 
     const targetVar = await variablesApi.getVariableByIdAsync(varId);
     if (!targetVar) continue;
@@ -331,15 +438,19 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
         let targetId: string | undefined;
         for (const cand of candidates) {
-          const dotKey = toDot(cand);
+          const dotKey = cand.join('.');
           targetId = idByPath[dotKey] || existingVarIdByPathDot[dotKey];
           if (targetId) break;
         }
 
         if (!targetId) {
-          // If a token was created only because we thought it was resolvable but this ctx isn’t,
-          // just skip setting this ctx; other contexts may still be valid.
           logWarn(`Alias target not found while setting “${node.path.join('/')}” in ${ctx}. Skipped this context.`);
+          continue;
+        }
+
+        // prevent self-alias even if resolvable
+        if (targetId === targetVar.id) {
+          logWarn(`Self-alias is not allowed for “${node.path.join('/')}” in ${ctx}. Skipped this context.`);
           continue;
         }
 
