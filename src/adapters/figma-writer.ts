@@ -117,56 +117,32 @@ function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
 
   if (!ext || typeof ext !== 'object') return { ok: true };
 
-  const pathCollection = t.path[0];
-  const pathVariable = t.path.slice(1).join('/');
+  // Prefer the raw JSON identifiers captured by the reader; fallback to current path if absent
+  const jsonCollection =
+    typeof (ext as any).__jsonCollection === 'string' ? (ext as any).__jsonCollection : t.path[0];
+  const jsonKey =
+    typeof (ext as any).__jsonKey === 'string' ? (ext as any).__jsonKey : t.path.slice(1).join('/');
 
-  let expectedCollection: string | undefined =
+  const extCollection =
     typeof (ext as any).collectionName === 'string' ? (ext as any).collectionName : undefined;
-  let expectedVariable: string | undefined =
+  const extVariable =
     typeof (ext as any).variableName === 'string' ? (ext as any).variableName : undefined;
 
-  // optional fallback to perContext
-  if (!expectedCollection || !expectedVariable) {
-    const per = (ext as any).perContext;
-    if (per && typeof per === 'object') {
-      const ctxKeys = forEachKey(t.byContext);
-      let ctxToUse: string | undefined;
-      for (const k of ctxKeys) {
-        if ((per as any)[k] && typeof (per as any)[k] === 'object') { ctxToUse = k; break; }
-      }
-      if (!ctxToUse) {
-        for (const k in per as Record<string, unknown>) {
-          if (Object.prototype.hasOwnProperty.call(per, k) && (per as any)[k] && typeof (per as any)[k] === 'object') {
-            ctxToUse = k as string; break;
-          }
-        }
-      }
-      if (ctxToUse) {
-        const ctxData = (per as any)[ctxToUse] as any;
-        if (!expectedCollection && typeof ctxData.collectionName === 'string') expectedCollection = ctxData.collectionName;
-        if (!expectedVariable && typeof ctxData.variableName === 'string') expectedVariable = ctxData.variableName;
-      }
-    }
-  }
-
-  if (typeof expectedCollection === 'string' && expectedCollection !== pathCollection) {
+  if (extCollection && extCollection !== jsonCollection) {
     return {
       ok: false,
-      reason:
-        `Skipping “${t.path.join('/')}” — $extensions.com.figma.collectionName (“${expectedCollection}”) ` +
-        `doesn’t match JSON group (“${pathCollection}”).`
+      reason: `Skipping “${[jsonCollection, jsonKey].join('/')}” — $extensions.com.figma.collectionName (“${extCollection}”) doesn’t match JSON group (“${jsonCollection}”).`
     };
   }
-  if (typeof expectedVariable === 'string' && expectedVariable !== pathVariable) {
+  if (extVariable && extVariable !== jsonKey) {
     return {
       ok: false,
-      reason:
-        `Skipping “${t.path.join('/')}” — $extensions.com.figma.variableName (“${expectedVariable}”) ` +
-        `doesn’t match JSON key (“${pathVariable}”).`
+      reason: `Skipping “${[jsonCollection, jsonKey].join('/')}” — $extensions.com.figma.variableName (“${extVariable}”) doesn’t match JSON key (“${jsonKey}”).`
     };
   }
   return { ok: true };
 }
+
 
 export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const profile = figma.root.documentColorProfile as DocumentProfile;

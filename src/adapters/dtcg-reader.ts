@@ -102,40 +102,18 @@ function readComFigma(o: unknown): { collectionName?: string; modeName?: string;
  *  - flat tokens (single segment) go under "tokens" collection by default
  *  - default Figma mode when missing = "Mode 1"
  */
-function computePathAndCtx(currentPath: string[], rawNode: unknown): { irPath: string[]; ctx: string } {
-  const meta = readComFigma(rawNode) || {};
-  const leaf = currentPath[currentPath.length - 1] || 'token';
-
-  let collection: string;
-  let variableName: string;
-
-  if (meta.collectionName) {
-    collection = meta.collectionName;
-    if (meta.variableName && meta.variableName.length > 0) {
-      variableName = meta.variableName;
-    } else if (currentPath.length > 1) {
-      variableName = currentPath.slice(1).join('/');
-    } else {
-      variableName = leaf;
-    }
-  } else {
-    if (currentPath.length > 1) {
-      collection = currentPath[0];
-      variableName = currentPath.slice(1).join('/');
-    } else {
-      // flat token → put into a safe default collection
-      collection = 'tokens';
-      variableName = leaf;
-    }
+function computePathAndCtx(path: string[], obj: unknown): { irPath: string[]; ctx: string } {
+  const irPath = path.slice(); // EXACT JSON path
+  let mode = 'Mode 1';
+  const ext = hasKey(obj, '$extensions') ? (obj as any)['$extensions'] as Record<string, unknown> : undefined;
+  const cf = ext && typeof ext === 'object' ? (ext as any)['com.figma'] : undefined;
+  if (cf && typeof cf === 'object' && typeof (cf as any).modeName === 'string') {
+    mode = (cf as any).modeName as string;
   }
-
-  // Never slug/trim/mutate; split literal variableName by '/'
-  const irPath: string[] = [collection, ...variableName.split('/')];
-
-  const mode = meta.modeName || 'Mode 1';
-  const ctx = ctxKey(collection, mode);
-  return { irPath, ctx };
+  const collection = irPath[0] ?? 'Tokens';
+  return { irPath, ctx: `${collection}/${mode}` };
 }
+
 
 function guessTypeFromValue(v: unknown): PrimitiveType {
   if (typeof v === 'number') return 'number';
@@ -169,6 +147,27 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         const { irPath, ctx } = computePathAndCtx(path, obj);
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'alias', path: segs };
+
+        // after you build `byCtx` and before pushing:
+        // (this is inside the "$value is an alias" branch — repeat the same in the color & primitive branches)
+        const ext: Record<string, unknown> | undefined =
+          hasKey(obj, '$extensions') ? (obj as any)['$extensions'] as Record<string, unknown> : undefined;
+        const comFigma: Record<string, unknown> =
+          ext && typeof ext === 'object' && ext['com.figma'] && typeof (ext as any)['com.figma'] === 'object'
+            ? (ext as any)['com.figma'] as Record<string, unknown>
+            : (ext ? ((ext['com.figma'] = {}), (ext as any)['com.figma'] as Record<string, unknown>) : {});
+
+        // NEW: capture the *raw* JSON identifiers for strict checks in the writer
+        (comFigma as any).__jsonCollection = (path[0] ?? '');
+        (comFigma as any).__jsonKey = path.slice(1).join('/');
+
+        tokens.push({
+          path: path.slice(),                 // ← keep EXACT JSON keys (no normalization)
+          type: groupType ?? 'string',
+          byContext: byCtx,
+          ...(ext ? { extensions: { ...ext, 'com.figma': comFigma } } : {})
+        });
+
 
         tokens.push({
           path: irPath,
