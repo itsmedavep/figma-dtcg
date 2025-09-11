@@ -1,0 +1,125 @@
+{
+    "Colors Test": {
+        "goodColorDirect": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    1,
+                    1,
+                    1
+                ],
+                "alpha": 1,
+                "hex": "#ffffff"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodColorDirect",
+                    "variableID": "VariableID:0:1001"
+                }
+            }
+        },
+        "goodAliasDisplay": {
+            "$type": "color",
+            "$value": "{Colors Test.goodColorDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodAliasDisplay",
+                    "variableID": "VariableID:0:1002"
+                }
+            }
+        },
+        "goodAliasRelative": {
+            "$type": "color",
+            "$value": "{goodColorDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodAliasRelative",
+                    "variableID": "VariableID:0:1003"
+                }
+            }
+        },
+        "goodAliasChain": {
+            "$type": "color",
+            "$value": "{Colors Test.goodAliasDisplay}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodAliasChain",
+                    "variableID": "VariableID:0:1004"
+                }
+            }
+        },
+        "goodAliasUsingSlug": {
+            "$type": "color",
+            "$value": "{colors-test.goodColorDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodAliasUsingSlug",
+                    "variableID": "VariableID:0:1005"
+                }
+            }
+        },
+        "badAliasUnresolved": {
+            "$type": "color",
+            "$value": "{Colors Test.missingColor}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badAliasUnresolved",
+                    "variableID": "VariableID:0:1006"
+                }
+            }
+        },
+        "badSelfAlias": {
+            "$type": "color",
+            "$value": "{Colors Test.badSelfAlias}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badSelfAlias",
+                    "variableID": "VariableID:0:1007"
+                }
+            }
+        },
+        "badVariableNameMismatch": {
+            "$type": "color",
+            "$value": "{goodColorDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors Test",
+                    "collectionID": "VariableCollectionId:0:101",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "bad-variable-name--mismatch",
+                    "variableID": "VariableID:0:1008"
+                }
+            }
+        }
+    }
+}

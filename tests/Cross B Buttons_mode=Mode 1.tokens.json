@@ -1,0 +1,125 @@
+{
+    "Cross B Buttons": {
+        "goodButtonBgDirect": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0,
+                    1,
+                    0
+                ],
+                "alpha": 1,
+                "hex": "#00ff00"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "goodButtonBgDirect",
+                    "variableID": "VariableID:2:2001"
+                }
+            }
+        },
+        "goodAliasToADisplay": {
+            "$type": "color",
+            "$value": "{Cross A Colors.goodColorA}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "goodAliasToADisplay",
+                    "variableID": "VariableID:2:2002"
+                }
+            }
+        },
+        "goodAliasToASlug": {
+            "$type": "color",
+            "$value": "{cross-a-colors.goodColorA}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "goodAliasToASlug",
+                    "variableID": "VariableID:2:2003"
+                }
+            }
+        },
+        "chainMidB": {
+            "$type": "color",
+            "$value": "{Cross A Colors.goodColorA}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "chainMidB",
+                    "variableID": "VariableID:2:2004"
+                }
+            }
+        },
+        "circularAliasB1": {
+            "$type": "color",
+            "$value": "{Cross A Colors.circularAliasA1}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "circularAliasB1",
+                    "variableID": "VariableID:2:2005"
+                }
+            }
+        },
+        "badSelfAliasB": {
+            "$type": "color",
+            "$value": "{Cross B Buttons.badSelfAliasB}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "badSelfAliasB",
+                    "variableID": "VariableID:2:2006"
+                }
+            }
+        },
+        "badAliasUnresolvedB": {
+            "$type": "color",
+            "$value": "{Cross A Colors.nopeMissing}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "badAliasUnresolvedB",
+                    "variableID": "VariableID:2:2007"
+                }
+            }
+        },
+        "badVariableNameMismatchB": {
+            "$type": "color",
+            "$value": "{goodButtonBgDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross B Buttons",
+                    "collectionID": "VariableCollectionId:2:201",
+                    "modeName": "Mode 1",
+                    "modeID": "2:1",
+                    "variableName": "bad-variable-name--mismatch-B",
+                    "variableID": "VariableID:2:2008"
+                }
+            }
+        }
+    }
+}

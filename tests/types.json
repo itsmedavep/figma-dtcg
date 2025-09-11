@@ -1,0 +1,88 @@
+{
+  "Collection 1": {
+    "Boolean": {
+      "$type": "boolean",
+      "$value": false,
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "Collection 1",
+          "collectionID": "VariableCollectionId:36:1592",
+          "modeName": "Mode 1",
+          "modeID": "36:53",
+          "variableName": "Boolean",
+          "variableID": "VariableID:36:1593"
+        }
+      }
+    },
+    "Boolean 2": {
+      "$type": "boolean",
+      "$value": "{Collection 1.Boolean}",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "Collection 1",
+          "collectionID": "VariableCollectionId:36:1592",
+          "modeName": "Mode 1",
+          "modeID": "36:53",
+          "variableName": "Boolean 2",
+          "variableID": "VariableID:36:1596"
+        }
+      }
+    },
+    "Number": {
+      "$type": "number",
+      "$value": 0,
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "Collection 1",
+          "collectionID": "VariableCollectionId:36:1592",
+          "modeName": "Mode 1",
+          "modeID": "36:53",
+          "variableName": "Number",
+          "variableID": "VariableID:36:1594"
+        }
+      }
+    },
+    "Number 2": {
+      "$type": "number",
+      "$value": "{Collection 1.Number}",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "Collection 1",
+          "collectionID": "VariableCollectionId:36:1592",
+          "modeName": "Mode 1",
+          "modeID": "36:53",
+          "variableName": "Number 2",
+          "variableID": "VariableID:36:1597"
+        }
+      }
+    },
+    "String": {
+      "$type": "string",
+      "$value": "String value",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "Collection 1",
+          "collectionID": "VariableCollectionId:36:1592",
+          "modeName": "Mode 1",
+          "modeID": "36:53",
+          "variableName": "String",
+          "variableID": "VariableID:36:1595"
+        }
+      }
+    },
+    "String 2": {
+      "$type": "string",
+      "$value": "{Collection 1.String}",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "Collection 1",
+          "collectionID": "VariableCollectionId:36:1592",
+          "modeName": "Mode 1",
+          "modeID": "36:53",
+          "variableName": "String 2",
+          "variableID": "VariableID:36:1598"
+        }
+      }
+    }
+  }
+}

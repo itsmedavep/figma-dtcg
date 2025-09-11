@@ -1,0 +1,116 @@
+{
+    "Strings Test": {
+        "goodStringDirect": {
+            "$type": "string",
+            "$value": "Hello world",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodStringDirect",
+                    "variableID": "VariableID:0:4001"
+                }
+            }
+        },
+        "goodStringAliasDisplay": {
+            "$type": "string",
+            "$value": "{Strings Test.goodStringDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodStringAliasDisplay",
+                    "variableID": "VariableID:0:4002"
+                }
+            }
+        },
+        "goodStringAliasRelative": {
+            "$type": "string",
+            "$value": "{goodStringDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodStringAliasRelative",
+                    "variableID": "VariableID:0:4003"
+                }
+            }
+        },
+        "goodStringAliasChain": {
+            "$type": "string",
+            "$value": "{Strings Test.goodStringAliasDisplay}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodStringAliasChain",
+                    "variableID": "VariableID:0:4004"
+                }
+            }
+        },
+        "goodStringAliasUsingSlug": {
+            "$type": "string",
+            "$value": "{strings-test.goodStringDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodStringAliasUsingSlug",
+                    "variableID": "VariableID:0:4005"
+                }
+            }
+        },
+        "badStringAliasUnresolved": {
+            "$type": "string",
+            "$value": "{Strings Test.missingString}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badStringAliasUnresolved",
+                    "variableID": "VariableID:0:4006"
+                }
+            }
+        },
+        "badStringSelfAlias": {
+            "$type": "string",
+            "$value": "{Strings Test.badStringSelfAlias}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badStringSelfAlias",
+                    "variableID": "VariableID:0:4007"
+                }
+            }
+        },
+        "badStringVariableNameMismatch": {
+            "$type": "string",
+            "$value": "{goodStringDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Strings Test",
+                    "collectionID": "VariableCollectionId:0:401",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "bad-string-variable--name-mismatch",
+                    "variableID": "VariableID:0:4008"
+                }
+            }
+        }
+    }
+}

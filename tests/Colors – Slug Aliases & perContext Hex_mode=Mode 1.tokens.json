@@ -1,0 +1,170 @@
+{
+    "Colors – Slug & perContext": {
+        "goodBaseRed": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    1,
+                    0,
+                    0
+                ],
+                "alpha": 1,
+                "hex": "#ff0000"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "goodBaseRed",
+                    "variableID": "VariableID:40:400",
+                    "perContext": {
+                        "Colors – Slug & perContext/Mode 1": {
+                            "hex": "#ff0000"
+                        }
+                    }
+                }
+            }
+        },
+        "goodBaseGreen": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0,
+                    1,
+                    0
+                ],
+                "hex": "#00ff00"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "goodBaseGreen",
+                    "variableID": "VariableID:40:401",
+                    "perContext": {
+                        "Colors – Slug & perContext/Mode 1": {
+                            "hex": "#00ff00"
+                        }
+                    }
+                }
+            }
+        },
+        "warnHexMismatchViaPerContext": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0,
+                    0,
+                    1
+                ],
+                "alpha": 1,
+                "hex": "#0000ff"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "warnHexMismatchViaPerContext",
+                    "variableID": "VariableID:40:402",
+                    "perContext": {
+                        "Colors – Slug & perContext/Mode 1": {
+                            "hex": "#00ffff"
+                        }
+                    }
+                }
+            }
+        },
+        "goodAliasAbsoluteDisplay": {
+            "$type": "color",
+            "$value": "{Colors – Slug & perContext.goodBaseRed}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "goodAliasAbsoluteDisplay",
+                    "variableID": "VariableID:40:403"
+                }
+            }
+        },
+        "goodAliasAbsoluteSlug": {
+            "$type": "color",
+            "$value": "{colors-slug-percontext.goodBaseGreen}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "goodAliasAbsoluteSlug",
+                    "variableID": "VariableID:40:404"
+                }
+            }
+        },
+        "goodAliasRelative": {
+            "$type": "color",
+            "$value": "{goodBaseRed}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "goodAliasRelative",
+                    "variableID": "VariableID:40:405"
+                }
+            }
+        },
+        "badPerContextWrongKeyButValueValid": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "hex": "#808080"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "badPerContextWrongKeyButValueValid",
+                    "variableID": "VariableID:40:406",
+                    "perContext": {
+                        "Some Other Collection/Mode 1": {
+                            "hex": "#000000"
+                        }
+                    }
+                }
+            }
+        },
+        "badStringValueUnsupported": {
+            "$type": "color",
+            "$value": "#123456",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Slug & perContext",
+                    "collectionID": "VariableCollectionId:40:1",
+                    "modeName": "Mode 1",
+                    "modeID": "40:1",
+                    "variableName": "badStringValueUnsupported",
+                    "variableID": "VariableID:40:407"
+                }
+            }
+        }
+    }
+}

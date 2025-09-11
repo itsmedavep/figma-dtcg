@@ -1,0 +1,46 @@
+{
+  "alias": {
+    "Boolean": {
+      "$type": "boolean",
+      "$value": "{collection-1.boolean}",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "alias",
+          "collectionID": "VariableCollectionId:36:1584",
+          "modeName": "Mode 1",
+          "modeID": "36:51",
+          "variableName": "Boolean",
+          "variableID": "VariableID:36:1587"
+        }
+      }
+    },
+    "Number": {
+      "$type": "number",
+      "$value": "{collection-1.number}",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "alias",
+          "collectionID": "VariableCollectionId:36:1584",
+          "modeName": "Mode 1",
+          "modeID": "36:51",
+          "variableName": "Number",
+          "variableID": "VariableID:36:1585"
+        }
+      }
+    },
+    "String": {
+      "$type": "string",
+      "$value": "{collection-1.string}",
+      "$extensions": {
+        "com.figma": {
+          "collectionName": "alias",
+          "collectionID": "VariableCollectionId:36:1584",
+          "modeName": "Mode 1",
+          "modeID": "36:51",
+          "variableName": "String",
+          "variableID": "VariableID:36:1586"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,125 @@
+{
+    "Cross A Colors": {
+        "goodColorA": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    1,
+                    0,
+                    0
+                ],
+                "alpha": 1,
+                "hex": "#ff0000"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "goodColorA",
+                    "variableID": "VariableID:1:1001"
+                }
+            }
+        },
+        "goodAliasToBDisplay": {
+            "$type": "color",
+            "$value": "{Cross B Buttons.goodButtonBgDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "goodAliasToBDisplay",
+                    "variableID": "VariableID:1:1002"
+                }
+            }
+        },
+        "goodAliasToBSlug": {
+            "$type": "color",
+            "$value": "{cross-b-buttons.goodButtonBgDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "goodAliasToBSlug",
+                    "variableID": "VariableID:1:1003"
+                }
+            }
+        },
+        "goodAliasRelativeWithinA": {
+            "$type": "color",
+            "$value": "{goodColorA}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "goodAliasRelativeWithinA",
+                    "variableID": "VariableID:1:1004"
+                }
+            }
+        },
+        "badAliasUnresolvedA": {
+            "$type": "color",
+            "$value": "{Cross B Buttons.missingVar}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "badAliasUnresolvedA",
+                    "variableID": "VariableID:1:1005"
+                }
+            }
+        },
+        "circularAliasA1": {
+            "$type": "color",
+            "$value": "{Cross B Buttons.circularAliasB1}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "circularAliasA1",
+                    "variableID": "VariableID:1:1006"
+                }
+            }
+        },
+        "badVariableNameMismatchA": {
+            "$type": "color",
+            "$value": "{goodColorA}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "bad-variable-name--mismatch-A",
+                    "variableID": "VariableID:1:1007"
+                }
+            }
+        },
+        "goodAliasChainA": {
+            "$type": "color",
+            "$value": "{Cross B Buttons.chainMidB}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Cross A Colors",
+                    "collectionID": "VariableCollectionId:1:101",
+                    "modeName": "Mode 1",
+                    "modeID": "1:1",
+                    "variableName": "goodAliasChainA",
+                    "variableID": "VariableID:1:1008"
+                }
+            }
+        }
+    }
+}

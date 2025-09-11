@@ -1,0 +1,116 @@
+{
+    "Booleans Test": {
+        "goodBooleanDirect": {
+            "$type": "boolean",
+            "$value": true,
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodBooleanDirect",
+                    "variableID": "VariableID:0:2001"
+                }
+            }
+        },
+        "goodBooleanAliasDisplay": {
+            "$type": "boolean",
+            "$value": "{Booleans Test.goodBooleanDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodBooleanAliasDisplay",
+                    "variableID": "VariableID:0:2002"
+                }
+            }
+        },
+        "goodBooleanAliasRelative": {
+            "$type": "boolean",
+            "$value": "{goodBooleanDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodBooleanAliasRelative",
+                    "variableID": "VariableID:0:2003"
+                }
+            }
+        },
+        "goodBooleanAliasChain": {
+            "$type": "boolean",
+            "$value": "{Booleans Test.goodBooleanAliasDisplay}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodBooleanAliasChain",
+                    "variableID": "VariableID:0:2004"
+                }
+            }
+        },
+        "goodBooleanAliasUsingSlug": {
+            "$type": "boolean",
+            "$value": "{booleans-test.goodBooleanDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodBooleanAliasUsingSlug",
+                    "variableID": "VariableID:0:2005"
+                }
+            }
+        },
+        "badBooleanAliasUnresolved": {
+            "$type": "boolean",
+            "$value": "{Booleans Test.missingBoolean}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badBooleanAliasUnresolved",
+                    "variableID": "VariableID:0:2006"
+                }
+            }
+        },
+        "badBooleanSelfAlias": {
+            "$type": "boolean",
+            "$value": "{Booleans Test.badBooleanSelfAlias}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badBooleanSelfAlias",
+                    "variableID": "VariableID:0:2007"
+                }
+            }
+        },
+        "badBooleanVariableNameMismatch": {
+            "$type": "boolean",
+            "$value": "{goodBooleanDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Booleans Test",
+                    "collectionID": "VariableCollectionId:0:201",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "bad-boolean-variable--name-mismatch",
+                    "variableID": "VariableID:0:2008"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,173 @@
+{
+    "Colors – Color Spaces & Alpha": {
+        "goodP3PureGreen": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "display-p3",
+                "components": [
+                    0,
+                    1,
+                    0
+                ],
+                "alpha": 1,
+                "hex": "#00ff00"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "goodP3PureGreen",
+                    "variableID": "VariableID:20:200"
+                }
+            }
+        },
+        "goodSRGBLinearBlue": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb-linear",
+                "components": [
+                    0,
+                    0,
+                    1
+                ],
+                "hex": "#0000ff"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "goodSRGBLinearBlue",
+                    "variableID": "VariableID:20:201"
+                }
+            }
+        },
+        "goodOpaqueDefaultAlpha": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0.3,
+                    0.3,
+                    0.3
+                ],
+                "hex": "#4d4d4d"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "goodOpaqueDefaultAlpha",
+                    "variableID": "VariableID:20:202"
+                }
+            }
+        },
+        "goodAliasCrossSpace": {
+            "$type": "color",
+            "$value": "{Colors – Color Spaces & Alpha.goodP3PureGreen}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "goodAliasCrossSpace",
+                    "variableID": "VariableID:20:203"
+                }
+            }
+        },
+        "badColorSpaceName": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "adobergb",
+                "components": [
+                    0,
+                    0,
+                    0
+                ],
+                "hex": "#000000"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "badColorSpaceName",
+                    "variableID": "VariableID:20:204"
+                }
+            }
+        },
+        "badComponentsLength2": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0.1,
+                    0.2
+                ],
+                "hex": "#1a3333"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "badComponentsLength2",
+                    "variableID": "VariableID:20:205"
+                }
+            }
+        },
+        "badComponentsNotNumbers": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    "0.1",
+                    0.2,
+                    0.3
+                ],
+                "hex": "#1a334d"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "badComponentsNotNumbers",
+                    "variableID": "VariableID:20:206"
+                }
+            }
+        },
+        "badAlphaNegative": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0,
+                    0,
+                    0
+                ],
+                "alpha": -0.1,
+                "hex": "#000000"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Color Spaces & Alpha",
+                    "collectionID": "VariableCollectionId:20:1",
+                    "modeName": "Mode 1",
+                    "modeID": "20:1",
+                    "variableName": "badAlphaNegative",
+                    "variableID": "VariableID:20:207"
+                }
+            }
+        }
+    }
+}

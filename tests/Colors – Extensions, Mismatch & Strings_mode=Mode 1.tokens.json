@@ -1,0 +1,147 @@
+{
+    "Colors – Extensions, Mismatch & Strings": {
+        "goodHexMatch": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    1,
+                    0,
+                    0
+                ],
+                "alpha": 1,
+                "hex": "#ff0000"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "goodHexMatch",
+                    "variableID": "VariableID:30:300",
+                    "hex": "#ff0000"
+                }
+            }
+        },
+        "goodHexMismatchWarning": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    1,
+                    0,
+                    0
+                ],
+                "alpha": 1,
+                "hex": "#ff0000"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "goodHexMismatchWarning",
+                    "variableID": "VariableID:30:301",
+                    "hex": "#00ff00"
+                }
+            }
+        },
+        "goodAliasRelative": {
+            "$type": "color",
+            "$value": "{goodHexMatch}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "goodAliasRelative",
+                    "variableID": "VariableID:30:302"
+                }
+            }
+        },
+        "badStringHexUnsupported": {
+            "$type": "color",
+            "$value": "#112233",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "badStringHexUnsupported",
+                    "variableID": "VariableID:30:303"
+                }
+            }
+        },
+        "badCssRgbUnsupported": {
+            "$type": "color",
+            "$value": "rgb(255, 0, 0)",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "badCssRgbUnsupported",
+                    "variableID": "VariableID:30:304"
+                }
+            }
+        },
+        "badOklchStringUnsupported": {
+            "$type": "color",
+            "$value": "oklch(0.7 0.2 40)",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "badOklchStringUnsupported",
+                    "variableID": "VariableID:30:305"
+                }
+            }
+        },
+        "badMissingComponents": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "badMissingComponents",
+                    "variableID": "VariableID:30:306"
+                }
+            }
+        },
+        "badAlphaTypeString": {
+            "$type": "color",
+            "$value": {
+                "colorSpace": "srgb",
+                "components": [
+                    0.1,
+                    0.2,
+                    0.3
+                ],
+                "alpha": "1",
+                "hex": "#1a334d"
+            },
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Colors – Extensions, Mismatch & Strings",
+                    "collectionID": "VariableCollectionId:30:1",
+                    "modeName": "Mode 1",
+                    "modeID": "30:1",
+                    "variableName": "badAlphaTypeString",
+                    "variableID": "VariableID:30:307"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,116 @@
+{
+    "Numbers Test": {
+        "goodNumberDirect": {
+            "$type": "number",
+            "$value": 42,
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodNumberDirect",
+                    "variableID": "VariableID:0:3001"
+                }
+            }
+        },
+        "goodNumberAliasDisplay": {
+            "$type": "number",
+            "$value": "{Numbers Test.goodNumberDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodNumberAliasDisplay",
+                    "variableID": "VariableID:0:3002"
+                }
+            }
+        },
+        "goodNumberAliasRelative": {
+            "$type": "number",
+            "$value": "{goodNumberDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodNumberAliasRelative",
+                    "variableID": "VariableID:0:3003"
+                }
+            }
+        },
+        "goodNumberAliasChain": {
+            "$type": "number",
+            "$value": "{Numbers Test.goodNumberAliasDisplay}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodNumberAliasChain",
+                    "variableID": "VariableID:0:3004"
+                }
+            }
+        },
+        "goodNumberAliasUsingSlug": {
+            "$type": "number",
+            "$value": "{numbers-test.goodNumberDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "goodNumberAliasUsingSlug",
+                    "variableID": "VariableID:0:3005"
+                }
+            }
+        },
+        "badNumberAliasUnresolved": {
+            "$type": "number",
+            "$value": "{Numbers Test.missingNumber}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badNumberAliasUnresolved",
+                    "variableID": "VariableID:0:3006"
+                }
+            }
+        },
+        "badNumberSelfAlias": {
+            "$type": "number",
+            "$value": "{Numbers Test.badNumberSelfAlias}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "badNumberSelfAlias",
+                    "variableID": "VariableID:0:3007"
+                }
+            }
+        },
+        "badNumberVariableNameMismatch": {
+            "$type": "number",
+            "$value": "{goodNumberDirect}",
+            "$extensions": {
+                "com.figma": {
+                    "collectionName": "Numbers Test",
+                    "collectionID": "VariableCollectionId:0:301",
+                    "modeName": "Mode 1",
+                    "modeID": "0:1",
+                    "variableName": "bad-number-variable--name-mismatch",
+                    "variableID": "VariableID:0:3008"
+                }
+            }
+        }
+    }
+}
