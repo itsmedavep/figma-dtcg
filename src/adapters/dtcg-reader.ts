@@ -1,29 +1,104 @@
 // src/adapters/dtcg-reader.ts
-// DTCG JSON -> IR TokenGraph (handles aliases, simple $type inheritance)
+// DTCG JSON -> IR TokenGraph (handles aliases, strict $type, preserves names)
 
-import { type TokenGraph, type TokenNode, type PrimitiveType, type ValueOrAlias, ctxKey, type ColorValue } from '../core/ir';
-import { parseAliasString, slugSegment, canonicalPath } from '../core/normalize';
+import {
+  type TokenGraph,
+  type TokenNode,
+  type PrimitiveType,
+  type ValueOrAlias,
+  ctxKey,
+  type ColorValue
+} from '../core/ir';
 import { hexToDtcgColor } from '../core/color';
+
+// ---------- lightweight logging (no toasts) ----------
+function logInfo(msg: string) {
+  try { figma.ui?.postMessage({ type: 'INFO', payload: { message: msg } }); } catch { /* ignore */ }
+}
+function logWarn(msg: string) { logInfo('Warning: ' + msg); }
+
+// ---------- helpers ----------
+function hasKey(o: unknown, k: string): boolean {
+  return !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
+}
+
+function isAliasString(v: unknown): v is string {
+  return typeof v === 'string' && v.startsWith('{') && v.endsWith('}') && v.length > 2;
+}
+function parseAliasToSegments(v: string): string[] {
+  // exact segments, keep spacing/punctuation as-is (only trim around the dot delimiter)
+  return v.slice(1, -1).split('.').map(s => s.trim());
+}
+
+function isLikelyHexString(v: unknown): v is string {
+  return typeof v === 'string'
+    && /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
+}
+
+function toNumber(x: unknown, def: number): number {
+  return typeof x === 'number' ? x : def;
+}
+
+function parseColorSpaceUnion(x: unknown): 'srgb' | 'display-p3' {
+  if (x === 'display-p3') return 'display-p3';
+  return 'srgb';
+}
+
+function isColorObject(obj: unknown): obj is { colorSpace?: string; components?: number[]; alpha?: number; hex?: string } {
+  if (!obj || typeof obj !== 'object') return false;
+  const o = obj as any;
+  return (
+    typeof o.colorSpace === 'string' ||
+    (Array.isArray(o.components) && o.components.length >= 3) ||
+    typeof o.hex === 'string'
+  );
+}
+
+function readColorValue(raw: unknown): ColorValue | null {
+  // Only call this after we've decided it *should* be a color.
+  if (typeof raw === 'string') {
+    if (!isLikelyHexString(raw)) return null;
+    try {
+      return hexToDtcgColor(raw);
+    } catch {
+      return null;
+    }
+  }
+  const obj = raw as { colorSpace?: string; components?: number[]; alpha?: number; hex?: string };
+  const cs = parseColorSpaceUnion(obj?.colorSpace);
+  let comps: [number, number, number] = [0, 0, 0];
+  if (Array.isArray(obj?.components) && obj!.components.length >= 3) {
+    comps = [
+      toNumber(obj!.components[0], 0),
+      toNumber(obj!.components[1], 0),
+      toNumber(obj!.components[2], 0),
+    ];
+  }
+  const alpha = typeof obj?.alpha === 'number' ? obj!.alpha : undefined;
+  const hex = typeof obj?.hex === 'string' ? obj!.hex : undefined;
+
+  return { colorSpace: cs, components: comps, alpha, hex };
+}
 
 // Extract minimal Figma metadata from $extensions.com.figma (if present)
 function readComFigma(o: unknown): { collectionName?: string; modeName?: string; variableName?: string } | null {
   if (!o || typeof o !== 'object') return null;
   const ext = (o as any)['$extensions'];
   if (!ext || typeof ext !== 'object') return null;
-  const org = (ext as any)['com.figma'];
-  if (!org || typeof org !== 'object') return null;
+  const com = (ext as any)['com.figma'];
+  if (!com || typeof com !== 'object') return null;
 
-  const out: any = {};
-  if (typeof org.collectionName === 'string') out.collectionName = org.collectionName;
-  if (typeof org.modeName === 'string') out.modeName = org.modeName;
-  if (typeof org.variableName === 'string') out.variableName = org.variableName;
+  const out: { collectionName?: string; modeName?: string; variableName?: string } = {};
+  if (typeof com.collectionName === 'string') out.collectionName = com.collectionName;
+  if (typeof com.modeName === 'string') out.modeName = com.modeName;
+  if (typeof com.variableName === 'string') out.variableName = com.variableName;
   return out;
 }
 
 /**
  * Compute IR path and ctx for a token based on:
- *  - $extensions.com.figma.collectionName / modeName / variableName (if present)
- *  - otherwise W3C group path (first segment = collection, rest join to variable)
+ *  - $extensions.com.figma.collectionName / modeName / variableName (if present, use EXACT strings)
+ *  - otherwise the JSON group path literally (no normalization)
  *  - flat tokens (single segment) go under "tokens" collection by default
  *  - default Figma mode when missing = "Mode 1"
  */
@@ -32,145 +107,89 @@ function computePathAndCtx(currentPath: string[], rawNode: unknown): { irPath: s
   const leaf = currentPath[currentPath.length - 1] || 'token';
 
   let collection: string;
-  let varName: string;
+  let variableName: string;
 
   if (meta.collectionName) {
     collection = meta.collectionName;
-    if (meta.variableName && meta.variableName.trim().length > 0) {
-      varName = meta.variableName;
+    if (meta.variableName && meta.variableName.length > 0) {
+      variableName = meta.variableName;
     } else if (currentPath.length > 1) {
-      varName = currentPath.slice(1).join('/');
+      variableName = currentPath.slice(1).join('/');
     } else {
-      varName = leaf;
+      variableName = leaf;
     }
   } else {
     if (currentPath.length > 1) {
       collection = currentPath[0];
-      varName = currentPath.slice(1).join('/');
+      variableName = currentPath.slice(1).join('/');
     } else {
       // flat token → put into a safe default collection
       collection = 'tokens';
-      varName = leaf;
+      variableName = leaf;
     }
   }
 
-  let irPath: string[];
-  if (meta.collectionName) {
-    // Preserve exact collection + variable names from metadata (no slugging)
-    const segs = (meta.variableName && meta.variableName.trim().length > 0
-      ? meta.variableName
-      : varName
-    ).split('/').map(s => s.trim()).filter(s => s.length > 0);
-    irPath = [collection, ...segs];
-  } else {
-    // No metadata → fall back to canonical/slugged path from group keys
-    irPath = canonicalPath(collection, varName);
-  }
+  // Never slug/trim/mutate; split literal variableName by '/'
+  const irPath: string[] = [collection, ...variableName.split('/')];
 
   const mode = meta.modeName || 'Mode 1';
   const ctx = ctxKey(collection, mode);
   return { irPath, ctx };
 }
 
-
 function guessTypeFromValue(v: unknown): PrimitiveType {
   if (typeof v === 'number') return 'number';
-  if (typeof v === 'string') return 'string';
   if (typeof v === 'boolean') return 'boolean';
+  if (typeof v === 'string') return 'string';
   return 'string';
 }
 
-function isColorObject(obj: unknown): obj is { colorSpace?: string; components?: number[]; alpha?: number; hex?: string } {
-  return !!obj && typeof obj === 'object' && (
-    typeof (obj as { colorSpace?: unknown }).colorSpace === 'string' ||
-    (obj as { components?: unknown }).components instanceof Array ||
-    typeof (obj as { hex?: unknown }).hex === 'string'
-  );
-}
-
-function hasKey(o: unknown, k: string): boolean {
-  return !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
-}
-
-function toNumber(x: unknown, def: number): number {
-  return typeof x === 'number' ? x : def;
-}
-
-function parseColorSpaceUnion(x: unknown): 'srgb' | 'display-p3' {
-  if (x === 'srgb') return 'srgb';
-  if (x === 'display-p3') return 'display-p3';
-  return 'srgb';
-}
-
-
-
-function readColorValue(raw: unknown): ColorValue {
-  // Allow either hex string or object form
-  if (typeof raw === 'string') {
-    return hexToDtcgColor(raw);
-  }
-  var obj = raw as { colorSpace?: string; components?: number[]; alpha?: number; hex?: string };
-
-  var cs = parseColorSpaceUnion(obj.colorSpace);
-  var comps: [number, number, number] = [0, 0, 0];
-  if (obj.components && obj.components.length >= 3) {
-    comps = [toNumber(obj.components[0], 0), toNumber(obj.components[1], 0), toNumber(obj.components[2], 0)];
-  }
-  var alpha = typeof obj.alpha === 'number' ? obj.alpha : undefined;
-  var hex = typeof obj.hex === 'string' ? obj.hex : undefined;
-
-  return { colorSpace: cs, components: comps, alpha: alpha, hex: hex };
-}
-
 export function readDtcgToIR(root: unknown): TokenGraph {
-  var tokens: TokenNode[] = [];
-  var defaultCtx = ctxKey('tokens', 'default');
+  const tokens: TokenNode[] = [];
 
   function visit(obj: unknown, path: string[], inheritedType: PrimitiveType | null): void {
     if (!obj || typeof obj !== 'object') return;
 
-    var groupType: PrimitiveType | null = inheritedType;
-    if (hasKey(obj, '$type') && typeof (obj as { $type: unknown }).$type === 'string') {
-      var t = String((obj as { $type: unknown }).$type);
-      if (t === 'color' || t === 'number' || t === 'string' || t === 'boolean') groupType = t;
+    // group-level $type inheritance (DTCG)
+    let groupType: PrimitiveType | null = inheritedType;
+    if (hasKey(obj, '$type') && typeof (obj as any).$type === 'string') {
+      const t = String((obj as any).$type);
+      if (t === 'color' || t === 'number' || t === 'string' || t === 'boolean') {
+        groupType = t as PrimitiveType;
+      }
     }
 
+    // Token node?
     if (hasKey(obj, '$value')) {
-      var rawVal = (obj as { $value: unknown }).$value;
+      const rawVal = (obj as any).$value;
 
-      function readExtensions(obj: unknown): Record<string, unknown> | undefined {
-        if (!obj || typeof obj !== 'object') return undefined;
-        const ext = (obj as { $extensions?: unknown }).$extensions;
-        return ext && typeof ext === 'object' ? (ext as Record<string, unknown>) : undefined;
-      }
-
-
-      // alias?
-      if (typeof rawVal === 'string') {
-        const ref = parseAliasString(rawVal);
-        if (ref && ref.length > 0) {
-          const { irPath, ctx } = computePathAndCtx(path, obj);
-          const byCtx: { [k: string]: ValueOrAlias } = {};
-          byCtx[ctx] = { kind: 'alias', path: ref };
-
-          tokens.push({
-            path: irPath,
-            type: groupType ? groupType : 'string',
-            byContext: byCtx,
-            // keep original $extensions if present (round-trip friendly)
-            ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
-          });
-          return;
-        }
-      }
-
-
-      // color object or hex
-      if (isColorObject(rawVal) || typeof rawVal === 'string') {
-        const value = readColorValue(rawVal);
+      // Aliases are always strings of the form {a.b.c}
+      if (isAliasString(rawVal)) {
+        const segs = parseAliasToSegments(rawVal);
         const { irPath, ctx } = computePathAndCtx(path, obj);
         const byCtx: { [k: string]: ValueOrAlias } = {};
-        byCtx[ctx] = { kind: 'color', value };
+        byCtx[ctx] = { kind: 'alias', path: segs };
+
+        tokens.push({
+          path: irPath,
+          type: groupType ?? 'string',
+          byContext: byCtx,
+          ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
+        });
+        return;
+      }
+
+      // Colors: ONLY when $type (inherited or local) is 'color'
+      if (groupType === 'color') {
+        const parsed = readColorValue(rawVal);
+        if (!parsed) {
+          const { irPath } = computePathAndCtx(path, obj);
+          logWarn(`Skipped invalid color for “${irPath.join('/')}” — expected hex or color object.`);
+          return;
+        }
+        const { irPath, ctx } = computePathAndCtx(path, obj);
+        const byCtx: { [k: string]: ValueOrAlias } = {};
+        byCtx[ctx] = { kind: 'color', value: parsed };
 
         tokens.push({
           path: irPath,
@@ -181,16 +200,22 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         return;
       }
 
-
-      // primitives
-      const t2 = groupType ? groupType : guessTypeFromValue(rawVal);
+      // Primitives (respect declared type; no color coercion here)
+      const t2: PrimitiveType = groupType ?? guessTypeFromValue(rawVal);
       let valObj: ValueOrAlias | null = null;
-      if (t2 === 'number' && typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
-      else if (t2 === 'boolean' && typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
-      else if (t2 === 'string' && typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
-      else if (typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
-      else if (typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
-      else if (typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
+
+      if (t2 === 'number' && typeof rawVal === 'number') {
+        valObj = { kind: 'number', value: rawVal };
+      } else if (t2 === 'boolean' && typeof rawVal === 'boolean') {
+        valObj = { kind: 'boolean', value: rawVal };
+      } else if (t2 === 'string' && typeof rawVal === 'string') {
+        valObj = { kind: 'string', value: rawVal };
+      } else {
+        // Fallback: minimally coerce by JS type (but still never to color)
+        if (typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
+        else if (typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
+        else if (typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
+      }
 
       if (valObj) {
         const { irPath, ctx } = computePathAndCtx(path, obj);
@@ -205,20 +230,18 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         });
       }
       return;
-
     }
 
-    // groups
-    var k: string;
-    for (k in obj) {
+    // Group: recurse children with *exact* key names (no slugging/canonicalization)
+    for (const k in obj as Record<string, unknown>) {
       if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
-      if (k.length > 0 && k.charAt(0) === '$') continue;
-      var child = (obj as { [key: string]: unknown })[k];
-      var newPath = path.concat([slugSegment(k)]);
+      if (k.startsWith('$')) continue; // skip metadata keys
+      const child = (obj as Record<string, unknown>)[k];
+      const newPath = path.concat([k]); // preserve key *exactly*
       visit(child, newPath, groupType);
     }
   }
 
   visit(root, [], null);
-  return { tokens: tokens };
+  return { tokens };
 }
