@@ -36,6 +36,17 @@ function isLikelyHexString(v: unknown): v is string {
     && /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
 }
 
+function readDescription(obj: unknown): string | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const d = (obj as any)['$description'];
+  if (typeof d === 'string') {
+    const s = d.trim();
+    if (s.length > 0) return s;
+  }
+  return undefined;
+}
+
+
 /**
  * Flexible color parser:
  * - Strict by default (reject all string forms).
@@ -141,6 +152,9 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
         const { irPath, ctx } = computePathAndCtx(path, obj);
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'alias', path: segs };
+
+        const desc = readDescription(obj);
+
 
         tokens.push({
           path: irPath,

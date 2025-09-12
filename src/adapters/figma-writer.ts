@@ -68,7 +68,6 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfi
   return false;
 }
 
-
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
   if (t === 'color') return 'COLOR';
   if (t === 'number') return 'FLOAT';
@@ -111,9 +110,6 @@ function maybeWarnColorMismatch(t: TokenNode, ctx: string, importedHexOrNull: st
 }
 
 // Normalize alias path segments (array or string) and adjust first segment:
-// - If first segment matches a known collection, keep it.
-// - Else if it matches a slug of a known collection, replace with the display name.
-// - Else treat as relative to the current token’s collection and prefix it.
 function normalizeAliasSegments(
   rawPath: string[] | string,
   currentCollection: string,
@@ -141,7 +137,6 @@ function normalizeAliasSegments(
 
 // ---- strict name check helper (extensions vs JSON path)
 function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
-  // Only care about com.figma
   const ext = t.extensions && typeof t.extensions === 'object'
     ? (t.extensions as any)['com.figma']
     : undefined;
@@ -156,7 +151,7 @@ function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
   let expectedVariable: string | undefined =
     typeof (ext as any).variableName === 'string' ? (ext as any).variableName : undefined;
 
-  // Per your note: you only use com.figma; still, if top-level absent but perContext exists, be lenient
+  // If top-level missing, try perContext (lenient)
   if (!expectedCollection || !expectedVariable) {
     const per = (ext as any).perContext;
     if (per && typeof per === 'object') {
@@ -308,7 +303,6 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
     // Do NOT create a collection or variable unless we have at least one *valid* direct value.
     if (!tokenHasAtLeastOneValidDirectValue(t, profile)) {
-
       logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
       continue;
     }
@@ -331,11 +325,10 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
     }
 
-    // --- NEW: set description if provided (non-destructive when absent)
-    if (typeof t.description === 'string' && t.description.length > 0 && v.description !== t.description) {
-      v.description = t.description;
+    // --- set description if provided (safe & idempotent)
+    if (typeof t.description === 'string' && t.description.trim().length > 0 && v.description !== t.description) {
+      try { v.description = t.description; } catch { /* ignore */ }
     }
-
 
     // Index display & slug for BOTH collection and variable segments
     const varSegs = varName.split('/');
@@ -413,10 +406,10 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
       }
 
-      if (typeof t.description === 'string' && t.description.length > 0 && v.description !== t.description) {
-        v.description = t.description;
+      // --- set description if provided (safe & idempotent)
+      if (typeof t.description === 'string' && t.description.trim().length > 0 && v.description !== t.description) {
+        try { v.description = t.description; } catch { /* ignore */ }
       }
-
 
       // Index display & slug for BOTH collection and variable segments
       const varSegs = varName.split('/');
@@ -447,7 +440,7 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     }
   }
 
-  // ---- Pass 2: set values (including aliases)
+  // ---- Pass 2: set values (including aliases) + optional description sync
   for (const node of graph.tokens) {
     // resolve our variable id via any of the 4 keys we indexed
     const collectionName = node.path[0];
@@ -472,6 +465,11 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
     const targetVar = await variablesApi.getVariableByIdAsync(varId);
     if (!targetVar) continue;
+
+    // Optional: keep existing variables' descriptions in sync with incoming IR
+    if (typeof node.description === 'string' && node.description.trim().length > 0 && targetVar.description !== node.description) {
+      try { targetVar.description = node.description; } catch { /* ignore */ }
+    }
 
     const ctxKeys = forEachKey(node.byContext);
     for (const ctx of ctxKeys) {
