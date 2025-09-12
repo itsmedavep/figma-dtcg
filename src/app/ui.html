@@ -391,6 +391,52 @@
       max-height: 100%;
       /* ensure flex height stays inside its parent */
     }
+
+    /* --- tabs --- */
+    .tabs {
+      display: flex;
+      gap: .25rem;
+      align-items: center;
+    }
+
+    .tab-btn {
+      font-size: 1rem;
+      padding: .5rem 1rem;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--ink);
+      border-radius: .25rem;
+      cursor: pointer;
+    }
+
+    .tab-btn:hover {
+      color: #000000;
+    }
+
+    .tab-btn.is-active {
+      background: var(--ink-subtle);
+      color: #fff;
+      border-color: var(--ink-muted);
+    }
+
+    .tab-btn.tab-btn.is-active:hover {
+      color: #000000;
+    }
+
+    .tab-panel {
+      display: none;
+      /* default hidden */
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .tab-panel.is-active {
+      display: flex;
+      /* active panel becomes the column content */
+    }
   </style>
 </head>
 
@@ -404,51 +450,67 @@
             <div class="eyebrow">Actions</div>
             <h2 class="title">Import & Export</h2>
           </div>
+          <div class="tabs" role="tablist" aria-label="Import and Export">
+            <button class="tab-btn is-active" data-tab="import" role="tab" aria-selected="true"
+              aria-controls="panel-import">Import</button>
+            <button class="tab-btn" data-tab="export" role="tab" aria-selected="false"
+              aria-controls="panel-export">Export</button>
+          </div>
         </div>
+
         <div class="panel-body">
-          <!-- Import -->
-          <div class="stack">
-            <div class="eyebrow">Import DTCG</div>
-            <div>
-              <label>Choose a DTCG JSON file</label>
-              <input id="file" type="file" accept=".json,application/json" />
-            </div>
-            <div class="row">
-              <button id="importBtn" class="css-button-neumorphic">Import</button>
-            </div>
-            <div class="row">
-              <div style="display: flex; gap: .25rem;">
-                <input id="allowHexChk" type="checkbox" />
-                <label for="allowHexChk" class="muted" style="padding-top: .35rem;">Accept hex strings as colors</label>
+          <!-- Import tab -->
+          <div class="tab-panel is-active" id="panel-import" data-tab="import" role="tabpanel"
+            aria-labelledby="tab-import">
+            <div class="stack">
+              <div class="eyebrow">Import DTCG</div>
+              <div>
+                <label>Choose a DTCG JSON file</label>
+                <div class="muted" style="padding: .5rem 0">Imports collections/modes as defined in the file.</div>
+                <input id="file" type="file" accept=".json,application/json" />
               </div>
+              <div class="row">
+                <button id="importBtn" class="css-button-neumorphic">Import</button>
+              </div>
+              <div class="row">
+                <div style="display: flex; gap: .25rem;">
+                  <input id="allowHexChk" type="checkbox" />
+                  <label for="allowHexChk" class="muted" style="padding-top: .35rem;">Accept hex strings as
+                    colors</label>
+                </div>
+              </div>
+
             </div>
-            <div class="muted">Imports collections/modes as defined in the file.</div>
           </div>
 
-          <!-- Export -->
-          <div class="stack" style="border-top:1px solid var(--border);padding-top:12px;">
-            <div class="eyebrow">Export DTCG</div>
-            <div class="row-center"></div>
-            <div class="stack" id="exportPickers">
-              <div>
-                <label>Collection</label>
-                <select id="collectionSelect"></select>
-              </div>
-              <div>
-                <label>Mode (within collection)</label>
-                <select id="modeSelect"></select>
-              </div>
-              <div>
-                <label><input type="checkbox" id="exportAllChk" /> Export all collections &amp; modes into a single
-                  file</label>
-                <div class="muted">Select a collection and mode, or check “Export all”.</div>
-                <button id="exportBtn" class="css-button-neumorphic">Export</button>
+          <!-- Export tab -->
+          <div class="tab-panel" id="panel-export" data-tab="export" role="tabpanel" aria-labelledby="tab-export">
+            <div class="stack" style="border-top:1px solid var(--border);padding-top:12px;">
+              <div class="eyebrow">Export DTCG</div>
+              <div class="row-center"></div>
+              <div class="stack" id="exportPickers">
+                <div>
+                  <label>Collection</label>
+                  <select id="collectionSelect"></select>
+                </div>
+                <div>
+                  <label>Mode (within collection)</label>
+                  <select id="modeSelect"></select>
+                </div>
+                <div>
+                  <label><input type="checkbox" id="exportAllChk" /> Export all collections &amp; modes into a single
+                    file</label>
+                  <div class="muted">Select a collection and mode, or check “Export all”.</div>
+                  <button id="exportBtn" class="css-button-neumorphic">Export</button>
+                </div>
               </div>
             </div>
           </div>
+          <!-- /Export tab -->
         </div>
       </div>
     </div>
+
 
     <!-- Middle: Raw Figma Collections -->
     <div class="col">
@@ -507,6 +569,37 @@
   </div>
   <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
   <script src="./ui.js"></script>
+  <script>
+    (function () {
+      const shell = document.querySelector('.shell'); // optional, but handy if needed
+      const tabButtons = Array.from(document.querySelectorAll('.panel .tabs .tab-btn'));
+      const panels = Array.from(document.querySelectorAll('.panel-body .tab-panel'));
+
+      function activate(tab) {
+        const name = tab.getAttribute('data-tab');
+        // buttons
+        tabButtons.forEach(b => {
+          const on = b.getAttribute('data-tab') === name;
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', String(on));
+        });
+        // panels
+        panels.forEach(p => {
+          const on = p.getAttribute('data-tab') === name;
+          p.classList.toggle('is-active', on);
+          if (on) {
+            // ensure the active panel starts scrolled to top (optional)
+            p.scrollTop = 0;
+          }
+        });
+      }
+
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => activate(btn));
+      });
+    })();
+  </script>
+
 </body>
 
 </html>
