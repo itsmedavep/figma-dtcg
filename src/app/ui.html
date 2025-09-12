@@ -156,14 +156,13 @@
 
     button {
       padding: 10px 12px;
-      border: 2;
+      border: 2px solid var(--accent);
       border-radius: .25rem;
-      border-color: var(--accent);
       color: #000000;
       font-weight: 600;
       cursor: pointer;
       font-size: 16px;
-      background: ffffff;
+      background: #ffffff;
     }
 
     button[disabled] {
@@ -379,6 +378,19 @@
     .panel-header button:hover {
       background: #f3f4f6;
     }
+
+    /* --- overflow fixes: keep content inside cards and allow scrolling --- */
+    .panel {
+      overflow: hidden;
+      /* clip children to rounded corners */
+    }
+
+    .panel-body {
+      overflow: auto;
+      /* scroll the body if content is taller than the panel */
+      max-height: 100%;
+      /* ensure flex height stays inside its parent */
+    }
   </style>
 </head>
 
@@ -446,7 +458,7 @@
             <div class="eyebrow">Reference</div>
             <h2 class="title">Raw Figma Collections</h2>
           </div>
-          <div id="actions">
+          <div class="actions">
             <button id="copyRawBtn" title="Copy raw collections">Copy</button>
             <button id="refreshBtn">Refresh</button>
           </div>
