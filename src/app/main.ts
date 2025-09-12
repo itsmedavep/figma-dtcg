@@ -146,7 +146,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
     }
 
     if (msg.type === 'IMPORT_DTCG') {
-      await importDtcg(msg.payload.json);
+      await importDtcg(msg.payload.json, { allowHexStrings: !!msg.payload.allowHexStrings });
       send({ type: 'INFO', payload: { message: 'Import completed.' } });
       const snap2 = await snapshotCollectionsForUi();
       const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });

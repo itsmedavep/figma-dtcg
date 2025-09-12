@@ -24,6 +24,8 @@ const copyRawBtn = document.getElementById('copyRawBtn') as HTMLButtonElement | 
 const copyW3cBtn = document.getElementById('copyW3cBtn') as HTMLButtonElement | null;
 const copyLogBtn = document.getElementById('copyLogBtn') as HTMLButtonElement | null;
 
+const allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
+
 
 
 
@@ -337,8 +339,12 @@ if (importBtn && importBtn instanceof HTMLButtonElement && fileInput && fileInpu
         const json = JSON.parse(text);
         // Minimal sanity check (object, not array)
         if (json && typeof json === 'object' && !(json instanceof Array)) {
-          postToPlugin({ type: 'IMPORT_DTCG', payload: { json: json } });
+          postToPlugin({
+            type: 'IMPORT_DTCG',
+            payload: { json: json, allowHexStrings: !!(allowHexChk && allowHexChk.checked) }
+          });
           log('Import requested.');
+
         } else {
           log('Invalid JSON structure for tokens (expected an object).');
         }

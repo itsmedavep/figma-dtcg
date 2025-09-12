@@ -37,30 +37,42 @@ function isLikelyHexString(v: unknown): v is string {
 }
 
 /**
- * Strict color parser:
- * - Accept objects only if shape is valid (supported colorSpace, 3 numeric components, alpha number in [0..1] or undefined).
- * - Do NOT accept strings (e.g., "#112233"): those are rejected to enforce DTCG color object shape.
- * - Do NOT coerce types (e.g., alpha:"1" stays string -> rejected by validator).
+ * Flexible color parser:
+ * - Strict by default (reject all string forms).
+ * - When allowHexStrings = true, accept hex strings -> DTCG object via hexToDtcgColor (srgb).
+ * - Always accept objects only if shape is valid (supported colorSpace, 3 numeric components, alpha number in [0..1] or undefined).
+ * - Do NOT coerce object member types (alpha:"1" stays string -> rejected by validator).
  */
-function readColorValueStrict(raw: unknown): any | null {
-  // Reject all string forms (including hex); require color OBJECT per policy.
+function readColorValueFlexible(
+  raw: unknown,
+  allowHexStrings: boolean
+): { value: any; coercedFromHex: boolean } | null {
+  // String form
   if (typeof raw === 'string') {
-    return null;
+    if (!allowHexStrings) return null;
+    if (!isLikelyHexString(raw)) return null;
+    try {
+      return { value: hexToDtcgColor(raw), coercedFromHex: true };
+    } catch {
+      return null;
+    }
   }
 
   // Object form (no coercion)
   if (raw && typeof raw === 'object') {
     const obj = raw as any;
     const candidate: any = {
+      // keep as-is; validator will check allowed spaces (srgb/display-p3)
       ...(typeof obj.colorSpace === 'string' ? { colorSpace: obj.colorSpace } : {}),
       ...(Array.isArray(obj.components) ? { components: obj.components.slice(0, 3) } : {}),
+      // preserve provided alpha *as-is*; validator will reject non-number/out-of-range
       ...(('alpha' in obj) ? { alpha: obj.alpha } : {}),
       ...(typeof obj.hex === 'string' ? { hex: obj.hex } : {})
     };
 
     const shape = isDtcgColorShapeValid(candidate);
     if (!shape.ok) return null;
-    return candidate;
+    return { value: candidate, coercedFromHex: false };
   }
 
   return null;
@@ -91,7 +103,13 @@ function guessTypeFromValue(v: unknown): PrimitiveType {
   return 'string';
 }
 
-export function readDtcgToIR(root: unknown): TokenGraph {
+export interface DtcgReaderOptions {
+  /** When true, accept hex strings like "#RRGGBB[AA]" and coerce to a DTCG color object (srgb). Default: false (strict). */
+  allowHexStrings?: boolean;
+}
+
+export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): TokenGraph {
+  const allowHexStrings = !!opts.allowHexStrings;
   const tokens: TokenNode[] = [];
 
   function visit(obj: unknown, path: string[], inheritedType: PrimitiveType | null): void {
@@ -128,20 +146,28 @@ export function readDtcgToIR(root: unknown): TokenGraph {
 
       // Colors: ONLY when $type (inherited or local) is 'color'
       if (groupType === 'color') {
-        const parsed = readColorValueStrict(rawVal);
         const { irPath, ctx } = computePathAndCtx(path, obj);
+        const parsed = readColorValueFlexible(rawVal, allowHexStrings);
 
         if (!parsed) {
-          logWarn(
-            `Skipped invalid color for “${irPath.join('/')}” — expected a DTCG color object ` +
-            `(srgb/display-p3, 3 numeric components, optional numeric alpha in [0..1]); strings like "#RRGGBB" are not accepted.`
-          );
+          if (typeof rawVal === 'string') {
+            if (allowHexStrings) {
+              logWarn(`Skipped invalid color for “${irPath.join('/')}” — expected hex string or a valid DTCG color object (srgb/display-p3, 3 numeric components, alpha in [0..1]).`);
+            } else {
+              logWarn(`Skipped invalid color for “${irPath.join('/')}” — expected a DTCG color object (srgb/display-p3, 3 numeric components, optional numeric alpha in [0..1]); strings like "#RRGGBB" are not accepted.`);
+            }
+          } else {
+            logWarn(`Skipped invalid color for “${irPath.join('/')}” — expected a valid DTCG color object (srgb/display-p3, 3 numeric components, alpha in [0..1]).`);
+          }
           return;
         }
 
+        if (parsed.coercedFromHex) {
+          logInfo(`Coerced string hex to DTCG color object for “${irPath.join('/')}”.`);
+        }
 
         const byCtx: { [k: string]: ValueOrAlias } = {};
-        byCtx[ctx] = { kind: 'color', value: parsed };
+        byCtx[ctx] = { kind: 'color', value: parsed.value };
 
         tokens.push({
           path: irPath,

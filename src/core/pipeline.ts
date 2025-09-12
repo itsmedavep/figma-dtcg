@@ -16,6 +16,11 @@ export interface ExportResult { files: Array<{ name: string; json: unknown }> }
 
 // ---------- helpers ----------
 
+export interface ImportOpts {
+  allowHexStrings?: boolean;
+}
+
+
 function keysOf<T>(obj: { [k: string]: T }): string[] {
   var out: string[] = [];
   var k: string;
@@ -53,12 +58,13 @@ function cloneTokenWithSingleContext(t: TokenNode, ctx: string): TokenNode | nul
 
 // ---------- API ----------
 
-export async function importDtcg(json: unknown): Promise<void> {
+export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<void> {
   // Build desired graph from DTCG, then write directly to Figma.
   // (Diffing/plan is optional; we keep a single code path for now.)
-  var desired = normalize(readDtcgToIR(json));
+  const desired = normalize(readDtcgToIR(json, { allowHexStrings: !!opts.allowHexStrings }));
   await writeIRToFigma(desired);
 }
+
 
 export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
   var current = await readFigmaToIR();

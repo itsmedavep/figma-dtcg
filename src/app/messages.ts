@@ -4,7 +4,7 @@
 export type UiToPlugin =
   | { type: 'UI_READY' }
   | { type: 'FETCH_COLLECTIONS' }
-  | { type: 'IMPORT_DTCG'; payload: { json: unknown } }
+  | { type: 'IMPORT_DTCG'; payload: { json: unknown; allowHexStrings?: boolean } }
   | {
     type: 'EXPORT_DTCG';
     payload: { exportAll: boolean; collection?: string; mode?: string };
