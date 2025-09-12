@@ -3,7 +3,62 @@
 
 import type { ColorValue } from './ir';
 
-export type DocumentProfile = 'SRGB' | 'DISPLAY_P3' | 'LEGACY';
+// --- ADD: supported DTCG color spaces (limited to what we’ll accept) ---
+export type DocumentProfile = 'SRGB' | 'DISPLAY_P3'; // Figma document profiles
+
+// Only accept these DTCG color spaces in this plugin:
+const SUPPORTED_DTCG_COLOR_SPACES = new Set(['srgb', 'display-p3'] as const);
+
+// --- ADD: strict shape validator for a DTCG color object ---
+// Expects object like { colorSpace: 'srgb'|'display-p3', components: [r,g,b], alpha?: number, hex?: string }
+export function isDtcgColorShapeValid(input: any): { ok: boolean; reason?: string } {
+  if (!input || typeof input !== 'object') {
+    return { ok: false, reason: 'not an object' };
+  }
+
+  const cs = String(input.colorSpace || '').toLowerCase();
+  if (!SUPPORTED_DTCG_COLOR_SPACES.has(cs as any)) {
+    return { ok: false, reason: `unsupported colorSpace (“${input.colorSpace}”)` };
+  }
+
+  if (!Array.isArray(input.components) || input.components.length !== 3) {
+    return { ok: false, reason: 'components must be an array of length 3' };
+  }
+
+  // components must be finite numbers in [0..1]
+  for (let i = 0; i < 3; i++) {
+    const v = input.components[i];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      return { ok: false, reason: `component ${i} is not a finite number` };
+    }
+    if (v < 0 || v > 1) {
+      return { ok: false, reason: `component ${i} out of range (${v})` };
+    }
+  }
+
+  // alpha, if present, must be finite number in [0..1]
+  if (typeof input.alpha !== 'undefined') {
+    if (typeof input.alpha !== 'number' || !Number.isFinite(input.alpha)) {
+      return { ok: false, reason: 'alpha is not a finite number' };
+    }
+    if (input.alpha < 0 || input.alpha > 1) {
+      return { ok: false, reason: `alpha out of range (${input.alpha})` };
+    }
+  }
+
+  return { ok: true };
+}
+
+// --- ADD: document representability gate ---
+// In SRGB docs → only 'srgb'. In Display-P3 docs → 'srgb' and 'display-p3'.
+export function isColorSpaceRepresentableInDocument(
+  colorSpace: string,
+  profile: DocumentProfile
+): boolean {
+  const cs = String(colorSpace).toLowerCase();
+  if (profile === 'DISPLAY_P3') return cs === 'srgb' || cs === 'display-p3';
+  return cs === 'srgb';
+}
 
 function clamp01(x: number): number {
   if (x < 0) return 0;

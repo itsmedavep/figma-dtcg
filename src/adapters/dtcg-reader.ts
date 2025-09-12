@@ -6,10 +6,10 @@ import {
   type TokenNode,
   type PrimitiveType,
   type ValueOrAlias,
-  ctxKey,
-  type ColorValue
 } from '../core/ir';
-import { hexToDtcgColor, isDtcgColorInUnitRange } from '../core/color';
+
+// ---------- color parsing (strict) ----------
+import { hexToDtcgColor, isDtcgColorShapeValid } from '../core/color';
 
 // ---------- lightweight logging (no toasts) ----------
 function logInfo(msg: string) {
@@ -25,6 +25,7 @@ function hasKey(o: unknown, k: string): boolean {
 function isAliasString(v: unknown): v is string {
   return typeof v === 'string' && v.startsWith('{') && v.endsWith('}') && v.length > 2;
 }
+
 function parseAliasToSegments(v: string): string[] {
   // exact segments, keep spacing/punctuation as-is (only trim around the dot delimiter)
   return v.slice(1, -1).split('.').map(s => s.trim());
@@ -35,71 +36,40 @@ function isLikelyHexString(v: unknown): v is string {
     && /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
 }
 
-function toNumber(x: unknown, def: number): number {
-  return typeof x === 'number' ? x : def;
-}
-
-function parseColorSpaceUnion(x: unknown): 'srgb' | 'display-p3' {
-  if (x === 'display-p3') return 'display-p3';
-  return 'srgb';
-}
-
-function isColorObject(obj: unknown): obj is { colorSpace?: string; components?: number[]; alpha?: number; hex?: string } {
-  if (!obj || typeof obj !== 'object') return false;
-  const o = obj as any;
-  return (
-    typeof o.colorSpace === 'string' ||
-    (Array.isArray(o.components) && o.components.length >= 3) ||
-    typeof o.hex === 'string'
-  );
-}
-
-function readColorValue(raw: unknown): ColorValue | null {
-  // Only call this after we've decided it *should* be a color.
+/**
+ * Strict color parser:
+ * - Accept objects only if shape is valid (supported colorSpace, 3 numeric components, alpha number in [0..1] or undefined).
+ * - Do NOT accept strings (e.g., "#112233"): those are rejected to enforce DTCG color object shape.
+ * - Do NOT coerce types (e.g., alpha:"1" stays string -> rejected by validator).
+ */
+function readColorValueStrict(raw: unknown): any | null {
+  // Reject all string forms (including hex); require color OBJECT per policy.
   if (typeof raw === 'string') {
-    if (!isLikelyHexString(raw)) return null;
-    try {
-      return hexToDtcgColor(raw);
-    } catch {
-      return null;
-    }
+    return null;
   }
-  const obj = raw as { colorSpace?: string; components?: number[]; alpha?: number; hex?: string };
-  const cs = parseColorSpaceUnion(obj?.colorSpace);
-  let comps: [number, number, number] = [0, 0, 0];
-  if (Array.isArray(obj?.components) && obj!.components.length >= 3) {
-    comps = [
-      toNumber(obj!.components[0], 0),
-      toNumber(obj!.components[1], 0),
-      toNumber(obj!.components[2], 0),
-    ];
+
+  // Object form (no coercion)
+  if (raw && typeof raw === 'object') {
+    const obj = raw as any;
+    const candidate: any = {
+      ...(typeof obj.colorSpace === 'string' ? { colorSpace: obj.colorSpace } : {}),
+      ...(Array.isArray(obj.components) ? { components: obj.components.slice(0, 3) } : {}),
+      ...(('alpha' in obj) ? { alpha: obj.alpha } : {}),
+      ...(typeof obj.hex === 'string' ? { hex: obj.hex } : {})
+    };
+
+    const shape = isDtcgColorShapeValid(candidate);
+    if (!shape.ok) return null;
+    return candidate;
   }
-  const alpha = typeof obj?.alpha === 'number' ? obj!.alpha : undefined;
-  const hex = typeof obj?.hex === 'string' ? obj!.hex : undefined;
 
-  return { colorSpace: cs, components: comps, alpha, hex };
-}
-
-// Extract minimal Figma metadata from $extensions.com.figma (if present)
-function readComFigma(o: unknown): { collectionName?: string; modeName?: string; variableName?: string } | null {
-  if (!o || typeof o !== 'object') return null;
-  const ext = (o as any)['$extensions'];
-  if (!ext || typeof ext !== 'object') return null;
-  const com = (ext as any)['com.figma'];
-  if (!com || typeof com !== 'object') return null;
-
-  const out: { collectionName?: string; modeName?: string; variableName?: string } = {};
-  if (typeof com.collectionName === 'string') out.collectionName = com.collectionName;
-  if (typeof com.modeName === 'string') out.modeName = com.modeName;
-  if (typeof com.variableName === 'string') out.variableName = com.variableName;
-  return out;
+  return null;
 }
 
 /**
  * Compute IR path and ctx for a token based on:
- *  - $extensions.com.figma.collectionName / modeName / variableName (if present, use EXACT strings)
+ *  - $extensions.com.figma.modeName (if present, use EXACT string)
  *  - otherwise the JSON group path literally (no normalization)
- *  - flat tokens (single segment) go under "tokens" collection by default
  *  - default Figma mode when missing = "Mode 1"
  */
 function computePathAndCtx(path: string[], obj: unknown): { irPath: string[]; ctx: string } {
@@ -113,7 +83,6 @@ function computePathAndCtx(path: string[], obj: unknown): { irPath: string[]; ct
   const collection = irPath[0] ?? 'Tokens';
   return { irPath, ctx: `${collection}/${mode}` };
 }
-
 
 function guessTypeFromValue(v: unknown): PrimitiveType {
   if (typeof v === 'number') return 'number';
@@ -148,28 +117,6 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'alias', path: segs };
 
-        // after you build `byCtx` and before pushing:
-        // (this is inside the "$value is an alias" branch — repeat the same in the color & primitive branches)
-        const ext: Record<string, unknown> | undefined =
-          hasKey(obj, '$extensions') ? (obj as any)['$extensions'] as Record<string, unknown> : undefined;
-        const comFigma: Record<string, unknown> =
-          ext && typeof ext === 'object' && ext['com.figma'] && typeof (ext as any)['com.figma'] === 'object'
-            ? (ext as any)['com.figma'] as Record<string, unknown>
-            : (ext ? ((ext['com.figma'] = {}), (ext as any)['com.figma'] as Record<string, unknown>) : {});
-
-        // NEW: capture the *raw* JSON identifiers for strict checks in the writer
-        (comFigma as any).__jsonCollection = (path[0] ?? '');
-        (comFigma as any).__jsonKey = path.slice(1).join('/');
-
-        // ← keep EXACT JSON keys (no normalization)
-        // tokens.push({
-        //   path: path.slice(),                 
-        //   type: groupType ?? 'string',
-        //   byContext: byCtx,
-        //   ...(ext ? { extensions: { ...ext, 'com.figma': comFigma } } : {})
-        // });
-
-
         tokens.push({
           path: irPath,
           type: groupType ?? 'string',
@@ -181,20 +128,17 @@ export function readDtcgToIR(root: unknown): TokenGraph {
 
       // Colors: ONLY when $type (inherited or local) is 'color'
       if (groupType === 'color') {
-        const parsed = readColorValue(rawVal);
+        const parsed = readColorValueStrict(rawVal);
         const { irPath, ctx } = computePathAndCtx(path, obj);
 
         if (!parsed) {
-          logWarn(`Skipped invalid color for “${irPath.join('/')}” — expected hex or color object.`);
+          logWarn(
+            `Skipped invalid color for “${irPath.join('/')}” — expected a DTCG color object ` +
+            `(srgb/display-p3, 3 numeric components, optional numeric alpha in [0..1]); strings like "#RRGGBB" are not accepted.`
+          );
           return;
         }
 
-        // STRICT: components/alpha must be within [0..1]; do not clamp during import
-        const range = isDtcgColorInUnitRange(parsed);
-        if (!range.ok) {
-          logWarn(`Skipped invalid color for “${irPath.join('/')}” — ${range.reason}; components/alpha must be within [0..1].`);
-          return;
-        }
 
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'color', value: parsed };
@@ -207,8 +151,6 @@ export function readDtcgToIR(root: unknown): TokenGraph {
         });
         return;
       }
-
-
 
       // Primitives (respect declared type; no color coercion here)
       const t2: PrimitiveType = groupType ?? guessTypeFromValue(rawVal);

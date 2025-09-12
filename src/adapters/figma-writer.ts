@@ -7,9 +7,11 @@ import { type TokenGraph, type TokenNode, type PrimitiveType } from '../core/ir'
 import {
   dtcgToFigmaRGBA,
   type DocumentProfile,
-  isValidDtcgColorValueObject,
+  isValidDtcgColorValueObject, // kept for bucketing parity
   normalizeDtcgColorValue,
-  isDtcgColorInUnitRange
+  isDtcgColorInUnitRange,       // kept because tokenHasDirectValue already uses it; harmless to retain
+  isDtcgColorShapeValid,
+  isColorSpaceRepresentableInDocument
 } from '../core/color';
 
 // ---------- logging to UI (no toasts) ----------
@@ -29,6 +31,7 @@ function tokenHasDirectValue(t: TokenNode): boolean {
     if (!v) continue;
 
     if (t.type === 'color') {
+      // Bucketing heuristic only — Pass 1a will do the strict checks.
       if (v.kind === 'color' && isValidDtcgColorValueObject(v.value)) return true;
     } else {
       // number/string/boolean must match kind exactly
@@ -39,8 +42,8 @@ function tokenHasDirectValue(t: TokenNode): boolean {
 }
 
 // True if token has at least one *settable* direct value in any context.
-// (Color requires in-range components/alpha; other primitives just need correct kind.)
-function tokenHasAtLeastOneValidDirectValue(t: TokenNode): boolean {
+// (Color requires strict shape + document representability; other primitives just need correct kind.)
+function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfile): boolean {
   const byCtx = t.byContext || {};
   for (const ctx in byCtx) {
     const v = (byCtx as any)[ctx];
@@ -48,16 +51,22 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode): boolean {
 
     if (t.type === 'color') {
       if (v.kind !== 'color') continue;
-      if (!isValidDtcgColorValueObject(v.value)) continue;
-      const range = isDtcgColorInUnitRange(v.value);
-      if (range.ok) return true;
+
+      // STRICT 1: shape (supported colorSpace; 3 numeric components; alpha number in [0..1] or undefined)
+      const shape = isDtcgColorShapeValid(v.value);
+      if (!shape.ok) continue;
+
+      // STRICT 2: representable in this document profile (sRGB doc: only 'srgb'; P3 doc: 'srgb' and 'display-p3')
+      const cs = (v.value.colorSpace || 'srgb').toLowerCase();
+      if (!isColorSpaceRepresentableInDocument(cs, profile)) continue;
+
+      return true;
     } else if (t.type === 'number' || t.type === 'string' || t.type === 'boolean') {
       if (v.kind === t.type) return true;
     }
   }
   return false;
 }
-
 
 
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
@@ -267,7 +276,6 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     }
   }
 
-
   // helper to ensure collection exists (only when we actually create a var)
   function ensureCollection(name: string): VariableCollection {
     let col = colByName[name];
@@ -299,13 +307,13 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     const varName = varNameFromPath(t.path);
 
     // Do NOT create a collection or variable unless we have at least one *valid* direct value.
-    if (!tokenHasAtLeastOneValidDirectValue(t)) {
+    if (!tokenHasAtLeastOneValidDirectValue(t, profile)) {
+
       logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
       continue;
     }
 
     const col = ensureCollection(collectionName);
-
 
     // find existing
     let existingVarId: string | null = null;
@@ -519,29 +527,32 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         continue;
       }
       else if (val.kind === 'color') {
-        if (!isValidDtcgColorValueObject(val.value)) {
-          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — $value must be a color object with { colorSpace, components[3] }.`);
+        // STRICT: validate DTCG color object shape first
+        const shape = isDtcgColorShapeValid(val.value);
+        if (!shape.ok) {
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — ${shape.reason}.`);
           continue;
         }
 
-        // STRICT: components/alpha must be within [0..1]; do not clamp here
-        const range = isDtcgColorInUnitRange(val.value);
-        if (!range.ok) {
-          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — ${range.reason}; components/alpha must be within [0..1].`);
+        // STRICT: check representability in this document profile
+        const cs = (val.value.colorSpace || 'srgb').toLowerCase();
+        if (!isColorSpaceRepresentableInDocument(cs, profile)) {
+          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — colorSpace “${cs}” isn’t representable in this document (${profile}).`);
           continue;
         }
 
-        const norm = normalizeDtcgColorValue(val.value); // safe: only epsilon clamping now
+        // Safe normalization (no destructive clamping before checks)
+        const norm = normalizeDtcgColorValue(val.value);
         maybeWarnColorMismatch(node, ctx, typeof norm.hex === 'string' ? norm.hex : null);
         const rgba = dtcgToFigmaRGBA(norm, profile);
         targetVar.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
-
 
       } else if (val.kind === 'number' || val.kind === 'string' || val.kind === 'boolean') {
         targetVar.setValueForMode(modeId, val.value);
       }
     }
   }
+
   // After Pass 2 and after setting values
   for (const name of Object.keys(colByName)) {
     const col = colByName[name];
