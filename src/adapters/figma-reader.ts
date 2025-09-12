@@ -116,6 +116,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         path,
         type,
         byContext,
+        ...(v2.description && v2.description.length > 0 ? { description: v2.description } : {}),
         // NEW: attach $extensions payload so it shows in preview and exports
         extensions: {
           'com.figma': { perContext }

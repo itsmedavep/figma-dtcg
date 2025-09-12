@@ -198,7 +198,10 @@ function writeTokenInto(
     }
   }
 
-  if (t.description) tokenObj['$description'] = t.description;
+  // Only emit non-empty descriptions
+  if (typeof t.description === 'string' && t.description.trim() !== '') {
+    tokenObj['$description'] = t.description;
+  }
 
   // Flatten $extensions.(com|org).figma.perContext[chosenCtx] into $extensions.com.figma
   if (t.extensions) {

@@ -331,6 +331,12 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
     }
 
+    // --- NEW: set description if provided (non-destructive when absent)
+    if (typeof t.description === 'string' && t.description.length > 0 && v.description !== t.description) {
+      v.description = t.description;
+    }
+
+
     // Index display & slug for BOTH collection and variable segments
     const varSegs = varName.split('/');
     indexVarKeys(idByPath, collectionName, varSegs, v.id);
@@ -406,6 +412,11 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       } else {
         v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
       }
+
+      if (typeof t.description === 'string' && t.description.length > 0 && v.description !== t.description) {
+        v.description = t.description;
+      }
+
 
       // Index display & slug for BOTH collection and variable segments
       const varSegs = varName.split('/');

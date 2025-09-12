@@ -128,6 +128,13 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
     if (hasKey(obj, '$value')) {
       const rawVal = (obj as any).$value;
 
+      // Optional $description (DTCG)
+      const desc =
+        hasKey(obj, '$description') && typeof (obj as any)['$description'] === 'string'
+          ? ((obj as any)['$description'] as string)
+          : undefined;
+
+
       // Aliases are always strings of the form {a.b.c}
       if (isAliasString(rawVal)) {
         const segs = parseAliasToSegments(rawVal);
@@ -139,6 +146,7 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
           path: irPath,
           type: groupType ?? 'string',
           byContext: byCtx,
+          ...(desc ? { description: desc } : {}),
           ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
         return;
@@ -173,6 +181,7 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
           path: irPath,
           type: 'color',
           byContext: byCtx,
+          ...(desc ? { description: desc } : {}),
           ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
         return;
@@ -204,6 +213,7 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
           path: irPath,
           type: t2,
           byContext: byCtx,
+          ...(desc ? { description: desc } : {}),
           ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
       }
