@@ -6,7 +6,7 @@ import type { TokenGraph, TokenNode, ValueOrAlias } from './ir';
 /* =========================
    Naming & Path Utilities
    ========================= */
-
+/* 
  * Slug a single path segment for lookup (never for emission).
  * Used only to broaden alias resolution lookups.
  */
