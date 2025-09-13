@@ -89,12 +89,15 @@
       background: var(--surface);
       border-radius: 10px;
       padding: .5rem;
+      overflow: hidden;
+      /* clip children to rounded corners */
     }
 
     .panel-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
       padding: 10px 12px 4px 12px;
       border-bottom: 1px solid var(--border);
     }
@@ -121,6 +124,8 @@
       min-width: 0;
       min-height: 0;
       flex: 1;
+      overflow: auto;
+      max-height: 100%;
     }
 
     .row {
@@ -142,6 +147,7 @@
     }
 
     input[type="text"],
+    input[type="password"],
     select,
     input[type="file"] {
       width: 100%;
@@ -209,9 +215,7 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
       white-space: pre-wrap;
-      /* preserve newlines but allow wrapping */
       overflow-wrap: anywhere;
-      /* break long tokens/paths */
       word-break: break-word;
       overflow: auto;
       min-width: 0;
@@ -233,8 +237,7 @@
       justify-content: space-between;
     }
 
-
-    /* Bottom drawer (Log) spans all columns */
+    /* Bottom drawer (Log/GitHub) spans all columns */
     .drawer {
       grid-column: 1 / -1;
       grid-row: 2;
@@ -279,24 +282,18 @@
       height: 100%;
     }
 
-    /* Allow an on-canvas resize handle */
+    /* Resize handle */
     .resize-handle {
       position: fixed;
-      /* inside the iframe viewport */
       right: 6px;
       bottom: 6px;
       width: 14px;
       height: 14px;
-      /* border-right: 1px solid var(--border);
-      border-bottom: 1px solid var(--border); */
-      /* background: #fff; */
       border-radius: 3px;
-      /* box-shadow: 0 1px 2px rgba(0, 0, 0, .06); */
       cursor: nwse-resize;
       display: grid;
       place-items: center;
       z-index: 2147483647;
-      /* on top of everything inside the iframe */
     }
 
     .resize-handle::after {
@@ -304,7 +301,6 @@
       width: 8px;
       height: 8px;
       border-right: 2px solid #9ca3af;
-      /* subtle diagonal corner */
       border-bottom: 2px solid #9ca3af;
       transform: translate(1px, 1px);
       pointer-events: none;
@@ -315,30 +311,21 @@
       width: 100%;
     }
 
-    /* Collapsed drawer: turn the outer container into a thin row with no chrome,
-   and let the header itself render the small pill/bar. */
+    /* Collapsed drawer styling */
     .shell.drawer-collapsed .drawer {
       padding: 0;
-      /* remove outer padding that created the white strip */
       background: transparent;
-      /* no background/plinth */
       border: 0;
-      /* no outer border */
     }
 
-    /* Make the header itself look like a compact pill */
     .shell.drawer-collapsed .drawer .panel-header {
       padding: 4px 8px;
-      /* tighter */
       border: 1px solid var(--border);
       border-radius: 10px;
       background: var(--surface);
-      /* remove the normal header divider line */
       border-bottom: 1px solid var(--border);
-      /* keep a hairline if you like */
     }
 
-    /* Save vertical space: only keep the eyebrow, hide the big title in collapsed mode */
     .shell.drawer-collapsed .drawer .title {
       display: none;
     }
@@ -347,7 +334,6 @@
       margin: 0;
     }
 
-    /* (Already present) */
     .shell.drawer-collapsed {
       grid-template-rows: 1fr var(--drawer-collapsed-h);
     }
@@ -356,15 +342,12 @@
       display: none;
     }
 
-    /* Add this */
     .panel-header .actions {
       display: flex;
       gap: 8px;
       align-items: center;
     }
 
-    /* Change these two existing rules: target any button inside the header,
-   not just direct children */
     .panel-header button {
       font-size: 11px;
       padding: 6px 8px;
@@ -377,19 +360,6 @@
 
     .panel-header button:hover {
       background: #f3f4f6;
-    }
-
-    /* --- overflow fixes: keep content inside cards and allow scrolling --- */
-    .panel {
-      overflow: hidden;
-      /* clip children to rounded corners */
-    }
-
-    .panel-body {
-      overflow: auto;
-      /* scroll the body if content is taller than the panel */
-      max-height: 100%;
-      /* ensure flex height stays inside its parent */
     }
 
     /* --- tabs --- */
@@ -425,7 +395,6 @@
 
     .tab-panel {
       display: none;
-      /* default hidden */
       flex-direction: column;
       gap: 12px;
       min-width: 0;
@@ -435,7 +404,6 @@
 
     .tab-panel.is-active {
       display: flex;
-      /* active panel becomes the column content */
     }
   </style>
 </head>
@@ -543,19 +511,27 @@
           <button id="copyW3cBtn" title="Copy W3C JSON">Copy</button>
         </div>
         <div class="panel-body">
-          <!-- Placeholder; we’ll wire this later -->
           <pre id="w3cPreview">{ /* preview will render here */ }</pre>
         </div>
       </div>
     </div>
 
-    <!-- Bottom drawer: Log (spans all columns) -->
+    <!-- Bottom drawer: Log / GitHub -->
     <div class="drawer">
       <div class="panel-header">
         <div>
           <div class="eyebrow">Diagnostics</div>
           <h2 class="title">Log</h2>
         </div>
+
+        <!-- NEW: Drawer tabs -->
+        <div class="tabs" role="tablist" aria-label="Diagnostics and GitHub">
+          <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true"
+            aria-controls="panel-log">Log</button>
+          <button class="tab-btn" data-tab="github" role="tab" aria-selected="false"
+            aria-controls="panel-github">GitHub</button>
+        </div>
+
         <div class="actions">
           <button id="copyLogBtn" title="Copy log">Copy</button>
           <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
@@ -563,39 +539,90 @@
       </div>
 
       <div class="drawer-body">
-        <div id="log"></div>
+        <!-- NEW: Drawer tab panels -->
+        <div class="tab-panel is-active" id="panel-log" data-tab="log" role="tabpanel" aria-labelledby="tab-log">
+          <div id="log"></div>
+        </div>
+
+        <div class="tab-panel" id="panel-github" data-tab="github" role="tabpanel" aria-labelledby="tab-github">
+          <div class="stack">
+            <div class="eyebrow">GitHub</div>
+            <div class="muted">UI stub only — no functionality yet.</div>
+            <div>
+              <label>Repository (owner/name)</label>
+              <input type="text" placeholder="e.g. acme/design-tokens" />
+            </div>
+            <div class="row">
+              <div>
+                <label>Branch</label>
+                <input type="text" placeholder="e.g. main" />
+              </div>
+              <div>
+                <label>Folder path</label>
+                <input type="text" placeholder="e.g. tokens/" />
+              </div>
+            </div>
+            <div>
+              <label>Commit message</label>
+              <input type="text" placeholder="e.g. chore(tokens): update exported DTCG" />
+            </div>
+            <div>
+              <label>Personal Access Token</label>
+              <input type="password" placeholder="ghp_••••••••••••••••••" />
+              <div class="muted" style="padding-top:.25rem;">Not stored yet — this is just the UI.</div>
+            </div>
+            <div class="row">
+              <button class="css-button-neumorphic" disabled title="Not wired yet">Save settings</button>
+              <button class="css-button-neumorphic" disabled title="Not wired yet">Push now</button>
+            </div>
+          </div>
+        </div>
+        <!-- /NEW -->
       </div>
     </div>
   </div>
+
   <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
+
   <script src="./ui.js"></script>
   <script>
+    // Scope tab behavior PER PANEL so multiple tab groups don't interfere.
     (function () {
-      const shell = document.querySelector('.shell'); // optional, but handy if needed
-      const tabButtons = Array.from(document.querySelectorAll('.panel .tabs .tab-btn'));
-      const panels = Array.from(document.querySelectorAll('.panel-body .tab-panel'));
+      const panels = Array.from(document.querySelectorAll('.panel, .drawer'));
 
-      function activate(tab) {
-        const name = tab.getAttribute('data-tab');
-        // buttons
-        tabButtons.forEach(b => {
-          const on = b.getAttribute('data-tab') === name;
-          b.classList.toggle('is-active', on);
-          b.setAttribute('aria-selected', String(on));
-        });
-        // panels
-        panels.forEach(p => {
-          const on = p.getAttribute('data-tab') === name;
-          p.classList.toggle('is-active', on);
-          if (on) {
-            // ensure the active panel starts scrolled to top (optional)
-            p.scrollTop = 0;
-          }
-        });
-      }
+      panels.forEach(container => {
+        const tabBtns = Array.from(container.querySelectorAll('.tabs .tab-btn'));
+        if (tabBtns.length === 0) return;
 
-      tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => activate(btn));
+        const body = container.querySelector('.panel-body, .drawer-body') || container;
+        const tabPanels = Array.from(body.querySelectorAll('.tab-panel'));
+
+        function activate(name) {
+          tabBtns.forEach(b => {
+            const on = b.getAttribute('data-tab') === name;
+            b.classList.toggle('is-active', on);
+            b.setAttribute('aria-selected', String(on));
+          });
+          tabPanels.forEach(p => {
+            const on = p.getAttribute('data-tab') === name;
+            p.classList.toggle('is-active', on);
+            if (on) p.scrollTop = 0;
+          });
+        }
+
+        tabBtns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            const name = btn.getAttribute('data-tab');
+            if (name) activate(name);
+          });
+        });
+
+        // Initialize to the first .is-active button, or default to the first button
+        const initial = tabBtns.find(b => b.classList.contains('is-active')) || tabBtns[0];
+        if (initial) {
+          const name = initial.getAttribute('data-tab');
+          if (name) activate(name);
+        }
       });
     })();
   </script>
