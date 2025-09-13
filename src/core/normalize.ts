@@ -6,33 +6,30 @@ import type { TokenGraph, TokenNode, ValueOrAlias } from './ir';
 /* =========================
    Naming & Path Utilities
    ========================= */
-
+/* 
+ * Slug a single path segment for lookup (never for emission).
+ * Used only to broaden alias resolution lookups.
+ */
 export function slugSegment(s: string): string {
-  var cleaned = s.replace(/\s+/g, '-').trim().toLowerCase();
-  var out = '';
-  var i = 0;
-  for (i = 0; i < cleaned.length; i++) {
-    var ch = cleaned.charAt(i);
-    if (ch === '{' || ch === '}' || ch === '.' || ch === ':' || ch === '\\' || ch === '/') ch = '-';
-    var ok =
-      (ch >= 'a' && ch <= 'z') ||
-      (ch >= '0' && ch <= '9') ||
-      ch === '-';
-    out += ok ? ch : '-';
-  }
-  out = out.replace(/-+/g, '-');
-  if (out.length > 0 && out.charAt(0) === '$') out = 'dollar' + out.substring(1);
-  if (out.length === 0) out = 'unnamed';
-  return out;
+  return String(s)
+    .trim()
+    .replace(/\s+/g, '-')  // collapse whitespace to '-'
+    .replace(/-+/g, '-')   // collapse runs of '-'
+    .toLowerCase();
 }
 
-export function canonicalPath(collectionName: string, variableName: string): string[] {
-  var segs = variableName.split('/');
-  var out: string[] = [];
-  out.push(slugSegment(collectionName));
-  var i = 0;
-  for (i = 0; i < segs.length; i++) out.push(slugSegment(segs[i]));
-  return out;
+/**
+ * Return a canonical token path using Figma's display names.
+ * Always splits variable names on '/', trims segments, and removes empties.
+ * Example: canonicalPath("Collection 1", "group1/group2/baseVar")
+ *   -> ["Collection 1", "group1", "group2", "baseVar"]
+ */
+export function canonicalPath(collection: string, variableName: string): string[] {
+  const segs = String(variableName)
+    .split('/')
+    .map(s => s.trim())
+    .filter(Boolean);
+  return [collection, ...segs];
 }
 
 export function toDot(path: string[]): string {

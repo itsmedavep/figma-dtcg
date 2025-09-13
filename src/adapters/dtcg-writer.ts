@@ -2,9 +2,7 @@
 // IR -> DTCG object (grouped), including aliases and color values.
 
 import { type TokenGraph, type TokenNode, type ValueOrAlias } from '../core/ir';
-
-// We must emit EXACT names as Figma shows them when available via $extensions.
-// No normalization, no whitespace collapsing, no hyphen munging.
+import { slugSegment } from '../core/normalize';
 
 // ---------- tiny utils (lookup-only; never used for emission) ----------
 function dotRaw(segs: string[]): string {
@@ -25,22 +23,22 @@ function slugForMatch(s: string): string {
 type DisplayNames = { collection: string; variable: string };
 
 // Extract Figma display names, preferring perContext[ctx], then top-level, then path fallback.
-// Do NOT mutate or normalize these strings in any way.
+// IMPORTANT: We do NOT use this to build JSON keys — it’s only used for alias string emission.
 function getFigmaDisplayNames(t: TokenNode, ctx?: string): DisplayNames {
   const extAll = (t.extensions && typeof t.extensions === 'object')
     ? (t.extensions as any)['com.figma'] ?? (t.extensions as any)['org.figma']
     : undefined;
 
-  // pull top-level first
-  let collection = (extAll && typeof extAll.collectionName === 'string')
-    ? extAll.collectionName
+  // Pull top-level first
+  let collection = (extAll && typeof (extAll as any).collectionName === 'string')
+    ? (extAll as any).collectionName
     : undefined;
 
-  let variable = (extAll && typeof extAll.variableName === 'string')
-    ? extAll.variableName
+  let variable = (extAll && typeof (extAll as any).variableName === 'string')
+    ? (extAll as any).variableName
     : undefined;
 
-  // if a context is chosen, prefer perContext overrides for names
+  // If a context is chosen, prefer perContext overrides for names
   if (ctx && extAll && typeof extAll === 'object' && typeof (extAll as any).perContext === 'object') {
     const ctxBlock = (extAll as any).perContext[ctx];
     if (ctxBlock && typeof ctxBlock === 'object') {
@@ -49,7 +47,7 @@ function getFigmaDisplayNames(t: TokenNode, ctx?: string): DisplayNames {
     }
   }
 
-  // final fallback to IR path
+  // Final fallback to IR path (for display purposes only)
   if (!collection) collection = t.path[0];
   if (!variable) variable = t.path.slice(1).join('/');
 
@@ -67,15 +65,15 @@ function buildDisplayNameIndex(graph: TokenGraph): Map<string, DisplayNames> {
     const { collection, variable } = getFigmaDisplayNames(t, chosenCtx);
     const entry: DisplayNames = { collection, variable };
 
-    // 1) raw IR path key
+    // 1) raw IR path key (used by some alias paths)
     byKey.set(dotRaw(t.path), entry);
 
-    // 2) exact display key
-    const displaySegs = [collection, ...variable.split('/')];
+    // 2) exact display key (collection + variable split)
+    const displaySegs = [collection, ...String(variable).split('/')];
     byKey.set(dotRaw(displaySegs), entry);
 
     // 3) slug-for-match key (lookup only)
-    const slugSegs = [slugForMatch(collection), ...variable.split('/').map((s: string) => slugForMatch(s))];
+    const slugSegs = [slugForMatch(collection), ...String(variable).split('/').map((s: string) => slugForMatch(s))];
     byKey.set(dotRaw(slugSegs), entry);
   }
 
@@ -108,16 +106,20 @@ function writeTokenInto(
   const chosen: ValueOrAlias | null =
     chosenCtx !== undefined ? (t.byContext[chosenCtx] as ValueOrAlias | undefined) ?? null : null;
 
-  // ******** THE CRITICAL CHANGE ********
-  // Names now come from perContext (when present), falling back to top-level, then path.
-  const { collection: collectionDisplay, variable: variableDisplay } = getFigmaDisplayNames(t, chosenCtx);
+  // ***** THE CRITICAL GUARANTEE *****
+  // Build the JSON hierarchy STRICTLY from the IR path segments:
+  //   t.path === [collection, ...variableSegments]
+  const path = Array.isArray(t.path) ? t.path : [String(t.path)];
+  const collectionSeg = path[0] ?? 'Tokens';
+  const variableSegs = path.slice(1); // ["group1","baseVar"] etc.
 
-  // Build groups from path, but force the first segment to the EXACT collectionDisplay.
-  // Keep the legacy "strip collection-1" safeguard on the second segment.
-  let groupSegments = t.path.slice(0, t.path.length - 1);
-  if (groupSegments.length > 0) groupSegments[0] = collectionDisplay;
+  // Groups are the collection + parent segments; the JSON leaf key is ALWAYS the last segment.
+  let groupSegments = [collectionSeg, ...variableSegs.slice(0, -1)];
+  const leaf = variableSegs.length ? variableSegs[variableSegs.length - 1] : (path[path.length - 1] ?? 'token');
+
+  // (Optional) legacy safeguard if you previously stripped "Collection 1" child:
   if (groupSegments.length > 1) {
-    const firstChild = groupSegments[1].toLowerCase();
+    const firstChild = String(groupSegments[1]).toLowerCase();
     if (/^collection(\s|-)?\d+/.test(firstChild)) {
       groupSegments = [groupSegments[0], ...groupSegments.slice(2)];
     }
@@ -135,39 +137,36 @@ function writeTokenInto(
     obj = next as { [k: string]: unknown };
   }
 
-  // Leaf key = EXACT variable name from Figma (can include spaces, double hyphens, etc.)
-  const leaf = variableDisplay;
-
+  // Build token payload
   const tokenObj: { [k: string]: unknown } = {};
   // Emit boolean as DTCG string (with a hint in $extensions for round-trip)
   const emittedType = (t.type === 'boolean') ? 'string' : t.type;
   tokenObj['$type'] = emittedType;
-
 
   // ----- value emission -----
   if (chosen !== null) {
     switch (chosen.kind) {
       case 'alias': {
         // Resolve to display names if we can (no normalization on emitted string).
-        const segs: string[] = Array.isArray((chosen as any).path)
+        const segsIn: string[] = Array.isArray((chosen as any).path)
           ? ((chosen as any).path as string[]).slice()
           : String((chosen as any).path).split('.').map((p: string) => p.trim()).filter(Boolean);
 
-        let refDisp = displayIndex.get(dotRaw(segs));
+        let refDisp = displayIndex.get(dotRaw(segsIn));
         if (!refDisp) {
           // try slug-for-match
-          refDisp = displayIndex.get(dotRaw(segs.map((s: string) => slugForMatch(s))));
+          refDisp = displayIndex.get(dotRaw(segsIn.map((s: string) => slugForMatch(s))));
         }
 
-        if (!refDisp && segs.length > 0) {
-          // As a courtesy, try swapping a slugged collection with a matching display collection
-          const firstSlug = slugForMatch(segs[0]);
-          for (const [k, v] of displayIndex.entries()) {
+        if (!refDisp && segsIn.length > 0) {
+          // Courtesy: try swapping a slugged collection with a matching display collection
+          const firstSlug = slugForMatch(segsIn[0]);
+          for (const [k] of displayIndex.entries()) {
             const parts = k.split('.');
             if (parts.length === 0) continue;
             if (slugForMatch(parts[0]) === firstSlug) {
-              const cand1 = [parts[0], ...segs.slice(1)];
-              const cand2 = [parts[0], ...segs.slice(1).map((s: string) => slugForMatch(s))];
+              const cand1 = [parts[0], ...segsIn.slice(1)];
+              const cand2 = [parts[0], ...segsIn.slice(1).map((s: string) => slugForMatch(s))];
               refDisp = displayIndex.get(dotRaw(cand1)) || displayIndex.get(dotRaw(cand2));
               if (refDisp) break;
             }
@@ -175,8 +174,8 @@ function writeTokenInto(
         }
 
         tokenObj['$value'] = refDisp
-          ? `{${[refDisp.collection, ...refDisp.variable.split('/')].join('.')}}`
-          : `{${segs.join('.')}}`;
+          ? `{${[refDisp.collection, ...String(refDisp.variable).split('/')].join('.')}}`
+          : `{${segsIn.join('.')}}`;
         break;
       }
 
@@ -197,12 +196,12 @@ function writeTokenInto(
         tokenObj['$value'] = chosen.value;
         break;
       }
+
       case 'boolean': {
         // DTCG: write as string "true"/"false"
         tokenObj['$value'] = chosen.value ? 'true' : 'false';
         break;
       }
-
     }
   }
 
@@ -212,14 +211,13 @@ function writeTokenInto(
   }
 
   // Flatten $extensions.(com|org).figma.perContext[chosenCtx] into $extensions.com.figma
-  // Start with whatever the token already has, flattened for the chosen context
   let extOut: Record<string, unknown> | undefined;
   if (t.extensions) {
     const flattened = flattenFigmaExtensionsForCtx(t.extensions as Record<string, unknown>, chosenCtx);
     extOut = (flattened ?? (t.extensions as Record<string, unknown>));
   }
 
-  // If this token is a boolean, add a hint so we can round-trip back to a Figma BOOLEAN variable
+  // Add boolean round-trip hint (keeps DTCG $type as "string")
   if (t.type === 'boolean') {
     if (!extOut) extOut = {};
     const fig = (extOut['com.figma'] && typeof (extOut['com.figma']) === 'object')
@@ -230,8 +228,8 @@ function writeTokenInto(
 
   if (extOut) tokenObj['$extensions'] = extOut;
 
-
-  obj[leaf] = tokenObj;
+  // ***** Final write: leaf only (NEVER the full display path) *****
+  (obj as any)[leaf] = tokenObj;
 }
 
 /**

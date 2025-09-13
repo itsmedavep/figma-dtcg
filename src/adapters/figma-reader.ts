@@ -33,10 +33,8 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
 
   // Build a map variableId -> { name, collectionId }
   const varMeta: { [id: string]: { name: string; collectionId: string } } = {};
-  for (let ci = 0; ci < collections.length; ci++) {
-    const col = collections[ci];
-    for (let vi = 0; vi < col.variableIds.length; vi++) {
-      const id = col.variableIds[vi];
+  for (const col of collections) {
+    for (const id of col.variableIds) {
       const v = await variablesApi.getVariableByIdAsync(id);
       if (v) varMeta[v.id] = { name: v.name, collectionId: col.id };
     }
@@ -44,23 +42,22 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
 
   const tokens: TokenNode[] = [];
 
-  for (let ci = 0; ci < collections.length; ci++) {
-    const c = collections[ci];
-
+  for (const c of collections) {
     // Mode name lookup
     const modeNameById: { [id: string]: string } = {};
-    for (let mi = 0; mi < c.modes.length; mi++) modeNameById[c.modes[mi].modeId] = c.modes[mi].name;
+    for (const m of c.modes) modeNameById[m.modeId] = m.name;
 
-    for (let vi2 = 0; vi2 < c.variableIds.length; vi2++) {
-      const vid = c.variableIds[vi2];
+    for (const vid of c.variableIds) {
       const v2 = await variablesApi.getVariableByIdAsync(vid);
       if (!v2) continue;
 
+      // ***** CRITICAL: always split variable name by '/' into path segments *****
       const path = canonicalPath(c.name, v2.name);
+
       const type = mapType(v2.resolvedType);
       const byContext: { [ctx: string]: ValueOrAlias } = {};
 
-      // NEW: collect per-context figma metadata we’ll store under $extensions.org.figma.perContext
+      // Collect per-context figma metadata (stored under $extensions.com.figma.perContext)
       const perContext: {
         [ctx: string]: {
           collectionName: string; collectionID: string;
@@ -70,8 +67,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
       } = {};
 
       // For each mode, collect value
-      for (let mi2 = 0; mi2 < c.modes.length; mi2++) {
-        const md = c.modes[mi2];
+      for (const md of c.modes) {
         const ctx = ctxKey(c.name, md.name);
         const mv = v2.valuesByMode[md.modeId];
 
@@ -88,7 +84,6 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         if (isAliasValue(mv)) {
           const target = await variablesApi.getVariableByIdAsync(mv.id);
           if (target) {
-            // resolve collection name for target
             const meta = varMeta[target.id];
             const collName =
               meta
@@ -114,6 +109,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
 
       const figmaExt: Record<string, unknown> = { perContext };
       if (type === 'boolean') {
+        // Hint for round-tripping booleans while staying DTCG-compliant ("string" on write)
         figmaExt['variableType'] = 'BOOLEAN';
       }
 
@@ -126,7 +122,6 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
           'com.figma': figmaExt
         }
       };
-
 
       tokens.push(token);
     }
