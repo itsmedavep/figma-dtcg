@@ -26,7 +26,87 @@ const copyLogBtn = document.getElementById('copyLogBtn') as HTMLButtonElement | 
 
 const allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
 
+// Turn "Collection 1_mode=Mode 1.tokens.json" → "Collection 1 - Mode 1.json"
+function prettyExportName(original: string | undefined | null): string {
+  const name = (original && typeof original === 'string') ? original : 'tokens.json';
 
+  // Match old pattern: <collection>_mode=<mode>.tokens.json
+  const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
+  if (m) {
+    const collection = m[1].trim();
+    const mode = m[2].trim();
+    return `${collection} - ${mode}.json`;
+  }
+
+  // Already fine or different pattern → ensure .json suffix
+  return name.endsWith('.json') ? name : (name + '.json');
+}
+
+
+// ---- File save helpers (native picker + fallback) ----
+let pendingSave: { writable: FileSystemWritableFileStream, name: string } | null = null;
+
+function supportsFilePicker(): boolean {
+  return typeof (window as any).showSaveFilePicker === 'function';
+}
+
+async function beginPendingSave(suggestedName: string): Promise<boolean> {
+  try {
+    if (!supportsFilePicker()) return false;
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName,
+      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+    });
+    const writable: FileSystemWritableFileStream = await handle.createWritable();
+    pendingSave = { writable, name: suggestedName };
+    return true;
+  } catch {
+    // User canceled or environment disallows picker
+    pendingSave = null;
+    return false;
+  }
+}
+
+async function finishPendingSave(text: string): Promise<boolean> {
+  if (!pendingSave) return false;
+  try {
+    // write plain text; the handle was created with the suggested name already
+    await pendingSave.writable.write(new Blob([text], { type: 'application/json' }));
+    await pendingSave.writable.close();
+    return true;
+  } catch {
+    try { await pendingSave.writable.close(); } catch { /* ignore */ }
+    return false;
+  } finally {
+    pendingSave = null;
+  }
+}
+
+
+function triggerJsonDownload(filename: string, text: string): void {
+  try {
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    // Create a temporary anchor, click, then clean up.
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    // Avoid showing a temp element in the log/UI
+    a.style.position = 'absolute';
+    a.style.left = '-9999px';
+    document.body.appendChild(a);
+    a.click();
+
+    // Cleanup immediately after click
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 0);
+  } catch {
+    // Best-effort; don't throw in the plugin UI
+  }
+}
 
 
 function postResize(width: number, height: number): void {
@@ -358,19 +438,32 @@ if (importBtn && importBtn instanceof HTMLButtonElement && fileInput && fileInpu
 }
 
 if (exportBtn && exportBtn instanceof HTMLButtonElement) {
-  exportBtn.addEventListener('click', function () {
-    let exportAll = false;
-    if (exportAllChk && exportAllChk instanceof HTMLInputElement) exportAll = !!exportAllChk.checked;
+  if (exportBtn && exportBtn instanceof HTMLButtonElement) {
+    exportBtn.addEventListener('click', async function () {
+      let exportAll = false;
+      if (exportAllChk && exportAllChk instanceof HTMLInputElement) exportAll = !!exportAllChk.checked;
 
-    const payload: { exportAll: boolean; collection?: string; mode?: string } = { exportAll: exportAll };
-    if (!exportAll && collectionSelect && modeSelect && collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
-      payload.collection = collectionSelect.value;
-      payload.mode = modeSelect.value;
-      if (!(payload.collection && payload.mode)) { log('Pick collection and mode or use "Export all".'); return; }
-    }
-    postToPlugin({ type: 'EXPORT_DTCG', payload: payload });
-    if (exportAll) log('Export all requested.'); else log('Export requested for "' + (payload.collection || '') + '" / "' + (payload.mode || '') + '".');
-  });
+      const payload: { exportAll: boolean; collection?: string; mode?: string } = { exportAll: exportAll };
+      if (!exportAll && collectionSelect && modeSelect &&
+        collectionSelect instanceof HTMLSelectElement && modeSelect instanceof HTMLSelectElement) {
+        payload.collection = collectionSelect.value;
+        payload.mode = modeSelect.value;
+        if (!(payload.collection && payload.mode)) { log('Pick collection and mode or use "Export all".'); return; }
+      }
+
+      // NEW: suggest the nice name ("Collection 1 - Mode 1.json") for the native picker
+      const suggestedName = exportAll
+        ? 'tokens.json'
+        : prettyExportName(`${payload.collection ?? 'Tokens'}_mode=${payload.mode ?? 'Mode 1'}.tokens.json`);
+
+      // If you added the file-picker support earlier:
+      await beginPendingSave(suggestedName);
+
+      postToPlugin({ type: 'EXPORT_DTCG', payload: payload });
+      if (exportAll) log('Export all requested.'); else log('Export requested for "' + (payload.collection || '') + '" / "' + (payload.mode || '') + '".');
+    });
+  }
+
 }
 
 if (drawerToggleBtn && drawerToggleBtn instanceof HTMLButtonElement) {
@@ -441,7 +534,8 @@ function getSavedDrawerOpen(): boolean {
 
 /* ---------- Receive from plugin ---------- */
 /* ---------- Receive from plugin ---------- */
-window.onmessage = function (event: MessageEvent) {
+window.onmessage = async function (event: MessageEvent) {
+
   const data: unknown = (event as unknown as { data?: unknown }).data;
   if (!data || typeof data !== 'object') return;
 
@@ -458,26 +552,73 @@ window.onmessage = function (event: MessageEvent) {
   if (msg.type === 'INFO') { log(msg.payload.message); return; }
 
   if (msg.type === 'EXPORT_RESULT') {
-    for (let k = 0; k < msg.payload.files.length; k++) {
-      const f = msg.payload.files[k];
-      const a = document.createElement('a');
-      const blob = new Blob([prettyJson(f.json)], { type: 'application/json' });
-      a.href = URL.createObjectURL(blob);
-      a.download = f.name;
-      a.textContent = 'Download ' + f.name;
-      const div = document.createElement('div');
-      div.appendChild(a);
-      if (logEl && logEl instanceof HTMLElement) logEl.appendChild(div);
+    const files = Array.isArray(msg.payload?.files) ? msg.payload.files : [];
+    if (files.length === 0) { log('Nothing to export.'); return; }
+
+    // If you added the file-picker flow and have exactly one file:
+    if (pendingSave && files.length === 1) {
+      const only = files[0];
+      const fname = prettyExportName(only?.name);
+      const text = prettyJson(only?.json);
+
+      const ok = await finishPendingSave(text);
+      if (ok) {
+        log('Saved ' + fname + ' via file picker.');
+
+        // Also add a link for a re-download (fresh object URL on click).
+        const div = document.createElement('div');
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = 'Download ' + fname + ' again';
+        link.addEventListener('click', (e) => { e.preventDefault(); triggerJsonDownload(fname, text); });
+        if (logEl && logEl instanceof HTMLElement) {
+          div.appendChild(link);
+          logEl.appendChild(div);
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+        log('Export ready.');
+        return;
+      }
+      log('Could not write via file picker; falling back to download links.');
     }
+
+    // Fallback / multi-file: user-visible links + immediate best-effort download
+    setDrawerOpen(true);
+    for (let k = 0; k < files.length; k++) {
+      const f = files[k];
+      const fname = prettyExportName(f?.name);
+      const text = prettyJson(f?.json);
+
+      // Best-effort immediate download
+      triggerJsonDownload(fname, text);
+
+      // Log link that triggers a fresh object URL on click (no leaks).
+      const div = document.createElement('div');
+      const link = document.createElement('a');
+      link.href = '#';
+      link.textContent = 'Download ' + fname;
+      link.addEventListener('click', (e) => { e.preventDefault(); triggerJsonDownload(fname, text); });
+      if (logEl && logEl instanceof HTMLElement) {
+        div.appendChild(link);
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+
     log('Export ready.');
     return;
   }
 
+
+
+
   if (msg.type === 'W3C_PREVIEW') {
-    const header = `/* ${msg.payload.name} */\n`;
+    const displayName = prettyExportName(msg.payload.name);
+    const header = `/* ${displayName} */\n`;
     if (w3cPreviewEl) w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
     return;
   }
+
 
   // ← keep only this single COLLECTIONS_DATA branch
   if (msg.type === 'COLLECTIONS_DATA') {
