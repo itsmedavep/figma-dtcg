@@ -112,16 +112,21 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         // else unhandled null/undefined -> skip
       }
 
+      const figmaExt: Record<string, unknown> = { perContext };
+      if (type === 'boolean') {
+        figmaExt['variableType'] = 'BOOLEAN';
+      }
+
       const token: TokenNode = {
         path,
         type,
         byContext,
         ...(v2.description && v2.description.length > 0 ? { description: v2.description } : {}),
-        // NEW: attach $extensions payload so it shows in preview and exports
         extensions: {
-          'com.figma': { perContext }
+          'com.figma': figmaExt
         }
       };
+
 
       tokens.push(token);
     }

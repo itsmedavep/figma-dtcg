@@ -139,7 +139,10 @@ function writeTokenInto(
   const leaf = variableDisplay;
 
   const tokenObj: { [k: string]: unknown } = {};
-  tokenObj['$type'] = t.type;
+  // Emit boolean as DTCG string (with a hint in $extensions for round-trip)
+  const emittedType = (t.type === 'boolean') ? 'string' : t.type;
+  tokenObj['$type'] = emittedType;
+
 
   // ----- value emission -----
   if (chosen !== null) {
@@ -190,11 +193,16 @@ function writeTokenInto(
       }
 
       case 'number':
-      case 'string':
-      case 'boolean': {
+      case 'string': {
         tokenObj['$value'] = chosen.value;
         break;
       }
+      case 'boolean': {
+        // DTCG: write as string "true"/"false"
+        tokenObj['$value'] = chosen.value ? 'true' : 'false';
+        break;
+      }
+
     }
   }
 
@@ -204,10 +212,24 @@ function writeTokenInto(
   }
 
   // Flatten $extensions.(com|org).figma.perContext[chosenCtx] into $extensions.com.figma
+  // Start with whatever the token already has, flattened for the chosen context
+  let extOut: Record<string, unknown> | undefined;
   if (t.extensions) {
     const flattened = flattenFigmaExtensionsForCtx(t.extensions as Record<string, unknown>, chosenCtx);
-    tokenObj['$extensions'] = flattened ?? t.extensions;
+    extOut = (flattened ?? (t.extensions as Record<string, unknown>));
   }
+
+  // If this token is a boolean, add a hint so we can round-trip back to a Figma BOOLEAN variable
+  if (t.type === 'boolean') {
+    if (!extOut) extOut = {};
+    const fig = (extOut['com.figma'] && typeof (extOut['com.figma']) === 'object')
+      ? (extOut['com.figma'] as Record<string, unknown>)
+      : (extOut['com.figma'] = {} as Record<string, unknown>) as Record<string, unknown>;
+    if (fig['variableType'] !== 'BOOLEAN') fig['variableType'] = 'BOOLEAN';
+  }
+
+  if (extOut) tokenObj['$extensions'] = extOut;
+
 
   obj[leaf] = tokenObj;
 }

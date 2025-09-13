@@ -23,6 +23,35 @@ function logError(msg: string) { logInfo('Error: ' + msg); }
 
 // ---------- helpers ----------
 
+// ---------- boolean import helpers (hint + mild note) ----------
+
+// Read the explicit figma type hint from $extensions.com.figma.variableType
+function readFigmaVariableTypeHint(t: TokenNode): 'BOOLEAN' | undefined {
+  try {
+    const ext = t.extensions && typeof t.extensions === 'object'
+      ? (t.extensions as any)['com.figma']
+      : undefined;
+    const vt = ext && typeof ext === 'object' ? (ext as any).variableType : undefined;
+    return vt === 'BOOLEAN' ? 'BOOLEAN' : undefined;
+  } catch { return undefined; }
+}
+
+// true/false detector for string values
+function looksBooleanString(s: unknown): s is string {
+  return typeof s === 'string' && /^(true|false)$/i.test(s.trim());
+}
+
+// Does the token have any direct string value that looks boolean?
+function tokenHasBooleanLikeString(t: TokenNode): boolean {
+  const byCtx = t.byContext || {};
+  for (const k in byCtx) {
+    const v = (byCtx as any)[k];
+    if (!v || v.kind === 'alias') continue;
+    if (v.kind === 'string' && looksBooleanString(v.value)) return true;
+  }
+  return false;
+}
+
 // Token has at least one non-alias, correctly-typed value in any context
 function tokenHasDirectValue(t: TokenNode): boolean {
   const byCtx = t.byContext || {};
@@ -269,7 +298,13 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     } else {
       logWarn(`Skipped ${t.type} token “${t.path.join('/')}” — needs a ${t.type} $value or an alias reference.`);
     }
+
+    // Mild note: string tokens that look boolean but have no explicit hint
+    if (t.type === 'string' && !readFigmaVariableTypeHint(t) && tokenHasBooleanLikeString(t)) {
+      logInfo(`Note: “${t.path.join('/')}” has string values "true"/"false" but no $extensions.com.figma.variableType hint; keeping STRING in Figma.`);
+    }
   }
+
 
   // helper to ensure collection exists (only when we actually create a var)
   function ensureCollection(name: string): VariableCollection {
@@ -322,8 +357,14 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       if (!got) continue;
       v = got;
     } else {
-      v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
+      const hint = readFigmaVariableTypeHint(t);
+      // Strict rule: only honor BOOLEAN hint when DTCG $type is "string".
+      const createAs: VariableResolvedDataType =
+        (hint === 'BOOLEAN' && t.type === 'string') ? 'BOOLEAN' : resolvedTypeFor(t.type);
+
+      v = variablesApi.createVariable(varName, col, createAs);
     }
+
 
     // --- set description if provided (safe & idempotent)
     if (typeof t.description === 'string' && t.description.trim().length > 0 && v.description !== t.description) {
@@ -403,8 +444,13 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         if (!got) continue;
         v = got;
       } else {
-        v = variablesApi.createVariable(varName, col, resolvedTypeFor(t.type));
+        const hint = readFigmaVariableTypeHint(t);
+        const createAs: VariableResolvedDataType =
+          (hint === 'BOOLEAN' && t.type === 'string') ? 'BOOLEAN' : resolvedTypeFor(t.type);
+
+        v = variablesApi.createVariable(varName, col, createAs);
       }
+
 
       // --- set description if provided (safe & idempotent)
       if (typeof t.description === 'string' && t.description.trim().length > 0 && v.description !== t.description) {
@@ -557,7 +603,23 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         targetVar.setValueForMode(modeId, { r: rgba.r, g: rgba.g, b: rgba.b, a: rgba.a });
 
       } else if (val.kind === 'number' || val.kind === 'string' || val.kind === 'boolean') {
-        targetVar.setValueForMode(modeId, val.value);
+        // BOOLEAN round-trip:
+        // - If the Figma variable was created as BOOLEAN (by hint), accept true/false safely.
+        // - If it's STRING but IR provides a boolean, downgrade to "true"/"false".
+        if (targetVar.resolvedType === 'BOOLEAN') {
+          if (val.kind === 'boolean') {
+            targetVar.setValueForMode(modeId, !!val.value);
+          } else if (val.kind === 'string' && looksBooleanString(val.value)) {
+            targetVar.setValueForMode(modeId, /^true$/i.test(val.value.trim()));
+          } else {
+            logWarn(`Skipped setting non-boolean value for BOOLEAN variable “${node.path.join('/')}” in ${ctx}.`);
+          }
+        } else if (val.kind === 'boolean') {
+          // Figma var is not BOOLEAN → set as string "true"/"false" (non-breaking)
+          targetVar.setValueForMode(modeId, val.value ? 'true' : 'false');
+        } else {
+          targetVar.setValueForMode(modeId, val.value);
+        }
       }
     }
   }

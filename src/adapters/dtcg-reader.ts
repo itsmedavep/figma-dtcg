@@ -211,7 +211,26 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
         valObj = { kind: 'boolean', value: rawVal };
       } else if (t2 === 'string' && typeof rawVal === 'string') {
         valObj = { kind: 'string', value: rawVal };
-      } else {
+      }
+      // DTCG-compliant boolean round-trip:
+      // If $type is (or resolves to) "string" and $extensions.com.figma.variableType == "BOOLEAN"
+      // and $value is "true"/"false", coerce back to boolean with a mild note.
+      if (!valObj && (t2 === 'string') && typeof rawVal === 'string') {
+        const ext = hasKey(obj, '$extensions') ? (obj as any)['$extensions'] as Record<string, unknown> : undefined;
+        const com = ext && typeof ext === 'object' ? (ext as any)['com.figma'] : undefined;
+        const varType = com && typeof com === 'object' ? (com as any)['variableType'] : undefined;
+        if (varType === 'BOOLEAN') {
+          const raw = rawVal.trim().toLowerCase();
+          if (raw === 'true' || raw === 'false') {
+            valObj = { kind: 'boolean', value: (raw === 'true') };
+            // mild note in the plugin log
+            logInfo(`Note: coerced string “${rawVal}” to boolean due to $extensions.com.figma.variableType=BOOLEAN at “${path.join('/')}”.`);
+            // also set the effective token type to boolean
+            groupType = 'boolean';
+          }
+        }
+      }
+      else {
         // Fallback: minimally coerce by JS type (but still never to color)
         if (typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
         else if (typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
@@ -223,11 +242,11 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = valObj;
 
+        const finalType: PrimitiveType = (groupType ?? t2);
         tokens.push({
           path: irPath,
-          type: t2,
+          type: finalType,
           byContext: byCtx,
-          ...(desc ? { description: desc } : {}),
           ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
       }
