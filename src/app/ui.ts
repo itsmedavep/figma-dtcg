@@ -35,12 +35,10 @@ let ghConnectBtn: HTMLButtonElement | null = null;
 let ghVerifyBtn: HTMLButtonElement | null = null; // optional if present
 let ghRepoSelect: HTMLSelectElement | null = null;
 
-
 // --- New (optional) Branch controls (only used if present in DOM) ---
 let ghBranchSearch: HTMLInputElement | null = null;
 let ghBranchSelect: HTMLSelectElement | null = null;
 let ghBranchCountEl: HTMLElement | null = null;
-
 
 // Inserted if missing:
 let ghAuthStatusEl: HTMLElement | null = null; // “Authenticated as …”
@@ -54,7 +52,6 @@ let ghRememberPref: boolean = false;
 
 const GH_REMEMBER_PREF_KEY = 'ghRememberPref';
 const GH_MASK = '••••••••••';
-
 
 /* --------- Branch local state (search + virtualization + paging) --------- */
 let currentOwner = '';
@@ -347,7 +344,7 @@ function updateGhStatusUi(): void {
     const expTxt = ghTokenExpiresAt ? `Token ${formatTimeLeft(ghTokenExpiresAt)}` : 'Token expiration: unknown';
     ghTokenMetaEl.textContent = `${expTxt} • ${rememberTxt}`;
   }
-  
+
   if (ghTokenInput) {
     ghTokenInput.oninput = () => {
       if (ghTokenInput!.getAttribute('data-filled') === '1') {
@@ -557,9 +554,8 @@ function renderOptions(): void {
     opt.value = '__fetch__';
     opt.textContent = 'Load next page…';
     ghBranchSelect.appendChild(opt);
-
   }
-  if (!msg) return;
+
   // Restore selection preference
   const want = desiredBranch || defaultBranchFromApi || prev;
   if (want && slice.includes(want)) {
@@ -674,6 +670,11 @@ window.addEventListener('message', async (event: MessageEvent) => {
     const maybe = (data as any).pluginMessage;
     if (maybe && typeof maybe.type === 'string') msg = maybe;
   }
+  if (!msg) return;
+
+  // Keep generic INFO/ERROR logs visible
+  if (msg.type === 'ERROR') { log('ERROR: ' + (msg.payload?.message ?? '')); return; }
+  if (msg.type === 'INFO') { log(msg.payload?.message ?? ''); return; }
 
   // GitHub auth state from plugin
   if (msg.type === 'GITHUB_AUTH_RESULT') {
@@ -948,6 +949,7 @@ document.addEventListener('DOMContentLoaded', function () {
       updateBranchCount();
 
       if (currentOwner && currentRepo) {
+        log(`GitHub: loading branches for ${currentOwner}/${currentRepo}…`);
         isFetchingBranches = true;
         (postToPlugin as any)({
           type: 'GITHUB_FETCH_BRANCHES',
