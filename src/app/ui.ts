@@ -1,4 +1,3 @@
-// src/app/ui.ts
 import type { PluginToUi, UiToPlugin } from './messages';
 
 /* -------------------------------------------------------
@@ -34,6 +33,7 @@ let ghTokenInput: HTMLInputElement | null = null;
 let ghRememberChk: HTMLInputElement | null = null;
 let ghConnectBtn: HTMLButtonElement | null = null;
 let ghVerifyBtn: HTMLButtonElement | null = null; // optional if present
+let ghRepoSelect: HTMLSelectElement | null = null;
 
 // Inserted if missing:
 let ghAuthStatusEl: HTMLElement | null = null; // “Authenticated as …”
@@ -71,6 +71,19 @@ function supportsFilePicker(): boolean {
   return typeof (window as any).showSaveFilePicker === 'function';
 }
 
+function populateGhRepos(list: Array<{ full_name: string; default_branch: string; private: boolean }>): void {
+  if (!ghRepoSelect) return;
+  while (ghRepoSelect.options.length) ghRepoSelect.remove(0);
+  for (const r of list) {
+    const opt = document.createElement('option');
+    opt.value = r.full_name;
+    opt.textContent = r.full_name; // "org/repo"
+    ghRepoSelect.appendChild(opt);
+  }
+  ghRepoSelect.disabled = list.length === 0;
+  if (list.length > 0) ghRepoSelect.selectedIndex = 0;
+}
+
 async function beginPendingSave(suggestedName: string): Promise<boolean> {
   try {
     if (!supportsFilePicker()) return false;
@@ -82,7 +95,7 @@ async function beginPendingSave(suggestedName: string): Promise<boolean> {
     pendingSave = { writable, name: suggestedName };
     return true;
   } catch {
-    pendingSave = null;
+    pendingSave = null; // canceled or blocked
     return false;
   }
 }
@@ -142,8 +155,10 @@ async function copyElText(el: HTMLElement | null, label: string): Promise<void> 
     document.body.appendChild(ta);
     ta.select();
     ta.setSelectionRange(0, ta.value.length);
+
     const ok = document.execCommand('copy');
     document.body.removeChild(ta);
+
     if (ok) log(`Copied ${label} to clipboard (${text.length} chars).`);
     else throw new Error('execCommand(copy) returned false');
   } catch {
@@ -164,9 +179,16 @@ async function copyElText(el: HTMLElement | null, label: string): Promise<void> 
 
 function autoFitOnce(): void {
   if (typeof document === 'undefined') return;
-  const contentW = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0);
-  const contentH = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
-  const vw = window.innerWidth, vh = window.innerHeight;
+  const contentW = Math.max(
+    document.documentElement.scrollWidth,
+    document.body ? document.body.scrollWidth : 0
+  );
+  const contentH = Math.max(
+    document.documentElement.scrollHeight,
+    document.body ? document.body.scrollHeight : 0
+  );
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   const needsW = contentW > vw ? contentW : vw;
   const needsH = contentH > vh ? contentH : vh;
   if (needsW > vw || needsH > vh) postResize(needsW, needsH);
@@ -176,16 +198,13 @@ function autoFitOnce(): void {
  * GitHub helpers (UI only; token never stored in UI)
  * ----------------------------------------------------- */
 function findTokenInput(): HTMLInputElement | null {
-  // Prefer explicit IDs if present
   const byId =
     (document.getElementById('githubTokenInput') as HTMLInputElement | null) ||
     (document.getElementById('ghTokenInput') as HTMLInputElement | null) ||
     (document.getElementById('githubPatInput') as HTMLInputElement | null) ||
     (document.querySelector('input[name="githubToken"]') as HTMLInputElement | null);
-
   if (byId) return byId;
-
-  // Fallback: try to guess the token input near Connect
+  // Fallback: guess
   const guess = document.querySelector('input[type="password"], input[type="text"]') as HTMLInputElement | null;
   return guess || null;
 }
@@ -234,7 +253,7 @@ function ensureGhStatusElements(): void {
     ghLogoutBtn = document.createElement('button');
     ghLogoutBtn.id = 'ghLogoutBtn';
     ghLogoutBtn.textContent = 'Log out';
-    ghLogoutBtn.className = 'tab-btn'; // use existing button styling
+    ghLogoutBtn.className = 'tab-btn';
     ghLogoutBtn.style.marginTop = '6px';
     ghLogoutBtn.addEventListener('click', onGitHubLogoutClick);
     anchor.parentElement.appendChild(ghLogoutBtn);
@@ -260,15 +279,13 @@ function formatTimeLeft(expIso: string): string {
 function setPatFieldObfuscated(filled: boolean): void {
   if (!ghTokenInput) ghTokenInput = findTokenInput();
   if (!ghTokenInput) return;
-  ghTokenInput.type = 'password';
+  ghTokenInput.type = 'password'; // keep masked even when user types
   if (filled) {
     ghTokenInput.value = GH_MASK;
     ghTokenInput.setAttribute('data-filled', '1');
   } else {
     ghTokenInput.value = '';
     ghTokenInput.removeAttribute('data-filled');
-    // show as text until user types again
-    ghTokenInput.type = 'text';
   }
 }
 
@@ -286,7 +303,6 @@ function updateGhStatusUi(): void {
   }
 
   if (ghTokenInput) {
-    // As soon as the user types in a masked field, unmask it (new token)
     ghTokenInput.oninput = () => {
       if (ghTokenInput!.getAttribute('data-filled') === '1') {
         ghTokenInput!.removeAttribute('data-filled');
@@ -295,7 +311,6 @@ function updateGhStatusUi(): void {
     };
   }
 
-  // Disable Connect if we're already authed and the field is just the mask
   if (ghConnectBtn && ghTokenInput) {
     const isMasked = ghTokenInput.getAttribute('data-filled') === '1';
     ghConnectBtn.disabled = ghIsAuthed && isMasked;
@@ -305,7 +320,6 @@ function updateGhStatusUi(): void {
     ghLogoutBtn.disabled = !ghIsAuthed;
   }
 
-  // Keep UI checkbox in sync with pref
   if (ghRememberChk) {
     ghRememberChk.checked = ghRememberPref;
   }
@@ -471,6 +485,7 @@ function onGitHubLogoutClick() {
   ghIsAuthed = false;
   ghTokenExpiresAt = null;
   setPatFieldObfuscated(false);
+  populateGhRepos([]);
   updateGhStatusUi();
   log('GitHub: Logged out.');
 }
@@ -478,7 +493,7 @@ function onGitHubLogoutClick() {
 /* -------------------------------------------------------
  * Message pump
  * ----------------------------------------------------- */
-window.onmessage = async function (event: MessageEvent) {
+window.addEventListener('message', async (event: MessageEvent) => {
   const data: unknown = (event as unknown as { data?: unknown }).data;
   if (!data || typeof data !== 'object') return;
 
@@ -498,7 +513,6 @@ window.onmessage = async function (event: MessageEvent) {
     ghIsAuthed = !!p.ok;
     ghTokenExpiresAt = p.exp || p.tokenExpiration || null;
 
-    // Prefer plugin-sourced remember state; fallback to local pref
     if (typeof p.remember === 'boolean') {
       ghRememberPref = p.remember;
       saveRememberPref(ghRememberPref);
@@ -593,7 +607,14 @@ window.onmessage = async function (event: MessageEvent) {
     if (rawEl) rawEl.textContent = msg.payload.text;
     return;
   }
-};
+
+  if ((msg as any).type === 'GITHUB_REPOS') {
+    const repos = ((msg as any).payload?.repos ?? []) as Array<{ full_name: string; default_branch: string; private: boolean }>;
+    populateGhRepos(repos);
+    log(`GitHub: Repository list updated (${repos.length}).`);
+    return;
+  }
+});
 
 /* -------------------------------------------------------
  * DOM wiring (runs when document exists)
@@ -635,6 +656,7 @@ document.addEventListener('DOMContentLoaded', function () {
     || (document.getElementById('ghConnectBtn') as HTMLButtonElement | null);
   ghVerifyBtn = (document.getElementById('githubVerifyBtn') as HTMLButtonElement | null)
     || (document.getElementById('ghVerifyBtn') as HTMLButtonElement | null);
+  ghRepoSelect = document.getElementById('ghRepoSelect') as HTMLSelectElement | null;
 
   // Load saved “remember me” preference immediately (UI-level persistence)
   ghRememberPref = loadRememberPref();
