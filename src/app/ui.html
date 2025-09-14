@@ -405,6 +405,17 @@
     .tab-panel.is-active {
       display: flex;
     }
+
+    #ghConnectBtn {
+      margin-top: 2rem;
+    }
+
+    /* Masks text visually even for type="text" */
+    #ghPat.gh-mask {
+      -webkit-text-security: disc;
+      text-security: disc;
+      /* non-standard; harmless if ignored */
+    }
   </style>
 </head>
 
@@ -555,7 +566,8 @@
             <div class="row">
               <div>
                 <label>Personal Access Token (PAT)</label>
-                <input id="ghPat" type="password" placeholder="ghp_..." />
+                <input id="ghPat" type="password" autocomplete="current-password" autocapitalize="off"
+                  spellcheck="false" inputmode="text" />
                 <div class="muted" style="margin-top:4px;">
                   Store on this device? <input id="ghRememberChk" type="checkbox" />
                   <label for="ghRememberChk" style="display:inline; margin-left:.25rem;">Remember me (base64 on

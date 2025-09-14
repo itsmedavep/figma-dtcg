@@ -1,9 +1,59 @@
 // src/app/main.ts
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
+import { ghGetUser } from '../core/github/api'; // only import ghGetUser
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
+
+/* ---------------- GitHub (minimal) ---------------- */
+let ghToken: string | null = null;
+
+// Base64 helpers (btoa/atob exist in Figma plugin iframe)
+function encodeToken(s: string): string {
+  try { return btoa(s); } catch { return s; }
+}
+function decodeToken(s: string): string {
+  try { return atob(s); } catch { return s; }
+}
+
+/**
+ * On plugin boot, if a token is remembered in clientStorage, verify it and
+ * notify the UI with GITHUB_AUTH_RESULT. We set remember: true so the UI
+ * keeps the checkbox checked and masks the PAT field.
+ */
+async function restoreGithubTokenAndVerify(): Promise<void> {
+  try {
+    const stored = await figma.clientStorage.getAsync('github_token_b64').catch(() => null);
+    if (!stored || typeof stored !== 'string' || stored.length === 0) return;
+
+    const decoded = decodeToken(stored);
+    ghToken = decoded;
+
+    const who = await ghGetUser(decoded);
+    if (who.ok) {
+      // No INFO log here; UI will log once when it receives GITHUB_AUTH_RESULT.
+      send({
+        // messages.ts untouched → cast to any
+        ...(undefined as any),
+        type: 'GITHUB_AUTH_RESULT',
+        payload: {
+          ok: true,
+          login: who.user.login,
+          name: who.user.name,
+          remember: true,          // <— persist Remember UI state
+          exp: (who as any).exp ?? undefined // <— if your api returns an expiration
+        }
+      } as any);
+    } else {
+      send({ type: 'ERROR', payload: { message: `GitHub: Authentication failed (stored token): ${who.error}.` } });
+      send({ ...(undefined as any), type: 'GITHUB_AUTH_RESULT', payload: { ok: false, error: who.error } } as any);
+    }
+  } catch {
+    // ignore; user can paste a token
+  }
+}
+/* ---------------- /GitHub (minimal) ---------------- */
 
 // Use saved size if available; fall back to 960×540.
 (async function initUI() {
@@ -111,7 +161,7 @@ function safeKeyFromCollectionAndMode(collectionName: string, modeName: string):
   return out;
 }
 
-figma.ui.onmessage = async (msg: UiToPlugin) => {
+figma.ui.onmessage = async (msg: UiToPlugin | any) => {
   try {
     if (msg.type === 'UI_READY') {
       const snap = await snapshotCollectionsForUi();
@@ -124,6 +174,9 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections (initial)' } });
       send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
       send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
+
+      // Try to restore a remembered GitHub token and verify it.
+      await restoreGithubTokenAndVerify();
       return;
     }
 
@@ -212,6 +265,55 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       send({ type: 'W3C_PREVIEW', payload: { name: picked.name, json: picked.json } });
       return;
     }
+
+    /* ---------------- GitHub: set/forget token ---------------- */
+    if (msg.type === 'GITHUB_SET_TOKEN') {
+      const payload = (msg as any).payload || {};
+      const token = String(payload.token || '').trim();
+      const remember = !!payload.remember;
+
+      if (!token) {
+        send({ type: 'ERROR', payload: { message: 'GitHub: Empty token.' } });
+        send({ ...(undefined as any), type: 'GITHUB_AUTH_RESULT', payload: { ok: false, error: 'empty token' } } as any);
+        return;
+      }
+
+      ghToken = token;
+      if (remember) {
+        await figma.clientStorage.setAsync('github_token_b64', encodeToken(token)).catch(() => { });
+      } else {
+        await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { });
+      }
+
+      // No INFO log here (UI already logs “Verifying…” before sending this)
+      const who = await ghGetUser(token);
+      if (who.ok) {
+        send({
+          ...(undefined as any),
+          type: 'GITHUB_AUTH_RESULT',
+          payload: {
+            ok: true,
+            login: who.user.login,
+            name: who.user.name,
+            remember,                   // reflect UI choice
+            exp: (who as any).exp ?? undefined
+          }
+        } as any);
+      } else {
+        send({ type: 'ERROR', payload: { message: `GitHub: Authentication failed: ${who.error}.` } });
+        send({ ...(undefined as any), type: 'GITHUB_AUTH_RESULT', payload: { ok: false, error: who.error } } as any);
+      }
+      return;
+    }
+
+    if (msg.type === 'GITHUB_FORGET_TOKEN') {
+      ghToken = null;
+      await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { /* ignore */ });
+      send({ type: 'INFO', payload: { message: 'GitHub: Token cleared.' } });
+      send({ ...(undefined as any), type: 'GITHUB_AUTH_RESULT', payload: { ok: false } } as any);
+      return;
+    }
+    /* ---------------- /GitHub ---------------- */
 
   } catch (e) {
     let message = 'Unknown error';
