@@ -1,6 +1,8 @@
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
+
 import { ghGetUser, ghListRepos, ghListBranches } from '../core/github/api';
+
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
@@ -201,6 +203,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       if (sel.owner && sel.repo) {
         (figma.ui as any).postMessage({ type: 'GITHUB_RESTORE_SELECTED', payload: sel });
       }
+
       return;
     }
 
