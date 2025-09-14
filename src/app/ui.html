@@ -411,10 +411,8 @@
     }
 
     /* Masks text visually even for type="text" */
-    #ghPat.gh-mask {
+    #ghTokenInput.gh-mask {
       -webkit-text-security: disc;
-      /* text-security: disc; */
-      /* non-standard; harmless if ignored */
     }
   </style>
 </head>
@@ -566,7 +564,7 @@
             <div class="row">
               <div>
                 <label>Personal Access Token (PAT)</label>
-                <input id="ghPat" type="password" autocomplete="current-password" autocapitalize="off"
+                <input id="ghTokenInput" type="password" autocomplete="current-password" autocapitalize="off"
                   spellcheck="false" inputmode="text" />
                 <div class="muted" style="margin-top:4px;">
                   Store on this device? <input id="ghRememberChk" type="checkbox" />
@@ -592,12 +590,21 @@
             <div class="row">
               <div>
                 <label>Branch</label>
+
+                <!-- Search + Count row (Variant 4) -->
+                <div class="row" style="align-items:center;">
+                  <input id="ghBranchSearch" type="text" placeholder="Search branches…" />
+                  <div id="ghBranchCount" class="muted" style="flex:0 0 auto; white-space:nowrap;"></div>
+                </div>
+
+                <!-- Branch select + new branch -->
                 <div class="row">
                   <select id="ghBranchSelect" disabled></select>
                   <div style="flex:0 0 auto; display:flex; gap:.25rem; align-items:center;">
                     <button id="ghNewBranchBtn" class="css-button-neumorphic" disabled>Create new…</button>
                   </div>
                 </div>
+
                 <!-- Inline new-branch composer (hidden until "Create new…" clicked) -->
                 <div id="ghNewBranchRow" class="row" style="display:none; margin-top:.25rem;">
                   <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
