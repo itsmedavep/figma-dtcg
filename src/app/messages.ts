@@ -15,8 +15,12 @@ export type UiToPlugin =
     payload: { exportAll?: boolean; drawerOpen?: boolean };
   }
   | { type: 'UI_RESIZE'; payload: { width: number; height: number } }
-  // NEW
-  | { type: 'PREVIEW_REQUEST'; payload: { collection: string; mode: string } };
+  | { type: 'PREVIEW_REQUEST'; payload: { collection: string; mode: string } }
+  // NEW: UI asks plugin to produce export files for GitHub flow (no secrets leave UI)
+  | {
+    type: 'GITHUB_EXPORT_FILES';
+    payload: { scope: 'all' | 'selected'; collection?: string; mode?: string };
+  };
 
 // Plugin -> UI
 export type PluginToUi =
@@ -41,5 +45,6 @@ export type PluginToUi =
     type: 'EXPORT_RESULT';
     payload: { files: Array<{ name: string; json: unknown }> };
   }
-  // NEW
-  | { type: 'W3C_PREVIEW'; payload: { name: string; json: unknown } };
+  | { type: 'W3C_PREVIEW'; payload: { name: string; json: unknown } }
+  // NEW: plugin returns the files (names + JSON) for the GitHub commit step
+  | { type: 'GITHUB_EXPORT_FILES_RESULT'; payload: { files: Array<{ name: string; json: unknown }> } };
