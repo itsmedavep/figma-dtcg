@@ -1,12 +1,26 @@
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
-import { ghGetUser, ghListRepos } from '../core/github/api';
+
+import { ghGetUser, ghListRepos, ghListBranches } from '../core/github/api';
+
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
 
 // ---------------- GitHub (minimal) ----------------
 let ghToken: string | null = null;
+
+// Persisted selection (owner/repo/branch)
+const GH_SELECTED_KEY = 'gh.selected';
+
+type GhSelected = { owner?: string; repo?: string; branch?: string };
+
+async function getSelected(): Promise<GhSelected> {
+  try { return (await figma.clientStorage.getAsync(GH_SELECTED_KEY)) ?? {}; } catch { return {}; }
+}
+async function setSelected(sel: GhSelected): Promise<void> {
+  try { await figma.clientStorage.setAsync(GH_SELECTED_KEY, sel); } catch { /* ignore */ }
+}
 
 // Base64 helpers (btoa/atob exist in Figma plugin iframe)
 function encodeToken(s: string): string {
@@ -183,6 +197,13 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
 
       // Try to restore a remembered GitHub token and verify it.
       await restoreGithubTokenAndVerify();
+
+      // Optionally notify UI about previously saved repo/branch (UI may choose to restore)
+      const sel = await getSelected();
+      if (sel.owner && sel.repo) {
+        (figma.ui as any).postMessage({ type: 'GITHUB_RESTORE_SELECTED', payload: sel });
+      }
+
       return;
     }
 
@@ -317,7 +338,78 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       (figma.ui as any).postMessage({ type: 'GITHUB_REPOS', payload: { repos: [] } });
       return;
     }
-    // ---------------- /GitHub ----------------
+
+    // ---------------- GitHub: branch flow (additive, variant 4 UI support) ----------------
+
+    // Optional: persist repo choice if UI sends it explicitly.
+    if ((msg as any).type === 'GITHUB_SELECT_REPO') {
+      const { owner, repo } = (msg as any).payload || {};
+      const sel = await getSelected();
+      await setSelected({ owner, repo, branch: sel.branch }); // keep prior branch if any
+      return;
+    }
+
+    // UI requests a page of branches (search/virtualization handled in UI).
+    if ((msg as any).type === 'GITHUB_FETCH_BRANCHES') {
+      const p = (msg as any).payload || {};
+      const owner = String(p.owner || '');
+      const repo = String(p.repo || '');
+      const page = Number.isFinite(p.page) ? Number(p.page) : 1;
+
+      if (!ghToken) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_BRANCHES_ERROR',
+          payload: { owner, repo, status: 401, message: 'No token' }
+        });
+        return;
+      }
+
+      const res = await ghListBranches(ghToken, owner, repo, page);
+      if (res.ok) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_BRANCHES',
+          payload: {
+            owner: res.owner,
+            repo: res.repo,
+            page: res.page,
+            branches: res.branches,
+            defaultBranch: res.defaultBranch,
+            hasMore: res.hasMore,
+            rate: res.rate
+          }
+        });
+
+        // On first page, store the selected repo and default branch (UI may overwrite later).
+        if (page === 1) {
+          await setSelected({ owner, repo, branch: res.defaultBranch });
+        }
+      } else {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_BRANCHES_ERROR',
+          payload: {
+            owner: res.owner,
+            repo: res.repo,
+            status: res.status,
+            message: res.message,
+            samlRequired: (res as any).samlRequired,
+            rate: (res as any).rate
+          }
+        });
+      }
+      return;
+    }
+
+    // UI picked a branch → persist for restore.
+    if ((msg as any).type === 'GITHUB_SELECT_BRANCH') {
+      const p = (msg as any).payload || {};
+      const owner = String(p.owner || '');
+      const repo = String(p.repo || '');
+      const branch = String(p.branch || '');
+      await setSelected({ owner, repo, branch });
+      return;
+    }
+
+    // ---------------- /GitHub branch flow ----------------
 
   } catch (e) {
     let message = 'Unknown error';

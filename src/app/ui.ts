@@ -35,6 +35,13 @@ let ghConnectBtn: HTMLButtonElement | null = null;
 let ghVerifyBtn: HTMLButtonElement | null = null; // optional if present
 let ghRepoSelect: HTMLSelectElement | null = null;
 
+
+// --- New (optional) Branch controls (only used if present in DOM) ---
+let ghBranchSearch: HTMLInputElement | null = null;
+let ghBranchSelect: HTMLSelectElement | null = null;
+let ghBranchCountEl: HTMLElement | null = null;
+
+
 // Inserted if missing:
 let ghAuthStatusEl: HTMLElement | null = null; // “Authenticated as …”
 let ghTokenMetaEl: HTMLElement | null = null;  // “Expires in …”
@@ -47,6 +54,22 @@ let ghRememberPref: boolean = false;
 
 const GH_REMEMBER_PREF_KEY = 'ghRememberPref';
 const GH_MASK = '••••••••••';
+
+
+/* --------- Branch local state (search + virtualization + paging) --------- */
+let currentOwner = '';
+let currentRepo = '';
+let desiredBranch: string | null = null;       // from restore or user choice
+let defaultBranchFromApi: string | undefined = undefined;
+
+let loadedPages = 0;
+let hasMorePages = false;
+let isFetchingBranches = false;
+
+let allBranches: string[] = [];         // merged across pages
+let filteredBranches: string[] = [];    // result of search filter
+let renderCount = 0;
+const RENDER_STEP = 200;                // how many options to render per chunk
 
 /* -------------------------------------------------------
  * Utilities
@@ -81,7 +104,30 @@ function populateGhRepos(list: Array<{ full_name: string; default_branch: string
     ghRepoSelect.appendChild(opt);
   }
   ghRepoSelect.disabled = list.length === 0;
-  if (list.length > 0) ghRepoSelect.selectedIndex = 0;
+
+  // Auto-select restored repo if we have one
+  if (list.length > 0) {
+    if (restoreOwner && restoreRepo) {
+      const want = `${restoreOwner}/${restoreRepo}`;
+      let matched = false;
+      for (let i = 0; i < ghRepoSelect.options.length; i++) {
+        if (ghRepoSelect.options[i].value === want) {
+          ghRepoSelect.selectedIndex = i;
+          matched = true;
+          break;
+        }
+      }
+      if (matched) {
+        // Trigger change to load branches for restored repo
+        const ev = new Event('change', { bubbles: true });
+        ghRepoSelect.dispatchEvent(ev);
+      } else {
+        ghRepoSelect.selectedIndex = 0;
+      }
+    } else {
+      ghRepoSelect.selectedIndex = 0;
+    }
+  }
 }
 
 async function beginPendingSave(suggestedName: string): Promise<boolean> {
@@ -301,7 +347,7 @@ function updateGhStatusUi(): void {
     const expTxt = ghTokenExpiresAt ? `Token ${formatTimeLeft(ghTokenExpiresAt)}` : 'Token expiration: unknown';
     ghTokenMetaEl.textContent = `${expTxt} • ${rememberTxt}`;
   }
-
+  
   if (ghTokenInput) {
     ghTokenInput.oninput = () => {
       if (ghTokenInput!.getAttribute('data-filled') === '1') {
@@ -464,6 +510,119 @@ function requestPreviewForCurrent(): void {
 }
 
 /* -------------------------------------------------------
+ * GitHub: Branch helpers (Variant 4)
+ * These functions are guarded by presence of branch DOM nodes.
+ * ----------------------------------------------------- */
+function setBranchDisabled(disabled: boolean, placeholder?: string): void {
+  if (!ghBranchSelect) return;
+  ghBranchSelect.disabled = disabled;
+  if (placeholder !== undefined) {
+    clearSelect(ghBranchSelect);
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = placeholder;
+    ghBranchSelect.appendChild(opt);
+  }
+}
+
+function updateBranchCount(): void {
+  if (!ghBranchCountEl) return;
+  const total = allBranches.length;
+  const showing = filteredBranches.length;
+  ghBranchCountEl.textContent = `${showing} / ${total}${hasMorePages ? ' +' : ''}`;
+}
+
+function renderOptions(): void {
+  if (!ghBranchSelect) return;
+  const prev = ghBranchSelect.value;
+  clearSelect(ghBranchSelect);
+
+  const slice = filteredBranches.slice(0, renderCount);
+  for (const name of slice) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    ghBranchSelect.appendChild(opt);
+  }
+
+  // Virtualization sentinel: additional items in filtered set
+  if (filteredBranches.length > renderCount) {
+    const opt = document.createElement('option');
+    opt.value = '__more__';
+    opt.textContent = `Load more… (${filteredBranches.length - renderCount} more)`;
+    ghBranchSelect.appendChild(opt);
+  } else if (hasMorePages) {
+    // API has more pages
+    const opt = document.createElement('option');
+    opt.value = '__fetch__';
+    opt.textContent = 'Load next page…';
+    ghBranchSelect.appendChild(opt);
+
+  }
+  if (!msg) return;
+  // Restore selection preference
+  const want = desiredBranch || defaultBranchFromApi || prev;
+  if (want && slice.includes(want)) {
+    ghBranchSelect.value = want;
+  } else if (ghBranchSelect.options.length) {
+    ghBranchSelect.selectedIndex = 0;
+  }
+}
+
+function applyBranchFilter(): void {
+  const q = (ghBranchSearch?.value || '').toLowerCase().trim();
+  filteredBranches = q
+    ? allBranches.filter(n => n.toLowerCase().includes(q))
+    : [...allBranches];
+
+  renderCount = Math.min(RENDER_STEP, filteredBranches.length);
+  renderOptions();
+  updateBranchCount();
+}
+
+function ensureNextPageIfNeeded(): void {
+  if (!ghBranchSelect || !ghRepoSelect) return;
+  if (!hasMorePages || isFetchingBranches) return;
+  if (!currentOwner || !currentRepo) return;
+
+  isFetchingBranches = true;
+  (postToPlugin as any)({
+    type: 'GITHUB_FETCH_BRANCHES',
+    payload: { owner: currentOwner, repo: currentRepo, page: loadedPages + 1 }
+  });
+}
+
+function onBranchScroll(): void {
+  if (!ghBranchSelect) return;
+  const el = ghBranchSelect;
+  const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
+  if (nearBottom && filteredBranches.length === allBranches.length && hasMorePages && !isFetchingBranches) {
+    ensureNextPageIfNeeded();
+  }
+}
+
+function onBranchChange(): void {
+  if (!ghBranchSelect) return;
+  const v = ghBranchSelect.value;
+  if (v === '__more__') {
+    renderCount = Math.min(renderCount + RENDER_STEP, filteredBranches.length);
+    renderOptions();
+    return;
+  }
+  if (v === '__fetch__') {
+    ensureNextPageIfNeeded();
+    return;
+  }
+  if (!v) return;
+
+  desiredBranch = v;
+  (postToPlugin as any)({
+    type: 'GITHUB_SELECT_BRANCH',
+    payload: { owner: currentOwner, repo: currentRepo, branch: v }
+  });
+}
+
+/* -------------------------------------------------------
  * GitHub button handlers
  * ----------------------------------------------------- */
 function onGitHubConnectClick() {
@@ -487,12 +646,25 @@ function onGitHubLogoutClick() {
   setPatFieldObfuscated(false);
   populateGhRepos([]);
   updateGhStatusUi();
+  // Clear branch UI
+  currentOwner = ''; currentRepo = '';
+  allBranches = []; filteredBranches = [];
+  desiredBranch = null; defaultBranchFromApi = undefined;
+  loadedPages = 0; hasMorePages = false; isFetchingBranches = false;
+  if (ghBranchSearch) ghBranchSearch.value = '';
+  if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
+  updateBranchCount();
   log('GitHub: Logged out.');
 }
 
 /* -------------------------------------------------------
  * Message pump
  * ----------------------------------------------------- */
+// Restore hints sent from plugin (selected repo/branch)
+let restoreOwner: string | null = null;
+let restoreRepo: string | null = null;
+let restoreBranch: string | null = null;
+
 window.addEventListener('message', async (event: MessageEvent) => {
   const data: unknown = (event as unknown as { data?: unknown }).data;
   if (!data || typeof data !== 'object') return;
@@ -502,10 +674,6 @@ window.addEventListener('message', async (event: MessageEvent) => {
     const maybe = (data as any).pluginMessage;
     if (maybe && typeof maybe.type === 'string') msg = maybe;
   }
-  if (!msg) return;
-
-  if (msg.type === 'ERROR') { log('ERROR: ' + msg.payload.message); return; }
-  if (msg.type === 'INFO') { log(msg.payload.message); return; }
 
   // GitHub auth state from plugin
   if (msg.type === 'GITHUB_AUTH_RESULT') {
@@ -614,6 +782,84 @@ window.addEventListener('message', async (event: MessageEvent) => {
     log(`GitHub: Repository list updated (${repos.length}).`);
     return;
   }
+
+  // --- New: restore selected repo/branch (from plugin storage)
+  if ((msg as any).type === 'GITHUB_RESTORE_SELECTED') {
+    const p = (msg as any).payload || {};
+    restoreOwner = typeof p.owner === 'string' ? p.owner : null;
+    restoreRepo = typeof p.repo === 'string' ? p.repo : null;
+    restoreBranch = typeof p.branch === 'string' ? p.branch : null;
+    desiredBranch = restoreBranch; // preference when options render
+    // If repos already loaded, try to select now
+    if (ghRepoSelect && restoreOwner && restoreRepo) {
+      const want = `${restoreOwner}/${restoreRepo}`;
+      let matched = false;
+      for (let i = 0; i < ghRepoSelect.options.length; i++) {
+        if (ghRepoSelect.options[i].value === want) {
+          ghRepoSelect.selectedIndex = i;
+          matched = true;
+          break;
+        }
+      }
+      if (matched) {
+        const ev = new Event('change', { bubbles: true });
+        ghRepoSelect.dispatchEvent(ev);
+      }
+    }
+    return;
+  }
+
+  // --- New: branches page arrived
+  if ((msg as any).type === 'GITHUB_BRANCHES') {
+    const pl = (msg as any).payload || {};
+    const owner = String(pl.owner || '');
+    const repo = String(pl.repo || '');
+    if (owner !== currentOwner || repo !== currentRepo) return; // stale
+
+    loadedPages = Number(pl.page || 1);
+    hasMorePages = !!pl.hasMore;
+    isFetchingBranches = false;
+
+    if (typeof pl.defaultBranch === 'string' && !defaultBranchFromApi) {
+      defaultBranchFromApi = pl.defaultBranch;
+    }
+
+    const names = Array.isArray(pl.branches) ? (pl.branches as Array<{ name: string }>).map(b => b.name) : [];
+    // Merge unique names
+    const set = new Set(allBranches);
+    for (const n of names) if (n) set.add(n);
+    allBranches = Array.from(set).sort((a, b) => a.localeCompare(b));
+
+    applyBranchFilter(); // also renders + updates count
+    setBranchDisabled(false);
+
+    // Near rate-limit hint (optional)
+    const rate = pl.rate as { remaining?: number; resetEpochSec?: number } | undefined;
+    if (rate && typeof rate.remaining === 'number' && rate.remaining <= 3 && typeof rate.resetEpochSec === 'number') {
+      const t = new Date(rate.resetEpochSec * 1000).toLocaleTimeString();
+      log(`GitHub: near rate limit; resets ~${t}`);
+    }
+
+    log(`Loaded ${names.length} branches (page ${loadedPages}) for ${repo}${hasMorePages ? '…' : ''}`);
+    return;
+  }
+
+  // --- New: branch load error
+  if ((msg as any).type === 'GITHUB_BRANCHES_ERROR') {
+    const pl = (msg as any).payload || {};
+    const owner = String(pl.owner || '');
+    const repo = String(pl.repo || '');
+    if (owner !== currentOwner || repo !== currentRepo) return; // stale
+    isFetchingBranches = false;
+    setBranchDisabled(false);
+    log(`Branch load failed (status ${pl.status}): ${pl.message || 'unknown error'}`);
+    if (pl.samlRequired) log('This org requires SSO. Open the repo in your browser and authorize SSO for your token.');
+    if (pl.rate && typeof pl.rate.resetEpochSec === 'number') {
+      const t = new Date(pl.rate.resetEpochSec * 1000).toLocaleTimeString();
+      log(`Rate limit issue; resets ~${t}`);
+    }
+    return;
+  }
 });
 
 /* -------------------------------------------------------
@@ -658,6 +904,11 @@ document.addEventListener('DOMContentLoaded', function () {
     || (document.getElementById('ghVerifyBtn') as HTMLButtonElement | null);
   ghRepoSelect = document.getElementById('ghRepoSelect') as HTMLSelectElement | null;
 
+  // Optional Branch controls (found only if present in your HTML)
+  ghBranchSearch = document.getElementById('ghBranchSearch') as HTMLInputElement | null;
+  ghBranchSelect = document.getElementById('ghBranchSelect') as HTMLSelectElement | null;
+  ghBranchCountEl = document.getElementById('ghBranchCount') as HTMLElement | null;
+
   // Load saved “remember me” preference immediately (UI-level persistence)
   ghRememberPref = loadRememberPref();
   if (ghRememberChk) ghRememberChk.checked = ghRememberPref;
@@ -673,6 +924,53 @@ document.addEventListener('DOMContentLoaded', function () {
   // Wire GitHub buttons
   if (ghConnectBtn) ghConnectBtn.addEventListener('click', onGitHubConnectClick);
   if (ghVerifyBtn) ghVerifyBtn.addEventListener('click', onGitHubVerifyClick);
+
+  // --- New: repo → branch load (only if branch UI present)
+  if (ghRepoSelect && ghBranchSelect) {
+    ghRepoSelect.addEventListener('change', function () {
+      const value = ghRepoSelect!.value; // "owner/repo"
+      const parts = value.split('/');
+      currentOwner = parts[0] || '';
+      currentRepo = parts[1] || '';
+
+      // Persist repo choice (plugin stores it for restore)
+      (postToPlugin as any)({ type: 'GITHUB_SELECT_REPO', payload: { owner: currentOwner, repo: currentRepo } });
+
+      // Reset branch state
+      desiredBranch = restoreBranch || null;      // prefer restored branch on first load
+      defaultBranchFromApi = undefined;
+      loadedPages = 0; hasMorePages = false; isFetchingBranches = false;
+      allBranches = []; filteredBranches = [];
+      renderCount = 0;
+      if (ghBranchSearch) ghBranchSearch.value = '';
+
+      setBranchDisabled(true, 'Loading branches…');
+      updateBranchCount();
+
+      if (currentOwner && currentRepo) {
+        isFetchingBranches = true;
+        (postToPlugin as any)({
+          type: 'GITHUB_FETCH_BRANCHES',
+          payload: { owner: currentOwner, repo: currentRepo, page: 1 }
+        });
+      }
+    });
+  }
+
+  // Branch search and list listeners (if present)
+  if (ghBranchSearch) {
+    let t: number | undefined;
+    ghBranchSearch.addEventListener('input', () => {
+      if (t) window.clearTimeout(t);
+      t = window.setTimeout(() => {
+        applyBranchFilter();
+      }, 120);
+    });
+  }
+  if (ghBranchSelect) {
+    ghBranchSelect.addEventListener('change', onBranchChange);
+    ghBranchSelect.addEventListener('scroll', onBranchScroll);
+  }
 
   // Other UI events
   if (fileInput) fileInput.addEventListener('change', setDisabledStates);
@@ -783,6 +1081,9 @@ document.addEventListener('DOMContentLoaded', function () {
   setDrawerOpen(getSavedDrawerOpen());
   postToPlugin({ type: 'UI_READY' });
 
+  // If branch UI exists, set initial placeholder
+  if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
+  updateBranchCount();
   // Request a size that fits current content
   autoFitOnce();
 });
