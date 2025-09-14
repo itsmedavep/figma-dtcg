@@ -1,25 +1,80 @@
-// src/app/main.ts
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
+import { ghGetUser, ghListRepos } from '../core/github/api';
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
 
+// ---------------- GitHub (minimal) ----------------
+let ghToken: string | null = null;
+
+// Base64 helpers (btoa/atob exist in Figma plugin iframe)
+function encodeToken(s: string): string {
+  try { return btoa(s); } catch { return s; }
+}
+function decodeToken(s: string): string {
+  try { return atob(s); } catch { return s; }
+}
+
+async function listAndSendRepos(token: string): Promise<void> {
+  const repos = await ghListRepos(token);
+  if (repos.ok) {
+    // custom message type; cast to any to avoid messages.ts churn
+    (figma.ui as any).postMessage({
+      type: 'GITHUB_REPOS',
+      payload: { repos: repos.repos }
+    });
+  } else {
+    send({ type: 'ERROR', payload: { message: `GitHub: Could not list repos: ${repos.error}` } });
+    (figma.ui as any).postMessage({
+      type: 'GITHUB_REPOS',
+      payload: { repos: [] }
+    });
+  }
+}
+
+async function restoreGithubTokenAndVerify(): Promise<void> {
+  try {
+    const stored = await figma.clientStorage.getAsync('github_token_b64').catch(() => null);
+    if (!stored || typeof stored !== 'string' || stored.length === 0) return;
+
+    const decoded = decodeToken(stored);
+    ghToken = decoded;
+
+    const who = await ghGetUser(decoded);
+    if (who.ok) {
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_AUTH_RESULT',
+        payload: { ok: true, login: who.user.login, name: who.user.name, remember: true }
+      });
+      await listAndSendRepos(decoded);
+    } else {
+      send({ type: 'ERROR', payload: { message: `GitHub: Authentication failed (stored token): ${who.error}.` } });
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_AUTH_RESULT',
+        payload: { ok: false, error: who.error, remember: false }
+      });
+    }
+  } catch {
+    // ignore; user can paste a token
+  }
+}
+// ---------------- /GitHub (minimal) ----------------
+
 // Use saved size if available; fall back to 960×540.
 (async function initUI() {
-  var w = 960, h = 540;
+  let w = 960, h = 540;
   try {
-    var saved = await figma.clientStorage.getAsync('uiSize');
+    const saved = await figma.clientStorage.getAsync('uiSize');
     if (saved && typeof saved.width === 'number' && typeof saved.height === 'number') {
-      var sw = Math.floor(saved.width);
-      var sh = Math.floor(saved.height);
+      const sw = Math.floor(saved.width);
+      const sh = Math.floor(saved.height);
       w = Math.max(720, Math.min(1600, sw));
       h = Math.max(420, Math.min(1200, sh));
     }
-  } catch (_e) { /* ignore */ }
+  } catch { /* ignore */ }
   figma.showUI(__html__, { width: w, height: h });
 })();
-
 
 function send(msg: PluginToUi): void {
   figma.ui.postMessage(msg);
@@ -64,21 +119,18 @@ async function snapshotCollectionsForUi(): Promise<{
   }> = [];
   const rawLines: string[] = [];
 
-  let i = 0;
-  for (i = 0; i < locals.length; i++) {
+  for (let i = 0; i < locals.length; i++) {
     const c = locals[i];
     if (!c) continue;
 
     const modes: Array<{ id: string; name: string }> = [];
-    let mi = 0;
-    for (mi = 0; mi < c.modes.length; mi++) {
+    for (let mi = 0; mi < c.modes.length; mi++) {
       const m = c.modes[mi];
       modes.push({ id: m.modeId, name: m.name });
     }
 
     const varsList: Array<{ id: string; name: string; type: string }> = [];
-    let vi = 0;
-    for (vi = 0; vi < c.variableIds.length; vi++) {
+    for (let vi = 0; vi < c.variableIds.length; vi++) {
       const varId = c.variableIds[vi];
       const v = await figma.variables.getVariableByIdAsync(varId);
       if (!v) continue;
@@ -88,11 +140,12 @@ async function snapshotCollectionsForUi(): Promise<{
     out.push({ id: c.id, name: c.name, modes: modes, variables: varsList });
 
     rawLines.push('Collection: ' + c.name + ' (' + c.id + ')');
-    const modeNames: string[] = [];
-    let zi = 0; for (zi = 0; zi < modes.length; zi++) modeNames.push(modes[zi].name);
+    const modeNames: string[] = modes.map(m => m.name);
     rawLines.push('  Modes: ' + (modeNames.length > 0 ? modeNames.join(', ') : '(none)'));
     rawLines.push('  Variables (' + String(varsList.length) + '):');
-    let qi = 0; for (qi = 0; qi < varsList.length; qi++) rawLines.push('    - ' + varsList[qi].name + ' [' + varsList[qi].type + ']');
+    for (let qi = 0; qi < varsList.length; qi++) {
+      rawLines.push('    - ' + varsList[qi].name + ' [' + varsList[qi].type + ']');
+    }
     rawLines.push('');
   }
 
@@ -106,10 +159,10 @@ async function snapshotCollectionsForUi(): Promise<{
 
 function safeKeyFromCollectionAndMode(collectionName: string, modeName: string): string {
   const base = collectionName + '/mode=' + modeName;
-  let i = 0, out = '';
-  for (i = 0; i < base.length; i++) {
+  let out = '';
+  for (let i = 0; i < base.length; i++) {
     const ch = base.charAt(i);
-    if (ch === '/' || ch === '\\' || ch === ':') out += '_'; else out += ch;
+    out += (ch === '/' || ch === '\\' || ch === ':') ? '_' : ch;
   }
   return out;
 }
@@ -118,9 +171,8 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
   try {
     if (msg.type === 'UI_READY') {
       const snap = await snapshotCollectionsForUi();
-      // Load prefs
-      const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });
-      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(function () { return false; });
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
       const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
         ? last
         : null;
@@ -128,13 +180,16 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections (initial)' } });
       send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
       send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
+
+      // Try to restore a remembered GitHub token and verify it.
+      await restoreGithubTokenAndVerify();
       return;
     }
 
     if (msg.type === 'FETCH_COLLECTIONS') {
       const snapshot = await snapshotCollectionsForUi();
-      const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });
-      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(function () { return false; });
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
       const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
         ? last
         : null;
@@ -148,9 +203,10 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
     if (msg.type === 'IMPORT_DTCG') {
       await importDtcg(msg.payload.json, { allowHexStrings: !!msg.payload.allowHexStrings });
       send({ type: 'INFO', payload: { message: 'Import completed.' } });
+
       const snap2 = await snapshotCollectionsForUi();
-      const last = await figma.clientStorage.getAsync('lastSelection').catch(function () { return null; });
-      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(function () { return false; });
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
       const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
         ? last
         : null;
@@ -174,13 +230,14 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
 
       const key = safeKeyFromCollectionAndMode(collectionName, modeName);
       const picked: Array<{ name: string; json: unknown }> = [];
-      let i2 = 0; for (i2 = 0; i2 < per.files.length; i2++) if (per.files[i2].name.indexOf(key) !== -1) picked.push(per.files[i2]);
+      for (let i2 = 0; i2 < per.files.length; i2++) {
+        if (per.files[i2].name.indexOf(key) !== -1) picked.push(per.files[i2]);
+      }
       send({ type: 'EXPORT_RESULT', payload: { files: picked.length > 0 ? picked : per.files } });
       return;
     }
 
     if (msg.type === 'SAVE_LAST') {
-      // Persist selection
       if (msg.payload && typeof msg.payload.collection === 'string' && typeof msg.payload.mode === 'string') {
         await figma.clientStorage.setAsync('lastSelection', { collection: msg.payload.collection, mode: msg.payload.mode });
       }
@@ -193,11 +250,10 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
     }
 
     if (msg.type === 'UI_RESIZE') {
-      var w = Math.max(720, Math.min(1600, Math.floor(msg.payload.width)));
-      var h = Math.max(420, Math.min(1200, Math.floor(msg.payload.height)));
+      const w = Math.max(720, Math.min(1600, Math.floor(msg.payload.width)));
+      const h = Math.max(420, Math.min(1200, Math.floor(msg.payload.height)));
       figma.ui.resize(w, h);
-      try { await figma.clientStorage.setAsync('uiSize', { width: w, height: h }); } catch (_err) { }
-      // send({ type: 'INFO', payload: { message: 'Resized UI to ' + w + '×' + h } }); // <— add this single line
+      try { await figma.clientStorage.setAsync('uiSize', { width: w, height: h }); } catch { }
       return;
     }
 
@@ -205,26 +261,69 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       const collectionName = msg.payload.collection ? String(msg.payload.collection) : '';
       const modeName = msg.payload.mode ? String(msg.payload.mode) : '';
 
-      // Build all per-mode files with the current graph
       const per = await exportDtcg({ format: 'perMode' });
 
-      // Reuse your key logic to pick the right one
       const key = safeKeyFromCollectionAndMode(collectionName, modeName);
       let picked = per.files.find(f => f.name.indexOf(key) !== -1);
-      if (!picked) picked = per.files[0]; // graceful fallback
+      if (!picked) picked = per.files[0];
       if (!picked) picked = { name: 'tokens-empty.json', json: {} };
 
       send({ type: 'W3C_PREVIEW', payload: { name: picked.name, json: picked.json } });
       return;
     }
 
+    // ---------------- GitHub: set/forget token (no messages.ts churn) ----------------
+    if ((msg as any).type === 'GITHUB_SET_TOKEN') {
+      const payload = (msg as any).payload || {};
+      const token = String(payload.token || '').trim();
+      const remember = !!payload.remember;
 
+      if (!token) {
+        send({ type: 'ERROR', payload: { message: 'GitHub: Empty token.' } });
+        (figma.ui as any).postMessage({ type: 'GITHUB_AUTH_RESULT', payload: { ok: false, error: 'empty token', remember: false } });
+        return;
+      }
+
+      ghToken = token;
+      if (remember) {
+        await figma.clientStorage.setAsync('github_token_b64', encodeToken(token)).catch(() => { });
+      } else {
+        await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { });
+      }
+
+      const who = await ghGetUser(token);
+      if (who.ok) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_AUTH_RESULT',
+          payload: { ok: true, login: who.user.login, name: who.user.name, remember }
+        });
+        await listAndSendRepos(token);
+      } else {
+        send({ type: 'ERROR', payload: { message: `GitHub: Authentication failed: ${who.error}.` } });
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_AUTH_RESULT',
+          payload: { ok: false, error: who.error, remember: false }
+        });
+        (figma.ui as any).postMessage({ type: 'GITHUB_REPOS', payload: { repos: [] } });
+      }
+      return;
+    }
+
+    if ((msg as any).type === 'GITHUB_FORGET_TOKEN') {
+      ghToken = null;
+      await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { /* ignore */ });
+      send({ type: 'INFO', payload: { message: 'GitHub: Token cleared.' } });
+      (figma.ui as any).postMessage({ type: 'GITHUB_AUTH_RESULT', payload: { ok: false, remember: false } });
+      (figma.ui as any).postMessage({ type: 'GITHUB_REPOS', payload: { repos: [] } });
+      return;
+    }
+    // ---------------- /GitHub ----------------
 
   } catch (e) {
-    var message = 'Unknown error';
+    let message = 'Unknown error';
     if (e && (e as Error).message) message = (e as Error).message;
     figma.notify('Plugin error: ' + message, { timeout: 4000 });
-    send({ type: 'ERROR', payload: { message: message } });
+    send({ type: 'ERROR', payload: { message } });
     // eslint-disable-next-line no-console
     console.error(e);
   }

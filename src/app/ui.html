@@ -405,6 +405,17 @@
     .tab-panel.is-active {
       display: flex;
     }
+
+    #ghConnectBtn {
+      margin-top: 2rem;
+    }
+
+    /* Masks text visually even for type="text" */
+    #ghPat.gh-mask {
+      -webkit-text-security: disc;
+      /* text-security: disc; */
+      /* non-standard; harmless if ignored */
+    }
   </style>
 </head>
 
@@ -516,116 +527,182 @@
       </div>
     </div>
 
-    <!-- Bottom drawer: Log / GitHub -->
+    <!-- Bottom drawer: tabs span all columns -->
     <div class="drawer">
       <div class="panel-header">
         <div>
           <div class="eyebrow">Diagnostics</div>
-          <h2 class="title">Log</h2>
+          <h2 class="title">Activity</h2>
         </div>
 
-        <!-- NEW: Drawer tabs -->
-        <div class="tabs" role="tablist" aria-label="Diagnostics and GitHub">
-          <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true"
-            aria-controls="panel-log">Log</button>
-          <button class="tab-btn" data-tab="github" role="tab" aria-selected="false"
-            aria-controls="panel-github">GitHub</button>
-        </div>
+        <!-- Drawer tabs -->
+        <div class="tabs" role="tablist" aria-label="Drawer tabs">
+          <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true" aria-controls="panel-log">
+            Log
+          </button>
+          <button class="tab-btn" data-tab="github" role="tab" aria-selected="false" aria-controls="panel-github">
+            GitHub
+          </button>
 
-        <div class="actions">
-          <button id="copyLogBtn" title="Copy log">Copy</button>
-          <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
+          <!-- Right-side actions stay the same -->
+          <div class="actions" style="margin-left: 12px;">
+            <button id="copyLogBtn" title="Copy log">Copy</button>
+            <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
+          </div>
         </div>
       </div>
 
       <div class="drawer-body">
-        <!-- NEW: Drawer tab panels -->
+        <!-- LOG PANEL -->
         <div class="tab-panel is-active" id="panel-log" data-tab="log" role="tabpanel" aria-labelledby="tab-log">
           <div id="log"></div>
         </div>
 
+        <!-- GITHUB PANEL (UI only; no network) -->
         <div class="tab-panel" id="panel-github" data-tab="github" role="tabpanel" aria-labelledby="tab-github">
-          <div class="stack">
-            <div class="eyebrow">GitHub</div>
-            <div class="muted">UI stub only — no functionality yet.</div>
-            <div>
-              <label>Repository (owner/name)</label>
-              <input type="text" placeholder="e.g. acme/design-tokens" />
+          <div class="stack" style="gap: 10px;">
+
+            <!-- Auth row -->
+            <div class="row">
+              <div>
+                <label>Personal Access Token (PAT)</label>
+                <input id="ghPat" type="password" autocomplete="current-password" autocapitalize="off"
+                  spellcheck="false" inputmode="text" />
+                <div class="muted" style="margin-top:4px;">
+                  Store on this device? <input id="ghRememberChk" type="checkbox" />
+                  <label for="ghRememberChk" style="display:inline; margin-left:.25rem;">Remember me (base64 on
+                    device)</label>
+                </div>
+              </div>
+              <div style="flex:0 0 auto;">
+                <button id="ghConnectBtn" class="css-button-neumorphic">Connect</button>
+              </div>
             </div>
+
+            <!-- Repo picker -->
+            <div class="row">
+              <div>
+                <label>Repository</label>
+                <select id="ghRepoSelect" disabled></select>
+                <div class="muted">Repos you own or are a member of (populated after Connect).</div>
+              </div>
+            </div>
+
+            <!-- Branch controls -->
             <div class="row">
               <div>
                 <label>Branch</label>
-                <input type="text" placeholder="e.g. main" />
+                <div class="row">
+                  <select id="ghBranchSelect" disabled></select>
+                  <div style="flex:0 0 auto; display:flex; gap:.25rem; align-items:center;">
+                    <button id="ghNewBranchBtn" class="css-button-neumorphic" disabled>Create new…</button>
+                  </div>
+                </div>
+                <!-- Inline new-branch composer (hidden until "Create new…" clicked) -->
+                <div id="ghNewBranchRow" class="row" style="display:none; margin-top:.25rem;">
+                  <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
+                  <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic">Create</button>
+                </div>
               </div>
-              <div>
-                <label>Folder path</label>
-                <input type="text" placeholder="e.g. tokens/" />
-              </div>
             </div>
-            <div>
-              <label>Commit message</label>
-              <input type="text" placeholder="e.g. chore(tokens): update exported DTCG" />
-            </div>
-            <div>
-              <label>Personal Access Token</label>
-              <input type="password" placeholder="ghp_••••••••••••••••••" />
-              <div class="muted" style="padding-top:.25rem;">Not stored yet — this is just the UI.</div>
-            </div>
+
+            <!-- Destination folder -->
             <div class="row">
-              <button class="css-button-neumorphic" disabled title="Not wired yet">Save settings</button>
-              <button class="css-button-neumorphic" disabled title="Not wired yet">Push now</button>
+              <div>
+                <label>Destination folder (in repo)</label>
+                <div class="row">
+                  <input id="ghFolderInput" type="text" placeholder="tokens/" />
+                  <div style="flex:0 0 auto;">
+                    <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled>Pick…</button>
+                  </div>
+                </div>
+                <div class="muted">Files will be committed under this path (e.g., <code>tokens/</code>).</div>
+              </div>
             </div>
+
+            <!-- Commit -->
+            <div class="row">
+              <div>
+                <label>Commit message</label>
+                <input id="ghCommitMsgInput" type="text" value="Update tokens from Figma" />
+              </div>
+            </div>
+
+            <!-- Scope -->
+            <div class="row">
+              <div>
+                <label>Export scope</label>
+                <div class="row" style="gap:1rem;">
+                  <label style="display:flex; align-items:center; gap:.35rem;">
+                    <input type="radio" name="ghScope" id="ghScopeSelected" checked />
+                    Use current selection (left Export pickers)
+                  </label>
+                  <label style="display:flex; align-items:center; gap:.35rem;">
+                    <input type="radio" name="ghScope" id="ghScopeAll" />
+                    All collections &amp; modes
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="row">
+              <div class="row" style="gap:.5rem;">
+                <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit</button>
+                <button id="ghOpenPrBtn" class="css-button-neumorphic" disabled>Open PR</button>
+                <button id="ghFetchOriginBtn" class="css-button-neumorphic" disabled>Fetch origin</button>
+              </div>
+            </div>
+
           </div>
         </div>
-        <!-- /NEW -->
       </div>
     </div>
-  </div>
 
-  <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
+    <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
 
-  <script src="./ui.js"></script>
-  <script>
-    // Scope tab behavior PER PANEL so multiple tab groups don't interfere.
-    (function () {
-      const panels = Array.from(document.querySelectorAll('.panel, .drawer'));
+    <script src="./ui.js"></script>
+    <script>
+      // Scope tab behavior PER PANEL so multiple tab groups don't interfere.
+      (function () {
+        const panels = Array.from(document.querySelectorAll('.panel, .drawer'));
 
-      panels.forEach(container => {
-        const tabBtns = Array.from(container.querySelectorAll('.tabs .tab-btn'));
-        if (tabBtns.length === 0) return;
+        panels.forEach(container => {
+          const tabBtns = Array.from(container.querySelectorAll('.tabs .tab-btn'));
+          if (tabBtns.length === 0) return;
 
-        const body = container.querySelector('.panel-body, .drawer-body') || container;
-        const tabPanels = Array.from(body.querySelectorAll('.tab-panel'));
+          const body = container.querySelector('.panel-body, .drawer-body') || container;
+          const tabPanels = Array.from(body.querySelectorAll('.tab-panel'));
 
-        function activate(name) {
-          tabBtns.forEach(b => {
-            const on = b.getAttribute('data-tab') === name;
-            b.classList.toggle('is-active', on);
-            b.setAttribute('aria-selected', String(on));
+          function activate(name) {
+            tabBtns.forEach(b => {
+              const on = b.getAttribute('data-tab') === name;
+              b.classList.toggle('is-active', on);
+              b.setAttribute('aria-selected', String(on));
+            });
+            tabPanels.forEach(p => {
+              const on = p.getAttribute('data-tab') === name;
+              p.classList.toggle('is-active', on);
+              if (on) p.scrollTop = 0;
+            });
+          }
+
+          tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+              const name = btn.getAttribute('data-tab');
+              if (name) activate(name);
+            });
           });
-          tabPanels.forEach(p => {
-            const on = p.getAttribute('data-tab') === name;
-            p.classList.toggle('is-active', on);
-            if (on) p.scrollTop = 0;
-          });
-        }
 
-        tabBtns.forEach(btn => {
-          btn.addEventListener('click', () => {
-            const name = btn.getAttribute('data-tab');
+          // Initialize to the first .is-active button, or default to the first button
+          const initial = tabBtns.find(b => b.classList.contains('is-active')) || tabBtns[0];
+          if (initial) {
+            const name = initial.getAttribute('data-tab');
             if (name) activate(name);
-          });
+          }
         });
-
-        // Initialize to the first .is-active button, or default to the first button
-        const initial = tabBtns.find(b => b.classList.contains('is-active')) || tabBtns[0];
-        if (initial) {
-          const name = initial.getAttribute('data-tab');
-          if (name) activate(name);
-        }
-      });
-    })();
-  </script>
+      })();
+    </script>
 
 </body>
 
