@@ -29,20 +29,20 @@ function decodeToken(s: string): string {
   try { return atob(s); } catch { return s; }
 }
 
+function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
+
 async function listAndSendRepos(token: string): Promise<void> {
-  const repos = await ghListRepos(token);
+  await sleep(75); // pre-warm
+  let repos = await ghListRepos(token);
+  if (!repos.ok && /Failed to fetch|network error/i.test(repos.error || '')) {
+    await sleep(200);
+    repos = await ghListRepos(token);
+  }
   if (repos.ok) {
-    // custom message type; cast to any to avoid messages.ts churn
-    (figma.ui as any).postMessage({
-      type: 'GITHUB_REPOS',
-      payload: { repos: repos.repos }
-    });
+    (figma.ui as any).postMessage({ type: 'GITHUB_REPOS', payload: { repos: repos.repos } });
   } else {
-    send({ type: 'ERROR', payload: { message: `GitHub: Could not list repos: ${repos.error}` } });
-    (figma.ui as any).postMessage({
-      type: 'GITHUB_REPOS',
-      payload: { repos: [] }
-    });
+    figma.ui.postMessage({ type: 'ERROR', payload: { message: `GitHub: Could not list repos: ${repos.error}` } });
+    (figma.ui as any).postMessage({ type: 'GITHUB_REPOS', payload: { repos: [] } });
   }
 }
 

@@ -28,6 +28,8 @@ let copyLogBtn: HTMLButtonElement | null = null;
 
 let allowHexChk: HTMLInputElement | null = null;
 
+let resizeHandleEl: HTMLElement | null = null;
+
 /* -------- GitHub controls (robust, optional) -------- */
 let ghTokenInput: HTMLInputElement | null = null;
 let ghRememberChk: HTMLInputElement | null = null;
@@ -1045,6 +1047,8 @@ document.addEventListener('DOMContentLoaded', function () {
   logEl = document.getElementById('log');
   rawEl = document.getElementById('raw');
 
+  resizeHandleEl = document.getElementById('resizeHandle');
+
   exportAllChk = document.getElementById('exportAllChk') as HTMLInputElement | null;
   collectionSelect = document.getElementById('collectionSelect') as HTMLSelectElement | null;
   modeSelect = document.getElementById('modeSelect') as HTMLSelectElement | null;
@@ -1318,6 +1322,56 @@ document.addEventListener('DOMContentLoaded', function () {
       ghCreateBranchConfirmBtn!.disabled = true;
     });
   }
+
+  // --- Drag-to-resize wiring (restores manual resizing) ---
+  if (resizeHandleEl) {
+    let dragging = false;
+    let startX = 0, startY = 0;
+    let startW = 0, startH = 0;
+    let raf = 0;
+
+    const onMove = (e: MouseEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      const nextW = startW + dx;
+      const nextH = startH + dy;
+
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        // postResize already clamps to 720–1600w and 420–1200h
+        postResize(nextW, nextH);
+      });
+    };
+
+    const onUp = () => {
+      dragging = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      // restore selection
+      try { document.body.style.userSelect = ''; } catch { }
+    };
+
+    resizeHandleEl.addEventListener('mousedown', (e: MouseEvent) => {
+      e.preventDefault();
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = window.innerWidth;
+      startH = window.innerHeight;
+
+      // prevent accidental text selection while dragging
+      try { document.body.style.userSelect = 'none'; } catch { }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Optional: double-click to auto-fit once
+    resizeHandleEl.addEventListener('dblclick', () => autoFitOnce());
+  }
+  // --- /Drag-to-resize wiring ---
 
 });
 
