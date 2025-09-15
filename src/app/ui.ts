@@ -432,8 +432,9 @@ function revalidateBranchesIfStale(forceLog: boolean = false): void {
 
   (postToPlugin as any)({
     type: 'GITHUB_FETCH_BRANCHES',
-    payload: { owner: currentOwner, repo: currentRepo, page: 1 }
+    payload: { owner: currentOwner, repo: currentRepo, page: 1, force: true }
   });
+
 }
 
 /* -------------------------------------------------------
@@ -676,10 +677,12 @@ function onBranchChange(): void {
   if (!v) return;
 
   desiredBranch = v;
+  // Immediately verify branch exists server-side; if 404, plugin tells us to prune it.
   (postToPlugin as any)({
-    type: 'GITHUB_SELECT_BRANCH',
-    payload: { owner: currentOwner, repo: currentRepo, branch: v }
+    type: 'GITHUB_VERIFY_BRANCH',
+    payload: { owner: currentOwner, repo: currentRepo, branch: v, force: true }
   });
+
 }
 
 /* -------------------------------------------------------
@@ -1005,6 +1008,31 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
   }
 
+  if ((msg as any).type === 'GITHUB_VERIFY_BRANCH_RESULT') {
+    const pl = (msg as any).payload || {};
+    const { owner, repo, branch, ok } = pl;
+    if (owner !== currentOwner || repo !== currentRepo) return; // stale
+
+    if (!ok && branch) {
+      // Prune the missing branch from local state and UI immediately.
+      const before = allBranches.length;
+      allBranches = allBranches.filter(n => n !== branch);
+      applyBranchFilter();
+      if (ghBranchSelect && ghBranchSelect.value === branch) {
+        // If it was selected, fall back to default/first
+        if (defaultBranchFromApi && allBranches.includes(defaultBranchFromApi)) {
+          ghBranchSelect.value = defaultBranchFromApi;
+        } else if (ghBranchSelect.options.length) {
+          ghBranchSelect.selectedIndex = 0;
+        }
+      }
+      const removed = before !== allBranches.length;
+      log(`Branch "${branch}" no longer exists on GitHub; ${removed ? 'removed from list.' : 'list updated.'}`);
+    }
+    return;
+  }
+
+
 });
 
 /* -------------------------------------------------------
@@ -1099,8 +1127,9 @@ document.addEventListener('DOMContentLoaded', function () {
         isFetchingBranches = true;
         (postToPlugin as any)({
           type: 'GITHUB_FETCH_BRANCHES',
-          payload: { owner: currentOwner, repo: currentRepo, page: 1 }
+          payload: { owner: currentOwner, repo: currentRepo, page: 1, force: true }
         });
+
       }
     });
   }

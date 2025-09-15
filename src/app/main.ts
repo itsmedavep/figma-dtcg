@@ -3,7 +3,6 @@ import { importDtcg, exportDtcg } from '../core/pipeline';
 
 import { ghGetUser, ghListRepos, ghListBranches, ghCreateBranch } from '../core/github/api';
 
-
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
 
@@ -355,6 +354,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       const owner = String(p.owner || '');
       const repo = String(p.repo || '');
       const page = Number.isFinite(p.page) ? Number(p.page) : 1;
+      const force = !!p.force; // <--- NEW: pass through “force” from UI
 
       if (!ghToken) {
         (figma.ui as any).postMessage({
@@ -364,7 +364,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         return;
       }
 
-      const res = await ghListBranches(ghToken, owner, repo, page);
+      const res = await ghListBranches(ghToken, owner, repo, page, force); // <--- NEW param
       if (res.ok) {
         (figma.ui as any).postMessage({
           type: 'GITHUB_BRANCHES',
@@ -462,7 +462,6 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       }
       return;
     }
-
 
     // ---------------- /GitHub branch flow ----------------
 

@@ -15,7 +15,8 @@ export async function ghGetUser(token: string): Promise<GhUserResult> {
                 'Authorization': `Bearer ${token}`,
                 'Accept': 'application/vnd.github+json',
                 'X-GitHub-Api-Version': '2022-11-28'
-            }
+            },
+            cache: 'no-store' // be conservative
         });
         if (res.status === 401) return { ok: false, error: 'bad credentials' };
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -60,8 +61,10 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'application/vnd.github+json',
-                    'X-GitHub-Api-Version': '2022-11-28'
-                }
+                    'X-GitHub-Api-Version': '2022-11-28',
+                    'Cache-Control': 'no-cache' // ask intermediaries not to serve stale
+                },
+                cache: 'no-store'
             });
             if (res.status === 401) return { ok: false, error: 'bad credentials' };
             if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -84,7 +87,7 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
                 }
             }
 
-            if (arr.length < 100) break; // last page (or we’d need Link-header pagination)
+            if (arr.length < 100) break;
             page++;
         }
 
@@ -170,23 +173,35 @@ async function safeText(res: any): Promise<string> {
     try { return await res.text(); } catch { return ''; }
 }
 
+/**
+ * List branches. When `force === true`, we aggressively bypass caches by:
+ * - adding a timestamp param (`_ts`) to the URL,
+ * - setting `cache: 'no-store'` on fetch,
+ * - sending `Cache-Control: no-cache` on the request.
+ */
 export async function ghListBranches(
     token: string,
     owner: string,
     repo: string,
-    page = 1
+    page = 1,
+    force = false
 ): Promise<GhListBranchesResult> {
     const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
     const headers = {
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(force ? { 'Cache-Control': 'no-cache' } : {})
     } as const;
+
+    const cacheMode: RequestCache = force ? 'no-store' : 'no-cache';
+    const ts = force ? `&_ts=${Date.now()}` : '';
 
     try {
         // 1) Fetch one page of branches
-        const branchesUrl = `${baseRepoUrl}/branches?per_page=100&page=${page}`;
-        const res = await fetch(branchesUrl, { headers });
+        const branchesUrl =
+            `${baseRepoUrl}/branches?per_page=100&page=${page}${ts}`;
+        const res = await fetch(branchesUrl, { headers, cache: cacheMode });
 
         const rate = parseRate((res as any)?.headers);
         const saml = headerGet((res as any)?.headers, 'x-github-saml');
@@ -228,7 +243,10 @@ export async function ghListBranches(
         let defaultBranch: string | undefined = undefined;
         if (page === 1) {
             try {
-                const repoRes = await fetch(baseRepoUrl, { headers });
+                const repoRes = await fetch(`${baseRepoUrl}?${force ? `_ts=${Date.now()}` : ''}`, {
+                    headers,
+                    cache: cacheMode
+                });
                 if (repoRes.ok) {
                     const j = await repoRes.json();
                     if (j && typeof j.default_branch === 'string') defaultBranch = j.default_branch;
@@ -286,7 +304,7 @@ export async function ghCreateBranch(
     try {
         // 0) Preflight: can we push?
         try {
-            const repoRes = await fetch(baseRepoUrl, { headers });
+            const repoRes = await fetch(baseRepoUrl, { headers, cache: 'no-store' });
             const rate0 = parseRate((repoRes as any)?.headers);
             const saml0 = headerGet((repoRes as any)?.headers, 'x-github-saml');
             if (repoRes.status === 403 && saml0) {
@@ -315,7 +333,6 @@ export async function ghCreateBranch(
             }
             const repoJson = await repoRes.json();
             const pushAllowed = !!(repoJson?.permissions?.push);
-            // For fine-grained tokens, GitHub *usually* still returns permissions; if not present, we proceed.
             if (repoJson?.permissions && pushAllowed !== true) {
                 return {
                     ok: false,
@@ -334,7 +351,7 @@ export async function ghCreateBranch(
 
         // 1) Resolve base branch → SHA
         const refUrl = `${baseRepoUrl}/git/ref/heads/${encodeURIComponent(baseName)}`;
-        const refRes = await fetch(refUrl, { headers });
+        const refRes = await fetch(refUrl, { headers, cache: 'no-store' });
         const rate1 = parseRate((refRes as any)?.headers);
         const saml1 = headerGet((refRes as any)?.headers, 'x-github-saml');
 
@@ -379,7 +396,7 @@ export async function ghCreateBranch(
         // 2) Create new ref
         const createUrl = `${baseRepoUrl}/git/refs`;
         const body = JSON.stringify({ ref: `refs/heads/${branchName}`, sha });
-        const createRes = await fetch(createUrl, { method: 'POST', headers, body });
+        const createRes = await fetch(createUrl, { method: 'POST', headers, body, cache: 'no-store' });
         const rate2 = parseRate((createRes as any)?.headers);
         const saml2 = headerGet((createRes as any)?.headers, 'x-github-saml');
 
@@ -397,7 +414,6 @@ export async function ghCreateBranch(
         }
         if (!createRes.ok) {
             const text = await safeText(createRes);
-            // 403 here without SAML usually indicates missing scopes/permissions on token
             return {
                 ok: false,
                 owner, repo,
@@ -430,4 +446,3 @@ export async function ghCreateBranch(
         };
     }
 }
-
