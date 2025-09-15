@@ -46,6 +46,11 @@ let ghNewBranchRow: HTMLElement | null = null;
 let ghNewBranchName: HTMLInputElement | null = null;
 let ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
 
+let ghBranchRefreshBtn: HTMLButtonElement | null = null;
+
+// --- TTL for page data (stale-while-revalidate) ---
+const BRANCH_TTL_MS = 60_000; // 60s
+let lastBranchesFetchedAtMs = 0; // updated when any GITHUB_BRANCHES page arrives
 
 // Inserted if missing:
 let ghAuthStatusEl: HTMLElement | null = null; // “Authenticated as …”
@@ -404,6 +409,32 @@ function validateBranchName(name: string): string | null {
   return null;
 }
 
+function revalidateBranchesIfStale(forceLog: boolean = false): void {
+  if (!ghRepoSelect || !ghBranchSelect) return;
+  if (!currentOwner || !currentRepo) return;
+
+  const stale = (Date.now() - lastBranchesFetchedAtMs) > BRANCH_TTL_MS;
+  if (!stale) {
+    if (forceLog) log('Branches are up to date (no refresh needed).');
+    return;
+  }
+
+  // Clear current cache and re-fetch page 1
+  desiredBranch = restoreBranch || desiredBranch || null; // keep preference if possible
+  defaultBranchFromApi = undefined;
+  loadedPages = 0; hasMorePages = false; isFetchingBranches = true;
+  allBranches = []; filteredBranches = [];
+  renderCount = 0;
+
+  setBranchDisabled(true, 'Refreshing branches…');
+  updateBranchCount();
+  log('Refreshing branches…');
+
+  (postToPlugin as any)({
+    type: 'GITHUB_FETCH_BRANCHES',
+    payload: { owner: currentOwner, repo: currentRepo, page: 1 }
+  });
+}
 
 /* -------------------------------------------------------
  * Collections / logging
@@ -444,9 +475,9 @@ function setDisabledStates(): void {
     const exportAll = !!exportAllChk.checked;
     if (exportAll) {
       exportBtn.disabled = false;
-      exportPickers.style.opacity = '0.5';
+      (exportPickers as HTMLElement).style.opacity = '0.5';
     } else {
-      exportPickers.style.opacity = '1';
+      (exportPickers as HTMLElement).style.opacity = '1';
       const hasSelection = !!collectionSelect.value && !!modeSelect.value;
       exportBtn.disabled = !hasSelection;
     }
@@ -850,6 +881,9 @@ window.addEventListener('message', async (event: MessageEvent) => {
     const repo = String(pl.repo || '');
     if (owner !== currentOwner || repo !== currentRepo) return; // stale
 
+    // mark fresh
+    lastBranchesFetchedAtMs = Date.now();
+
     loadedPages = Number(pl.page || 1);
     hasMorePages = !!pl.hasMore;
     isFetchingBranches = false;
@@ -861,7 +895,6 @@ window.addEventListener('message', async (event: MessageEvent) => {
     // Enable "Create new…" now that we have a repo context
     const btn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
     if (btn) btn.disabled = false;
-
 
     const names = Array.isArray(pl.branches) ? (pl.branches as Array<{ name: string }>).map(b => b.name) : [];
     // Merge unique names
@@ -1044,6 +1077,8 @@ document.addEventListener('DOMContentLoaded', function () {
       const parts = value.split('/');
       currentOwner = parts[0] || '';
       currentRepo = parts[1] || '';
+      // new repo -> list freshness resets
+      lastBranchesFetchedAtMs = 0;
 
       // Persist repo choice (plugin stores it for restore)
       (postToPlugin as any)({ type: 'GITHUB_SELECT_REPO', payload: { owner: currentOwner, repo: currentRepo } });
@@ -1083,6 +1118,24 @@ document.addEventListener('DOMContentLoaded', function () {
   if (ghBranchSelect) {
     ghBranchSelect.addEventListener('change', onBranchChange);
     ghBranchSelect.addEventListener('scroll', onBranchScroll);
+  }
+
+  if (ghBranchSearch) {
+    ghBranchSearch.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        // Treat Enter as intent → revalidate-if-stale
+        revalidateBranchesIfStale(true);
+      }
+    });
+  }
+
+  ghBranchRefreshBtn = document.getElementById('ghBranchRefreshBtn') as HTMLButtonElement | null;
+  if (ghBranchRefreshBtn) {
+    ghBranchRefreshBtn.addEventListener('click', () => {
+      // Always force a refresh by invalidating the TTL
+      lastBranchesFetchedAtMs = 0;
+      revalidateBranchesIfStale(true);
+    });
   }
 
   // Other UI events
