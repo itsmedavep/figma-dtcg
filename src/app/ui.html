@@ -16,9 +16,7 @@
       --accent-ink: #dfdfdf;
       --border: #e5e7eb;
       --drawer-h: 260px;
-      /* bottom log drawer height */
       --drawer-collapsed-h: 2rem;
-      /* slim bar height when collapsed */
     }
 
     html,
@@ -34,7 +32,6 @@
       line-height: 1.4;
     }
 
-    /* Two-row grid: main content + bottom drawer */
     .shell {
       height: 100vh;
       width: 100%;
@@ -45,19 +42,16 @@
       padding: 12px;
       box-sizing: border-box;
       grid-auto-flow: row;
-      /* rows fill before columns */
     }
 
     .shell.drawer-collapsed {
       grid-template-rows: 1fr var(--drawer-collapsed-h);
     }
 
-    /* Hide drawer body when collapsed */
     .shell.drawer-collapsed .drawer .drawer-body {
       display: none;
     }
 
-    /* Drawer toggle button */
     .drawer-toggle {
       padding: 6px 10px;
       border: 1px solid var(--border);
@@ -90,7 +84,6 @@
       border-radius: 10px;
       padding: .5rem;
       overflow: hidden;
-      /* clip children to rounded corners */
     }
 
     .panel-header {
@@ -179,21 +172,13 @@
     .css-button-neumorphic {
       min-width: 130px;
       height: 40px;
-      color: #fff;
       padding: 5px 10px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      position: relative;
-      display: inline-block;
-      outline: none;
-      border-radius: .25rem;
+      font-weight: 500;
       border: none;
       background: #efefef;
       box-shadow: 2px 2px 4px #c8d0e7, -1px -1px 4px #fff;
       color: #123456;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-      font-weight: 500;
+      border-radius: .25rem;
     }
 
     .css-button-neumorphic:active {
@@ -205,7 +190,6 @@
       font-size: 12px;
     }
 
-    /* Monospace content panes (raw + preview) */
     pre {
       margin: 0;
       padding: .5rem;
@@ -237,7 +221,6 @@
       justify-content: space-between;
     }
 
-    /* Bottom drawer (Log/GitHub) spans all columns */
     .drawer {
       grid-column: 1 / -1;
       grid-row: 2;
@@ -264,7 +247,6 @@
       flex-direction: column;
     }
 
-    /* Log content area */
     #log {
       padding: .5rem;
       background: #fff;
@@ -273,8 +255,6 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
       white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      word-break: break-word;
       overflow: auto;
       min-width: 0;
       min-height: 0;
@@ -282,7 +262,6 @@
       height: 100%;
     }
 
-    /* Resize handle */
     .resize-handle {
       position: fixed;
       right: 6px;
@@ -311,7 +290,6 @@
       width: 100%;
     }
 
-    /* Collapsed drawer styling */
     .shell.drawer-collapsed .drawer {
       padding: 0;
       background: transparent;
@@ -334,14 +312,6 @@
       margin: 0;
     }
 
-    .shell.drawer-collapsed {
-      grid-template-rows: 1fr var(--drawer-collapsed-h);
-    }
-
-    .shell.drawer-collapsed .drawer .drawer-body {
-      display: none;
-    }
-
     .panel-header .actions {
       display: flex;
       gap: 8px;
@@ -362,7 +332,6 @@
       background: #f3f4f6;
     }
 
-    /* --- tabs --- */
     .tabs {
       display: flex;
       gap: .25rem;
@@ -389,10 +358,6 @@
       border-color: var(--ink-muted);
     }
 
-    .tab-btn.tab-btn.is-active:hover {
-      color: #000000;
-    }
-
     .tab-panel {
       display: none;
       flex-direction: column;
@@ -410,7 +375,6 @@
       margin-top: 2rem;
     }
 
-    /* Masks text visually even for type="text" */
     #ghTokenInput.gh-mask {
       -webkit-text-security: disc;
     }
@@ -456,7 +420,6 @@
                     colors</label>
                 </div>
               </div>
-
             </div>
           </div>
 
@@ -488,7 +451,6 @@
       </div>
     </div>
 
-
     <!-- Middle: Raw Figma Collections -->
     <div class="col">
       <div class="panel">
@@ -505,7 +467,6 @@
         <div class="panel-body">
           <pre id="raw"></pre>
         </div>
-
       </div>
     </div>
 
@@ -535,12 +496,10 @@
 
         <!-- Drawer tabs -->
         <div class="tabs" role="tablist" aria-label="Drawer tabs">
-          <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true" aria-controls="panel-log">
-            Log
-          </button>
-          <button class="tab-btn" data-tab="github" role="tab" aria-selected="false" aria-controls="panel-github">
-            GitHub
-          </button>
+          <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true"
+            aria-controls="panel-log">Log</button>
+          <button class="tab-btn" data-tab="github" role="tab" aria-selected="false"
+            aria-controls="panel-github">GitHub</button>
 
           <!-- Right-side actions stay the same -->
           <div class="actions" style="margin-left: 12px;">
@@ -586,32 +545,34 @@
               </div>
             </div>
 
-
             <!-- Branch controls -->
             <div class="row">
               <div>
                 <label>Branch</label>
 
-
-                <!-- Search + Count row (Variant 4) -->
+                <!-- Search + Count + Refresh row (always visible) -->
                 <div class="row" style="align-items:center;">
-                  <input id="ghBranchSearch" type="text" placeholder="Search branches…" />
-                  <div id="ghBranchCount" class="muted" style="flex:0 0 auto; white-space:nowrap;"></div>
+                  <input id="ghBranchSearch" type="text" placeholder="Search branches… (press Enter to refresh)" />
+                  <div style="flex:0 0 auto; display:flex; gap:.25rem; align-items:center;">
+                    <button id="ghBranchRefreshBtn" class="css-button-neumorphic">Refresh</button>
+                    <div id="ghBranchCount" class="muted" style="white-space:nowrap;"></div>
+                  </div>
                 </div>
 
                 <!-- Branch select + new branch -->
-
                 <div class="row">
                   <select id="ghBranchSelect" disabled></select>
                   <div style="flex:0 0 auto; display:flex; gap:.25rem; align-items:center;">
                     <button id="ghNewBranchBtn" class="css-button-neumorphic" disabled>Create new…</button>
                   </div>
                 </div>
-                <!-- Inline new-branch composer (hidden until "Create new…" clicked) -->
+
+                <!-- Inline new-branch composer (hidden until clicked) -->
                 <div id="ghNewBranchRow" class="row" style="display:none; margin-top:.25rem;">
                   <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
                   <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic">Create</button>
                 </div>
+
               </div>
             </div>
 
@@ -675,7 +636,6 @@
       // Scope tab behavior PER PANEL so multiple tab groups don't interfere.
       (function () {
         const panels = Array.from(document.querySelectorAll('.panel, .drawer'));
-
         panels.forEach(container => {
           const tabBtns = Array.from(container.querySelectorAll('.tabs .tab-btn'));
           if (tabBtns.length === 0) return;
@@ -712,7 +672,6 @@
         });
       })();
     </script>
-
 </body>
 
 </html>
