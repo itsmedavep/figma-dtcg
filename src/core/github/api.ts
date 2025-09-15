@@ -129,6 +129,32 @@ function headerGet(h: any, key: string): string | null {
     return null;
 }
 
+/* ---------- Create branch (POST /git/refs) ---------- */
+
+export type GhCreateBranchResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        baseBranch: string;
+        newBranch: string;
+        sha: string;
+        html_url: string;
+        rate?: GhRateInfo;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        baseBranch: string;
+        newBranch: string;
+        status: number;
+        message: string;
+        samlRequired?: boolean;
+        noPushPermission?: boolean;
+        rate?: GhRateInfo;
+    };
+
 function parseRate(h: any): GhRateInfo | undefined {
     const remainingStr = headerGet(h, 'x-ratelimit-remaining');
     const resetStr = headerGet(h, 'x-ratelimit-reset');
@@ -228,3 +254,180 @@ export async function ghListBranches(
         };
     }
 }
+
+export async function ghCreateBranch(
+    token: string,
+    owner: string,
+    repo: string,
+    newBranch: string,
+    baseBranch: string
+): Promise<GhCreateBranchResult> {
+    const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
+
+    // Normalize inputs
+    const branchName = String(newBranch || '').trim().replace(/^refs\/heads\//, '');
+    const baseName = String(baseBranch || '').trim().replace(/^refs\/heads\//, '');
+    if (!branchName || !baseName) {
+        return {
+            ok: false,
+            owner, repo,
+            baseBranch: baseName,
+            newBranch: branchName,
+            status: 400,
+            message: 'empty branch name(s)'
+        };
+    }
+
+    try {
+        // 0) Preflight: can we push?
+        try {
+            const repoRes = await fetch(baseRepoUrl, { headers });
+            const rate0 = parseRate((repoRes as any)?.headers);
+            const saml0 = headerGet((repoRes as any)?.headers, 'x-github-saml');
+            if (repoRes.status === 403 && saml0) {
+                return {
+                    ok: false,
+                    owner, repo,
+                    baseBranch: baseName,
+                    newBranch: branchName,
+                    status: 403,
+                    message: 'SAML/SSO required',
+                    samlRequired: true,
+                    rate: rate0
+                };
+            }
+            if (!repoRes.ok) {
+                const text = await safeText(repoRes);
+                // If we can’t read the repo, we surely can’t push.
+                return {
+                    ok: false,
+                    owner, repo,
+                    baseBranch: baseName,
+                    newBranch: branchName,
+                    status: repoRes.status,
+                    message: text || `HTTP ${repoRes.status}`
+                };
+            }
+            const repoJson = await repoRes.json();
+            const pushAllowed = !!(repoJson?.permissions?.push);
+            // For fine-grained tokens, GitHub *usually* still returns permissions; if not present, we proceed.
+            if (repoJson?.permissions && pushAllowed !== true) {
+                return {
+                    ok: false,
+                    owner, repo,
+                    baseBranch: baseName,
+                    newBranch: branchName,
+                    status: 403,
+                    message: 'Token/user lacks push permission to this repository',
+                    noPushPermission: true,
+                    rate: rate0
+                };
+            }
+        } catch {
+            // Ignore preflight failure; continue to try creating the branch (downstream errors will be clearer)
+        }
+
+        // 1) Resolve base branch → SHA
+        const refUrl = `${baseRepoUrl}/git/ref/heads/${encodeURIComponent(baseName)}`;
+        const refRes = await fetch(refUrl, { headers });
+        const rate1 = parseRate((refRes as any)?.headers);
+        const saml1 = headerGet((refRes as any)?.headers, 'x-github-saml');
+
+        if (refRes.status === 403 && saml1) {
+            return {
+                ok: false,
+                owner, repo,
+                baseBranch: baseName,
+                newBranch: branchName,
+                status: 403,
+                message: 'SAML/SSO required',
+                samlRequired: true,
+                rate: rate1
+            };
+        }
+        if (!refRes.ok) {
+            const text = await safeText(refRes);
+            return {
+                ok: false,
+                owner, repo,
+                baseBranch: baseName,
+                newBranch: branchName,
+                status: refRes.status,
+                message: text || `HTTP ${refRes.status}`,
+                rate: rate1
+            };
+        }
+
+        const refJson = await refRes.json();
+        const sha = (refJson?.object?.sha || refJson?.sha || '').trim();
+        if (!sha) {
+            return {
+                ok: false,
+                owner, repo,
+                baseBranch: baseName,
+                newBranch: branchName,
+                status: 500,
+                message: 'could not resolve base SHA'
+            };
+        }
+
+        // 2) Create new ref
+        const createUrl = `${baseRepoUrl}/git/refs`;
+        const body = JSON.stringify({ ref: `refs/heads/${branchName}`, sha });
+        const createRes = await fetch(createUrl, { method: 'POST', headers, body });
+        const rate2 = parseRate((createRes as any)?.headers);
+        const saml2 = headerGet((createRes as any)?.headers, 'x-github-saml');
+
+        if (createRes.status === 403 && saml2) {
+            return {
+                ok: false,
+                owner, repo,
+                baseBranch: baseName,
+                newBranch: branchName,
+                status: 403,
+                message: 'SAML/SSO required',
+                samlRequired: true,
+                rate: rate2
+            };
+        }
+        if (!createRes.ok) {
+            const text = await safeText(createRes);
+            // 403 here without SAML usually indicates missing scopes/permissions on token
+            return {
+                ok: false,
+                owner, repo,
+                baseBranch: baseName,
+                newBranch: branchName,
+                status: createRes.status,
+                message: text || `HTTP ${createRes.status}`,
+                rate: rate2
+            };
+        }
+
+        const html_url = `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branchName)}`;
+        return {
+            ok: true,
+            owner, repo,
+            baseBranch: baseName,
+            newBranch: branchName,
+            sha,
+            html_url,
+            rate: rate2
+        };
+    } catch (e) {
+        return {
+            ok: false,
+            owner, repo,
+            baseBranch: baseName,
+            newBranch: branchName,
+            status: 0,
+            message: (e as Error)?.message || 'network error'
+        };
+    }
+}
+

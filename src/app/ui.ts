@@ -40,6 +40,13 @@ let ghBranchSearch: HTMLInputElement | null = null;
 let ghBranchSelect: HTMLSelectElement | null = null;
 let ghBranchCountEl: HTMLElement | null = null;
 
+// New-branch composer controls (present in HTML Variant 4)
+let ghNewBranchBtn: HTMLButtonElement | null = null;
+let ghNewBranchRow: HTMLElement | null = null;
+let ghNewBranchName: HTMLInputElement | null = null;
+let ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
+
+
 // Inserted if missing:
 let ghAuthStatusEl: HTMLElement | null = null; // “Authenticated as …”
 let ghTokenMetaEl: HTMLElement | null = null;  // “Expires in …”
@@ -371,6 +378,32 @@ function updateGhStatusUi(): void {
 function setGitHubDisabledStates(): void {
   updateGhStatusUi();
 }
+
+function showNewBranchRow(show: boolean): void {
+  if (!ghNewBranchRow) return;
+  ghNewBranchRow.style.display = show ? 'flex' : 'none';
+  if (show && ghNewBranchName) {
+    // Pre-fill suggestion
+    if (!ghNewBranchName.value) {
+      ghNewBranchName.value = `tokens/update-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+    }
+    ghNewBranchName.focus();
+    ghNewBranchName.select();
+  }
+}
+
+function validateBranchName(name: string): string | null {
+  const n = name.trim();
+  if (!n) return 'Enter a branch name.';
+  if (/\s/.test(n)) return 'Branch name cannot contain spaces.';
+  if (n.startsWith('refs/')) return 'Do not include "refs/heads/"; just the branch name.';
+  if (n.endsWith('/') || n.startsWith('/')) return 'Branch name cannot start or end with "/".';
+  if (n.includes('..') || n.includes('~') || n.includes('^') || n.includes(':') || n.includes('?') || n.includes('*') || n.includes('[')) {
+    return 'Branch name contains invalid characters.';
+  }
+  return null;
+}
+
 
 /* -------------------------------------------------------
  * Collections / logging
@@ -825,6 +858,11 @@ window.addEventListener('message', async (event: MessageEvent) => {
       defaultBranchFromApi = pl.defaultBranch;
     }
 
+    // Enable "Create new…" now that we have a repo context
+    const btn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
+    if (btn) btn.disabled = false;
+
+
     const names = Array.isArray(pl.branches) ? (pl.branches as Array<{ name: string }>).map(b => b.name) : [];
     // Merge unique names
     const set = new Set(allBranches);
@@ -861,6 +899,79 @@ window.addEventListener('message', async (event: MessageEvent) => {
     }
     return;
   }
+
+  if ((msg as any).type === 'GITHUB_CREATE_BRANCH_RESULT') {
+    const pl = (msg as any).payload || {};
+    // Re-enable confirm button for next attempt
+    if (ghCreateBranchConfirmBtn) ghCreateBranchConfirmBtn.disabled = false;
+
+    if (!pl || typeof pl.ok !== 'boolean') return;
+
+    if (pl.ok) {
+      const owner = String(pl.owner || currentOwner || '');
+      const repo = String(pl.repo || currentRepo || '');
+      const baseBranch = String(pl.baseBranch || '');
+      const newBranch = String(pl.newBranch || '');
+      const url = String(pl.html_url || '');
+
+      // Merge new branch into local list if missing
+      if (newBranch) {
+        const s = new Set(allBranches);
+        if (!s.has(newBranch)) {
+          s.add(newBranch);
+          allBranches = Array.from(s).sort((a, b) => a.localeCompare(b));
+        }
+        desiredBranch = newBranch;
+        applyBranchFilter(); // re-render + count
+        if (ghBranchSelect) ghBranchSelect.value = newBranch;
+      }
+
+      // Hide composer and clear field
+      showNewBranchRow(false);
+      if (ghNewBranchName) ghNewBranchName.value = '';
+
+      if (url) {
+        log(`Branch created: ${newBranch} (from ${baseBranch})`);
+        const a = document.createElement('a');
+        a.href = url;
+        a.textContent = 'View on GitHub';
+        a.target = '_blank';
+        const wrap = document.createElement('div');
+        wrap.appendChild(a);
+        if (logEl) {
+          logEl.appendChild(wrap);
+          (logEl as HTMLElement).scrollTop = (logEl as HTMLElement).scrollHeight;
+        }
+      } else {
+        log(`Branch created: ${newBranch} (from ${baseBranch})`);
+      }
+      return;
+    }
+
+    // Error path
+    const status = pl.status ?? 0;
+    const message = pl.message || 'unknown error';
+    log(`Create branch failed (status ${status}): ${message}`);
+    if (pl.samlRequired) {
+      log('This org requires SSO. Open the repo in your browser and authorize SSO for your token.');
+    } else if (status === 403) {
+      if (pl.noPushPermission) {
+        log('You do not have push permission to this repository (or the token does not map to a user with push). Ask a maintainer for write access.');
+      } else {
+        log('Likely a token permission issue:');
+        log('• Classic PAT: add the "repo" scope (or "public_repo" for public repos).');
+        log('• Fine-grained PAT: grant this repository and set "Contents: Read and write".');
+        log('If the org enforces SSO, authorize the token for the org.');
+      }
+    }
+    if (pl.rate && typeof pl.rate.resetEpochSec === 'number') {
+      const t = new Date(pl.rate.resetEpochSec * 1000).toLocaleTimeString();
+      log(`Rate limit issue; resets ~${t}`);
+    }
+    return;
+
+  }
+
 });
 
 /* -------------------------------------------------------
@@ -1088,6 +1199,44 @@ document.addEventListener('DOMContentLoaded', function () {
   updateBranchCount();
   // Request a size that fits current content
   autoFitOnce();
+
+  // New-branch composer DOM
+  ghNewBranchBtn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
+  ghNewBranchRow = document.getElementById('ghNewBranchRow') as HTMLElement | null;
+  ghNewBranchName = document.getElementById('ghNewBranchName') as HTMLInputElement | null;
+  ghCreateBranchConfirmBtn = document.getElementById('ghCreateBranchConfirmBtn') as HTMLButtonElement | null;
+
+  if (ghNewBranchBtn) {
+    ghNewBranchBtn.addEventListener('click', () => {
+      if (!currentOwner || !currentRepo) { log('Pick a repository first.'); return; }
+      showNewBranchRow(true);
+    });
+  }
+  if (ghCreateBranchConfirmBtn) {
+    ghCreateBranchConfirmBtn.addEventListener('click', () => {
+      if (!ghNewBranchName) return;
+      const name = ghNewBranchName.value || '';
+      const err = validateBranchName(name);
+      if (err) { log(`New branch: ${err}`); return; }
+
+      // Use currently selected branch as base (fallback to default if available)
+      const base =
+        (ghBranchSelect && ghBranchSelect.value && !ghBranchSelect.disabled && ghBranchSelect.value !== '__more__' && ghBranchSelect.value !== '__fetch__')
+          ? ghBranchSelect.value
+          : (defaultBranchFromApi || '');
+
+      if (!base) { log('Cannot determine base branch; select a branch first.'); return; }
+
+      log(`Creating branch "${name}" from "${base}"…`);
+      (postToPlugin as any)({
+        type: 'GITHUB_CREATE_BRANCH',
+        payload: { owner: currentOwner, repo: currentRepo, baseBranch: base, newBranch: name }
+      });
+      // UX: prevent double clicks
+      ghCreateBranchConfirmBtn!.disabled = true;
+    });
+  }
+
 });
 
 /* -------------------------------------------------------

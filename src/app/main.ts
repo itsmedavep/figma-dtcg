@@ -1,7 +1,7 @@
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
 
-import { ghGetUser, ghListRepos, ghListBranches } from '../core/github/api';
+import { ghGetUser, ghListRepos, ghListBranches, ghCreateBranch } from '../core/github/api';
 
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
@@ -399,15 +399,70 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
 
-    // UI picked a branch → persist for restore.
-    if ((msg as any).type === 'GITHUB_SELECT_BRANCH') {
+    // UI requests create-branch (new ref from selected base)
+    if ((msg as any).type === 'GITHUB_CREATE_BRANCH') {
       const p = (msg as any).payload || {};
       const owner = String(p.owner || '');
       const repo = String(p.repo || '');
-      const branch = String(p.branch || '');
-      await setSelected({ owner, repo, branch });
+      const baseBranch = String(p.baseBranch || '');
+      const newBranch = String(p.newBranch || '');
+
+      if (!ghToken) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_CREATE_BRANCH_RESULT',
+          payload: { ok: false, owner, repo, baseBranch, newBranch, status: 401, message: 'No token' }
+        });
+        return;
+      }
+      if (!owner || !repo || !baseBranch || !newBranch) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_CREATE_BRANCH_RESULT',
+          payload: { ok: false, owner, repo, baseBranch, newBranch, status: 400, message: 'Missing owner/repo/base/new' }
+        });
+        return;
+      }
+
+      const res = await ghCreateBranch(ghToken, owner, repo, newBranch, baseBranch);
+      if (res.ok) {
+        // Persist new selection
+        await setSelected({ owner, repo, branch: newBranch });
+
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_CREATE_BRANCH_RESULT',
+          payload: {
+            ok: true,
+            owner: res.owner,
+            repo: res.repo,
+            baseBranch: res.baseBranch,
+            newBranch: res.newBranch,
+            sha: res.sha,
+            html_url: res.html_url,
+            rate: res.rate
+          }
+        });
+
+        // Optional: re-fetch first page to ensure branch list up-to-date (UI also inserts locally)
+        // const sel = await getSelected();
+        // (figma.ui as any).postMessage({ type: 'INFO', payload: { message: `Created branch ${newBranch} from ${baseBranch}.` } });
+      } else {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_CREATE_BRANCH_RESULT',
+          payload: {
+            ok: false,
+            owner: res.owner,
+            repo: res.repo,
+            baseBranch: res.baseBranch,
+            newBranch: res.newBranch,
+            status: res.status,
+            message: res.message,
+            samlRequired: res.samlRequired,
+            rate: res.rate
+          }
+        });
+      }
       return;
     }
+
 
     // ---------------- /GitHub branch flow ----------------
 
