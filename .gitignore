@@ -2,3 +2,4 @@
 src/.DS_Store
 dist/
 node_modules/
+src/core/.DS_Store
