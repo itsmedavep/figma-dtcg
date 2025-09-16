@@ -612,3 +612,178 @@ export async function ghEnsureFolder(
         return { ok: false, owner, repo, branch, folderPath: norm, status: 0, message: (e as Error)?.message || 'network error' };
     }
 }
+
+// ---------- Single-commit file writer (Git Data API) ----------
+
+export type GhCommitFile = {
+    path: string;      // e.g., "tokens/My File.json" (may include subfolders)
+    content: string;   // file contents as UTF-8 text (we use blobs with encoding: 'utf-8')
+    mode?: '100644';   // normal file; left optional
+};
+
+export type GhCommitFilesResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        branch: string;
+        commitSha: string;
+        commitUrl: string;         // https://github.com/{owner}/{repo}/commit/{sha}
+        treeUrl?: string;
+        rate?: GhRateInfo;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        branch: string;
+        status: number;
+        message: string;
+        rate?: GhRateInfo;
+    };
+
+/**
+ * Writes one or more files to a repo as a single commit on a branch.
+ * Uses Git Data API: blobs → tree → commit → update ref.
+ * No extra commits to "create folders"; tree paths handle that.
+ */
+export async function ghCommitFiles(
+    token: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    message: string,
+    files: GhCommitFile[]
+): Promise<GhCommitFilesResult> {
+    const base = `https://api.github.com/repos/${owner}/${repo}`;
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
+
+    function normPath(p: string): string {
+        return String(p || '')
+            .replace(/^\/*/, '')    // trim leading /
+            .replace(/\/*$/, '');   // trim trailing /
+    }
+
+    const cleaned: GhCommitFile[] = files.map(f => ({
+        path: normPath(f.path),
+        content: f.content,
+        mode: f.mode || '100644'
+    })).filter(f => f.path && typeof f.content === 'string');
+
+    if (cleaned.length === 0) {
+        return { ok: false, owner, repo, branch, status: 400, message: 'no files to commit' };
+    }
+
+    try {
+        // 1) Resolve branch → commit SHA
+        const refRes = await fetch(`${base}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
+        const rate1 = parseRate((refRes as any)?.headers);
+        if (!refRes.ok) {
+            const text = await safeText(refRes);
+            return { ok: false, owner, repo, branch, status: refRes.status, message: text || `HTTP ${refRes.status}`, rate: rate1 };
+        }
+        const refJson = await refRes.json();
+        const baseCommitSha: string = (refJson?.object?.sha || refJson?.sha || '').trim();
+        if (!baseCommitSha) {
+            return { ok: false, owner, repo, branch, status: 500, message: 'could not resolve branch commit sha', rate: rate1 };
+        }
+
+        // 2) Resolve base commit → tree SHA
+        const commitRes = await fetch(`${base}/git/commits/${baseCommitSha}`, { headers });
+        const rate2 = parseRate((commitRes as any)?.headers);
+        if (!commitRes.ok) {
+            const text = await safeText(commitRes);
+            return { ok: false, owner, repo, branch, status: commitRes.status, message: text || `HTTP ${commitRes.status}`, rate: rate2 };
+        }
+        const commitJson = await commitRes.json();
+        const baseTreeSha: string = (commitJson?.tree?.sha || '').trim();
+        if (!baseTreeSha) {
+            return { ok: false, owner, repo, branch, status: 500, message: 'could not resolve base tree sha', rate: rate2 };
+        }
+
+        // 3) Create blobs for each file
+        const blobShas: string[] = [];
+        for (let i = 0; i < cleaned.length; i++) {
+            const blobRes = await fetch(`${base}/git/blobs`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ content: cleaned[i].content, encoding: 'utf-8' })
+            });
+            const rateB = parseRate((blobRes as any)?.headers);
+            if (!blobRes.ok) {
+                const text = await safeText(blobRes);
+                return { ok: false, owner, repo, branch, status: blobRes.status, message: text || `HTTP ${blobRes.status}`, rate: rateB };
+            }
+            const blobJson = await blobRes.json();
+            const blobSha: string = (blobJson?.sha || '').trim();
+            if (!blobSha) {
+                return { ok: false, owner, repo, branch, status: 500, message: 'failed to create blob sha' };
+            }
+            blobShas.push(blobSha);
+        }
+
+        // 4) Create a new tree using those blobs at the desired paths
+        const treeEntries = cleaned.map((f, idx) => ({
+            path: f.path, type: 'blob', mode: f.mode!, sha: blobShas[idx]
+        }));
+        const treeRes = await fetch(`${base}/git/trees`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries })
+        });
+        const rate3 = parseRate((treeRes as any)?.headers);
+        if (!treeRes.ok) {
+            const text = await safeText(treeRes);
+            return { ok: false, owner, repo, branch, status: treeRes.status, message: text || `HTTP ${treeRes.status}`, rate: rate3 };
+        }
+        const treeJson = await treeRes.json();
+        const newTreeSha: string = (treeJson?.sha || '').trim();
+        if (!newTreeSha) {
+            return { ok: false, owner, repo, branch, status: 500, message: 'failed to create tree sha' };
+        }
+
+        // 5) Create a commit with that tree and parent = current branch commit
+        const commitCreateRes = await fetch(`${base}/git/commits`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ message, tree: newTreeSha, parents: [baseCommitSha] })
+        });
+        const rate4 = parseRate((commitCreateRes as any)?.headers);
+        if (!commitCreateRes.ok) {
+            const text = await safeText(commitCreateRes);
+            return { ok: false, owner, repo, branch, status: commitCreateRes.status, message: text || `HTTP ${commitCreateRes.status}`, rate: rate4 };
+        }
+        const newCommit = await commitCreateRes.json();
+        const newCommitSha: string = (newCommit?.sha || '').trim();
+        if (!newCommitSha) {
+            return { ok: false, owner, repo, branch, status: 500, message: 'failed to create commit sha' };
+        }
+
+        // 6) Fast-forward the branch to the new commit
+        const updateRefRes = await fetch(`${base}/git/refs/heads/${encodeURIComponent(branch)}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ sha: newCommitSha, force: false })
+        });
+        const rate5 = parseRate((updateRefRes as any)?.headers);
+        if (!updateRefRes.ok) {
+            const text = await safeText(updateRefRes);
+            return { ok: false, owner, repo, branch, status: updateRefRes.status, message: text || `HTTP ${updateRefRes.status}`, rate: rate5 };
+        }
+
+        return {
+            ok: true,
+            owner, repo, branch,
+            commitSha: newCommitSha,
+            commitUrl: `https://github.com/${owner}/${repo}/commit/${newCommitSha}`,
+            treeUrl: `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branch)}`,
+            rate: rate5
+        };
+    } catch (e) {
+        return { ok: false, owner, repo, branch, status: 0, message: (e as Error)?.message || 'network error' };
+    }
+}

@@ -52,6 +52,12 @@ let ghBranchRefreshBtn: HTMLButtonElement | null = null;
 let ghFolderInput: HTMLInputElement | null = null;
 let ghPickFolderBtn: HTMLButtonElement | null = null;
 
+let ghCommitMsgInput: HTMLInputElement | null = null;
+let ghExportAndCommitBtn: HTMLButtonElement | null = null;
+let ghScopeSelected: HTMLInputElement | null = null;
+let ghScopeAll: HTMLInputElement | null = null;
+
+
 // ---- Folder list/create waiters (match replies from plugin) ----
 type FolderListEntry = { type: 'dir' | 'file'; name: string; path: string };
 
@@ -146,16 +152,22 @@ function populateGhRepos(list: Array<{ full_name: string; default_branch: string
         }
       }
       if (matched) {
-        // Trigger change to load branches for restored repo
         const ev = new Event('change', { bubbles: true });
         ghRepoSelect.dispatchEvent(ev);
       } else {
         ghRepoSelect.selectedIndex = 0;
+        // 🔧 ensure owner/repo + branches populate
+        const ev = new Event('change', { bubbles: true });
+        ghRepoSelect.dispatchEvent(ev);
       }
     } else {
       ghRepoSelect.selectedIndex = 0;
+      // 🔧 ensure owner/repo + branches populate
+      const ev = new Event('change', { bubbles: true });
+      ghRepoSelect.dispatchEvent(ev);
     }
   }
+
 }
 
 async function beginPendingSave(suggestedName: string): Promise<boolean> {
@@ -530,6 +542,7 @@ function onCollectionChange(): void {
   const selected = collectionSelect.value;
   clearSelect(modeSelect);
 
+  let firstModeSet = false;
   for (let i = 0; i < currentCollections.length; i++) {
     const c = currentCollections[i];
     if (c.name === selected) {
@@ -540,11 +553,23 @@ function onCollectionChange(): void {
         opt.textContent = m.name;
         modeSelect.appendChild(opt);
       }
+      // ensure a default mode is selected for enablement logic
+      if (modeSelect.options.length > 0 && modeSelect.selectedIndex === -1) {
+        modeSelect.selectedIndex = 0;
+        firstModeSet = true;
+      }
       break;
     }
   }
+
   setDisabledStates();
+  // make sure Export & Commit enablement reacts immediately
+  updateExportCommitEnabled();
+
+  // If we auto-set a mode (firstModeSet), update the preview as well
+  if (firstModeSet) requestPreviewForCurrent();
 }
+
 
 function applyLastSelection(last: { collection: string; mode: string } | null): void {
   if (!last || !(collectionSelect && modeSelect)) return;
@@ -695,7 +720,11 @@ function onBranchChange(): void {
   });
 
   updateFolderControlsEnabled();
+  // NEW: make sure CTA reflects the new branch choice
+  updateExportCommitEnabled();
 }
+
+
 
 /* -------------------------------------------------------
  * GitHub button handlers
@@ -746,11 +775,34 @@ function getCurrentBranch(): string {
   return v || '';
 }
 
+function updateExportCommitEnabled(): void {
+  const hasRepo = !!(currentOwner && currentRepo);
+  const br = getCurrentBranch();
+  const folder = (ghFolderInput?.value || '').trim();
+  const commitMsg = (ghCommitMsgInput?.value || '').trim();
+  const scopeAll = !!(ghScopeAll && ghScopeAll.checked);
+
+  // If using “selected” scope, require collection+mode selected.
+  const hasSelection = scopeAll
+    ? true
+    : !!(collectionSelect && collectionSelect.value && modeSelect && modeSelect.value);
+
+  const ready = !!(ghIsAuthed && hasRepo && br && folder && commitMsg && hasSelection);
+
+  if (ghExportAndCommitBtn) ghExportAndCommitBtn.disabled = !ready;
+}
+
+
 function updateFolderControlsEnabled(): void {
   const br = getCurrentBranch();
   const enable = !!(currentOwner && currentRepo && br);
   if (ghPickFolderBtn) ghPickFolderBtn.disabled = !enable;
+
+  // NEW: also re-evaluate primary CTA readiness whenever folder controls change
+  updateExportCommitEnabled();
 }
+
+
 
 function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string }> {
   return new Promise((resolve, _reject) => {
@@ -931,6 +983,9 @@ function openFolderPicker(): void {
     });
     close();
     log(`Folder selected: ${normalized || '(repo root)'}`);
+
+    // NEW:
+    updateExportCommitEnabled();
   });
 
   // NO COMMIT here: virtual create; actual creation will happen with the first write on export/PR.
@@ -949,7 +1004,11 @@ function openFolderPicker(): void {
     });
     close();
     log(`Folder selected (will be created on export): ${normalized}`);
+
+    // NEW:
+    updateExportCommitEnabled();
   });
+
 
   cancelBtn.addEventListener('click', close);
 
@@ -1004,8 +1063,11 @@ window.addEventListener('message', async (event: MessageEvent) => {
     }
 
     updateGhStatusUi();
+    updateExportCommitEnabled(); // 🔧 make the CTA reconsider readiness
     return;
   }
+
+
 
   if (msg.type === 'EXPORT_RESULT') {
     const files = Array.isArray(msg.payload?.files) ? msg.payload.files : [];
@@ -1096,7 +1158,10 @@ window.addEventListener('message', async (event: MessageEvent) => {
     if (typeof p.folder === 'string' && ghFolderInput) {
       const f = p.folder.replace(/^\/+|\/+$/g, '');
       ghFolderInput.value = f ? (f.endsWith('/') ? f : f + '/') : '';
+      // NEW:
+      updateExportCommitEnabled();
     }
+
 
     desiredBranch = restoreBranch;
     // If repos already loaded, try to select now
@@ -1278,6 +1343,28 @@ window.addEventListener('message', async (event: MessageEvent) => {
     return;
   }
 
+  if ((msg as any).type === 'GITHUB_EXPORT_AND_COMMIT_RESULT') {
+    const p = (msg as any).payload || {};
+    if (p.ok) {
+      const url = String(p.commitUrl || '');
+      log(`Commit succeeded: ${url || '(no URL)'} (${p.branch || ''})`);
+      if (url && logEl) {
+        const wrap = document.createElement('div');
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.textContent = 'View commit';
+        wrap.appendChild(a);
+        logEl.appendChild(wrap);
+        (logEl as HTMLElement).scrollTop = (logEl as HTMLElement).scrollHeight;
+      }
+    } else {
+      log(`Commit failed (${p.status || 0}): ${p.message || 'unknown error'}`);
+    }
+    return;
+  }
+
+
 });
 
 /* -------------------------------------------------------
@@ -1331,6 +1418,12 @@ document.addEventListener('DOMContentLoaded', function () {
   ghFolderInput = document.getElementById('ghFolderInput') as HTMLInputElement | null;
   ghPickFolderBtn = document.getElementById('ghPickFolderBtn') as HTMLButtonElement | null;
 
+  ghCommitMsgInput = document.getElementById('ghCommitMsgInput') as HTMLInputElement | null;
+  ghExportAndCommitBtn = document.getElementById('ghExportAndCommitBtn') as HTMLButtonElement | null;
+  ghScopeSelected = document.getElementById('ghScopeSelected') as HTMLInputElement | null;
+  ghScopeAll = document.getElementById('ghScopeAll') as HTMLInputElement | null;
+
+
   // Load saved “remember me” preference immediately (UI-level persistence)
   ghRememberPref = loadRememberPref();
   if (ghRememberChk) ghRememberChk.checked = ghRememberPref;
@@ -1349,12 +1442,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Repo → branch load
   if (ghRepoSelect && ghBranchSelect) {
+    let lastRepoKey = ''; // 🔧 new: de-dupe identical selections
+
     ghRepoSelect.addEventListener('change', function () {
       const value = ghRepoSelect!.value; // "owner/repo"
+      if (!value) return;
+      if (value === lastRepoKey) return; // 🔧 avoid duplicate loads on same value
+      lastRepoKey = value;
+
       const parts = value.split('/');
       currentOwner = parts[0] || '';
       currentRepo = parts[1] || '';
 
+      updateExportCommitEnabled();
+
+      // reset branch cache freshness
       lastBranchesFetchedAtMs = 0;
 
       (postToPlugin as any)({ type: 'GITHUB_SELECT_REPO', payload: { owner: currentOwner, repo: currentRepo } });
@@ -1370,7 +1472,6 @@ document.addEventListener('DOMContentLoaded', function () {
       updateBranchCount();
       updateFolderControlsEnabled();
 
-      // Clear any previously chosen folder when repo changes
       if (ghFolderInput) ghFolderInput.value = '';
 
       if (currentOwner && currentRepo) {
@@ -1381,8 +1482,12 @@ document.addEventListener('DOMContentLoaded', function () {
           payload: { owner: currentOwner, repo: currentRepo, page: 1 }
         });
       }
+
+      updateExportCommitEnabled();
     });
   }
+
+
 
   // Branch search and list listeners
   if (ghBranchSearch) {
@@ -1419,6 +1524,58 @@ document.addEventListener('DOMContentLoaded', function () {
   if (ghPickFolderBtn) {
     ghPickFolderBtn.addEventListener('click', openFolderPicker);
   }
+
+  if (ghCommitMsgInput) ghCommitMsgInput.addEventListener('input', updateExportCommitEnabled);
+
+  // Let users type a folder directly
+  if (ghFolderInput) {
+    ghFolderInput.addEventListener('input', updateExportCommitEnabled);
+    ghFolderInput.addEventListener('blur', () => {
+      const raw = ghFolderInput!.value.trim();
+      const normalized = raw.replace(/^\/+|\/+$/g, ''); // trim both sides
+      ghFolderInput!.value = normalized ? (normalized.endsWith('/') ? normalized : normalized + '/') : '';
+      (postToPlugin as any)({
+        type: 'GITHUB_SET_FOLDER',
+        payload: { owner: currentOwner, repo: currentRepo, folder: ghFolderInput!.value }
+      });
+      updateExportCommitEnabled();
+    });
+  }
+
+  // Scope radios influence readiness
+  if (ghScopeSelected) ghScopeSelected.addEventListener('change', updateExportCommitEnabled);
+  if (ghScopeAll) ghScopeAll.addEventListener('change', updateExportCommitEnabled);
+
+  // When the left pickers change, also re-evaluate readiness (if using “selected”)
+  if (collectionSelect) collectionSelect.addEventListener('change', updateExportCommitEnabled);
+  if (modeSelect) modeSelect.addEventListener('change', updateExportCommitEnabled);
+
+  // Primary action
+  if (ghExportAndCommitBtn) {
+    ghExportAndCommitBtn.addEventListener('click', () => {
+      const scope = ghScopeAll && ghScopeAll.checked ? 'all' : 'selected';
+      const commitMessage = (ghCommitMsgInput?.value || 'Update tokens from Figma').trim();
+      const folder = (ghFolderInput?.value || '').trim().replace(/^\/+|\/+$/g, ''); // no slashes at ends
+
+      const payload: any = {
+        owner: currentOwner,
+        repo: currentRepo,
+        branch: getCurrentBranch(),
+        folder,
+        commitMessage,
+        scope
+      };
+
+      if (scope === 'selected' && collectionSelect && modeSelect) {
+        payload.collection = collectionSelect.value || '';
+        payload.mode = modeSelect.value || '';
+      }
+
+      log('Export & Commit requested…');
+      (postToPlugin as any)({ type: 'GITHUB_EXPORT_AND_COMMIT', payload });
+    });
+  }
+
 
   // Other UI events
   if (fileInput) fileInput.addEventListener('change', setDisabledStates);
@@ -1510,8 +1667,10 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       setDisabledStates();
       requestPreviewForCurrent();
+      updateExportCommitEnabled();   // <— add this line
     });
   }
+
 
   if (copyRawBtn) copyRawBtn.addEventListener('click', () =>
     copyElText(document.getElementById('raw') as HTMLElement, 'Raw Figma Collections')
@@ -1532,6 +1691,11 @@ document.addEventListener('DOMContentLoaded', function () {
   if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
   updateBranchCount();
   autoFitOnce();
+
+  // NEW: ensure initial enabled/disabled state is correct on load
+  updateFolderControlsEnabled();
+  updateExportCommitEnabled();
+
 
   // New-branch composer DOM
   ghNewBranchBtn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
