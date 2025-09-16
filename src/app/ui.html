@@ -523,8 +523,8 @@
             <div class="row">
               <div>
                 <label>Personal Access Token (PAT)</label>
-                <input id="ghTokenInput" type="password" autocomplete="current-password" autocapitalize="off"
-                  spellcheck="false" inputmode="text" />
+                <input id="ghTokenInput" type="password" placeholder="GitHub personal access token" autocomplete="off"
+                  style="flex:1; min-width:220px;" />
                 <div class="muted" style="margin-top:4px;">
                   Store on this device? <input id="ghRememberChk" type="checkbox" />
                   <label for="ghRememberChk" style="display:inline; margin-left:.25rem;">Remember me (base64 on
@@ -611,6 +611,8 @@
                     <input type="radio" name="ghScope" id="ghScopeAll" />
                     All collections &amp; modes
                   </label>
+
+
                 </div>
               </div>
             </div>

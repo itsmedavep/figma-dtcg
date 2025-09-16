@@ -8,6 +8,7 @@ import {
   ghCreateBranch,
   ghListDirs,
   ghEnsureFolder,
+  ghCommitFiles
 } from '../core/github/api';
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
@@ -186,6 +187,35 @@ function safeKeyFromCollectionAndMode(collectionName: string, modeName: string):
   return out;
 }
 
+async function analyzeSelectionState(collectionName: string, modeName: string): Promise<{
+  ok: boolean;
+  message?: string;
+  variableCount?: number;
+  variablesWithValues?: number;
+}> {
+  try {
+    const snap = await snapshotCollectionsForUi();
+    const col = snap.collections.find(c => c.name === collectionName);
+    if (!col) return { ok: false, message: `Collection "${collectionName}" not found in this file.` };
+    if (!col.variables || col.variables.length === 0) {
+      return { ok: false, message: `Collection "${collectionName}" has no local variables.` };
+    }
+    const mode = col.modes.find(m => m.name === modeName);
+    if (!mode) return { ok: false, message: `Mode "${modeName}" not found in collection "${collectionName}".` };
+
+    let withValues = 0;
+    for (const v of col.variables) {
+      const full = await figma.variables.getVariableByIdAsync(v.id);
+      // value exists if valuesByMode has an entry (including aliases) for this mode
+      if (full && full.valuesByMode && (mode.id in full.valuesByMode)) withValues++;
+    }
+    return { ok: true, variableCount: col.variables.length, variablesWithValues: withValues };
+  } catch (e) {
+    return { ok: false, message: (e as Error)?.message || 'Analysis failed' };
+  }
+}
+
+
 figma.ui.onmessage = async (msg: UiToPlugin) => {
   try {
     if (msg.type === 'UI_READY') {
@@ -254,13 +284,33 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       const modeName = msg.payload.mode ? msg.payload.mode : '';
       const per = await exportDtcg({ format: 'perMode' });
 
-      const key = safeKeyFromCollectionAndMode(collectionName, modeName);
-      const picked: Array<{ name: string; json: unknown }> = [];
-      for (let i2 = 0; i2 < per.files.length; i2++) {
-        if (per.files[i2].name.indexOf(key) !== -1) picked.push(per.files[i2]);
+      // Prefer pretty: "Collection - Mode.json"
+      const prettyExact = `${collectionName} - ${modeName}.json`;
+      const prettyLoose = `${collectionName} - ${modeName}`; // fallback if extension missing
+
+      // Legacy keys used by older builds
+      const legacy1 = `${collectionName}_mode=${modeName}`;
+      const legacy2 = `${collectionName}/mode=${modeName}`;
+      const legacy3 = safeKeyFromCollectionAndMode(collectionName, modeName);
+
+      let picked = per.files.find(f => {
+        const n = String(f?.name || '');
+        return n === prettyExact || n === prettyLoose || n.includes(`${collectionName} - ${modeName}`);
+      });
+      if (!picked) {
+        picked = per.files.find(f => {
+          const n = String(f?.name || '');
+          return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
+        });
       }
-      send({ type: 'EXPORT_RESULT', payload: { files: picked.length > 0 ? picked : per.files } });
+
+      const filesToSend = picked ? [picked] : per.files;
+      if (!picked) {
+        send({ type: 'INFO', payload: { message: `Export: pretty file not found for "${collectionName}" / "${modeName}". Falling back to all per-mode files.` } });
+      }
+      send({ type: 'EXPORT_RESULT', payload: { files: filesToSend } });
       return;
+
     }
 
     if (msg.type === 'SAVE_LAST') {
@@ -289,14 +339,25 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
 
       const per = await exportDtcg({ format: 'perMode' });
 
-      const key = safeKeyFromCollectionAndMode(collectionName, modeName);
-      let picked = per.files.find(f => f.name.indexOf(key) !== -1);
-      if (!picked) picked = per.files[0];
-      if (!picked) picked = { name: 'tokens-empty.json', json: {} };
+      // Pretty-first match
+      const prettyExact = `${collectionName} - ${modeName}.json`;
+      const prettyLoose = `${collectionName} - ${modeName}`;
+      const legacy1 = `${collectionName}_mode=${modeName}`;
+      const legacy2 = `${collectionName}/mode=${modeName}`;
+      const legacy3 = safeKeyFromCollectionAndMode(collectionName, modeName);
+
+      let picked = per.files.find(f => {
+        const n = String(f?.name || '');
+        return n === prettyExact || n === prettyLoose || n.includes(`${collectionName} - ${modeName}`);
+      }) || per.files.find(f => {
+        const n = String(f?.name || '');
+        return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
+      }) || per.files[0] || { name: 'tokens-empty.json', json: {} };
 
       send({ type: 'W3C_PREVIEW', payload: { name: picked.name, json: picked.json } });
       return;
     }
+
 
     // ---------------- GitHub: set/forget token ----------------
     if ((msg as any).type === 'GITHUB_SET_TOKEN') {
@@ -556,4 +617,152 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
     // eslint-disable-next-line no-console
     console.error(e);
   }
+
+  if ((msg as any).type === 'GITHUB_EXPORT_AND_COMMIT') {
+    const p = (msg as any).payload || {};
+    const owner = String(p.owner || '');
+    const repo = String(p.repo || '');
+    const branch = String(p.branch || '');
+    const folder = String(p.folder || '').replace(/^\/+|\/+$/g, '');
+    const commitMessage = (String(p.commitMessage || '') || 'Update tokens from Figma').trim();
+    const scope = (String(p.scope || 'selected') === 'all') ? 'all' : 'selected';
+    const collection = String(p.collection || '');
+    const mode = String(p.mode || '');
+
+    if (!ghToken) {
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+        payload: { ok: false, owner, repo, branch, status: 401, message: 'No token' }
+      });
+      return;
+    }
+    if (!owner || !repo || !branch) {
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+        payload: { ok: false, owner, repo, branch, status: 400, message: 'Missing owner/repo/branch' }
+      });
+      return;
+    }
+    if (!commitMessage) {
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+        payload: { ok: false, owner, repo, branch, status: 400, message: 'Empty commit message' }
+      });
+      return;
+    }
+
+    try {
+      // 1) Generate the export payload we're about to commit
+      const files: Array<{ name: string; json: unknown }> = [];
+
+      if (scope === 'all') {
+        const all = await exportDtcg({ format: 'single' });
+        for (const f of all.files) files.push({ name: f.name, json: f.json });
+      } else {
+        if (!collection || !mode) {
+          (figma.ui as any).postMessage({
+            type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+            payload: { ok: false, owner, repo, branch, status: 400, message: 'Pick a collection and a mode.' }
+          });
+          return;
+        }
+        const per = await exportDtcg({ format: 'perMode' });
+
+        // Prefer pretty file name first: "Collection - Mode.json"
+        const prettyExact = `${collection} - ${mode}.json`;
+        const prettyLoose = `${collection} - ${mode}`;
+
+        const legacy1 = `${collection}_mode=${mode}`;
+        const legacy2 = `${collection}/mode=${mode}`;
+        const legacy3 = safeKeyFromCollectionAndMode(collection, mode);
+
+        let picked = per.files.find(f => {
+          const n = String(f?.name || '');
+          return n === prettyExact || n === prettyLoose || n.includes(`${collection} - ${mode}`);
+        });
+        if (!picked) {
+          picked = per.files.find(f => {
+            const n = String(f?.name || '');
+            return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
+          });
+        }
+        if (!picked) {
+          const available = per.files.map(f => f.name).join(', ');
+          (figma.ui as any).postMessage({
+            type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+            payload: { ok: false, owner, repo, branch, status: 404, message: `No export found for "${collection}" / "${mode}". Available: [${available}]` }
+          });
+          return;
+        }
+
+        files.push({ name: picked.name, json: picked.json });
+
+      }
+
+      // 2) Abort if the export JSON is an empty object (avoid committing `{}`)
+      const isPlainEmptyObject = (v: any) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0;
+      const exportLooksEmpty = files.length === 0 || files.every(f => isPlainEmptyObject(f.json));
+
+      if (exportLooksEmpty) {
+        if (scope === 'selected') {
+          const diag = await analyzeSelectionState(collection, mode);
+          const tail = diag.ok
+            ? `Found ${diag.variableCount} variable(s) in "${collection}", but ${diag.variablesWithValues ?? 0} with a value in "${mode}".`
+            : (diag.message || 'No values present.');
+          (figma.ui as any).postMessage({
+            type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+            payload: {
+              ok: false, owner, repo, branch, status: 412,
+              message: `Export for "${collection}" / "${mode}" produced an empty tokens file. ${tail}`
+            }
+          });
+        } else {
+          (figma.ui as any).postMessage({
+            type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+            payload: {
+              ok: false, owner, repo, branch, status: 412,
+              message: 'Export produced an empty tokens file. Ensure this file contains local Variables with values.'
+            }
+          });
+        }
+        return;
+      }
+
+      // 3) Build paths & pretty names
+      function prettyExportName(original: string | undefined | null): string {
+        const name = (original && typeof original === 'string') ? original : 'tokens.json';
+        const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
+        if (m) return `${m[1].trim()} - ${m[2].trim()}.json`;
+        return name.endsWith('.json') ? name : (name + '.json');
+      }
+      const prefix = folder ? (folder.endsWith('/') ? folder : folder + '/') : '';
+      const commitFiles = files.map(f => ({
+        path: prefix + prettyExportName(f.name),
+        content: JSON.stringify(f.json, null, 2) + '\n'
+      }));
+
+      // 4) Commit in one go
+      const res = await ghCommitFiles(ghToken, owner, repo, branch, commitMessage, commitFiles);
+
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+        payload: res
+      });
+
+      if (res.ok) {
+        send({ type: 'INFO', payload: { message: `Committed ${commitFiles.length} file(s) to ${owner}/${repo}@${branch}` } });
+      } else {
+        send({ type: 'ERROR', payload: { message: `GitHub: Commit failed (${res.status}): ${res.message}` } });
+      }
+    } catch (e) {
+      const msgText = (e as Error)?.message || 'unknown error';
+      (figma.ui as any).postMessage({
+        type: 'GITHUB_EXPORT_AND_COMMIT_RESULT',
+        payload: { ok: false, owner, repo, branch, status: 0, message: msgText }
+      });
+    }
+    return;
+  }
+
+
 };
