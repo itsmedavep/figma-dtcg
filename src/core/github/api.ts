@@ -1,3 +1,9 @@
+// src/core/github/api.ts
+
+/* =========================
+ * Common types & helpers
+ * ========================= */
+
 export interface GhUser {
     login: string;
     name?: string;
@@ -6,6 +12,60 @@ export interface GhUser {
 export type GhUserResult =
     | { ok: true; user: GhUser }
     | { ok: false; error: string };
+
+function headerGet(h: any, key: string): string | null {
+    try {
+        if (h && typeof h.get === 'function') return h.get(key);
+    } catch { /* noop */ }
+    return null;
+}
+
+export interface GhRateInfo {
+    remaining?: number;
+    resetEpochSec?: number;
+}
+
+function parseRate(h: any): GhRateInfo | undefined {
+    const remainingStr = headerGet(h, 'x-ratelimit-remaining');
+    const resetStr = headerGet(h, 'x-ratelimit-reset');
+    const rate: GhRateInfo = {};
+    const rem = remainingStr ? parseInt(remainingStr, 10) : NaN;
+    const rst = resetStr ? parseInt(resetStr, 10) : NaN;
+    if (Number.isFinite(rem)) rate.remaining = rem;
+    if (Number.isFinite(rst)) rate.resetEpochSec = rst;
+    return (rate.remaining !== undefined || rate.resetEpochSec !== undefined) ? rate : undefined;
+}
+
+async function safeText(res: any): Promise<string> {
+    try { return await res.text(); } catch { return ''; }
+}
+
+/** Base64 encode (Unicode safe) without using Node Buffer. */
+function b64(s: string): string {
+    try {
+        // Convert to UTF-8 first so btoa can handle it.
+        // unescape is fine here inside the sandbox and avoids a heavier polyfill.
+        return btoa(unescape(encodeURIComponent(s)));
+    } catch {
+        // Last-ditch fallback: encode bytes manually for btoa.
+        const enc = new TextEncoder();
+        const bytes = enc.encode(s);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+    }
+}
+
+/** Encode a repo *path* but preserve `/` separators. */
+function encodePathSegments(path: string): string {
+    const norm = String(path || '').replace(/^\/+|\/+$/g, '');
+    if (!norm) return '';
+    return norm.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+}
+
+/* =========================
+ * Auth / Repos
+ * ========================= */
 
 export async function ghGetUser(token: string): Promise<GhUserResult> {
     try {
@@ -16,7 +76,6 @@ export async function ghGetUser(token: string): Promise<GhUserResult> {
                 'Accept': 'application/vnd.github+json',
                 'X-GitHub-Api-Version': '2022-11-28'
             }
-            // NOTE: no `cache:` option here — some plugin runtimes reject it
         });
         if (res.status === 401) return { ok: false, error: 'bad credentials' };
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -31,7 +90,6 @@ export async function ghGetUser(token: string): Promise<GhUserResult> {
     }
 }
 
-/* ---------- List repos (owned + member), pagination via ?page= ---------- */
 export interface GhRepo {
     id: number;
     name: string;
@@ -47,17 +105,11 @@ export type GhListReposResult =
     | { ok: true; repos: GhRepo[] }
     | { ok: false; error: string };
 
-// Tiny retry wrapper (no `cache:` option here either)
-async function fetchJsonWithRetry(url: string, init: RequestInit, tries = 2) {
+async function fetchJsonWithRetry(url: string, init: any, tries = 2) {
     let last: any;
     for (let i = 0; i < tries; i++) {
-        try {
-            const res = await fetch(url, init);
-            return res;
-        } catch (e) {
-            last = e;
-            await new Promise(r => setTimeout(r, 150));
-        }
+        try { return await fetch(url, init); }
+        catch (e) { last = e; await new Promise(r => setTimeout(r, 150)); }
     }
     throw last;
 }
@@ -81,7 +133,7 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
             const res = await fetchJsonWithRetry(`${base}&page=${page}`, { headers }, 2);
             if (res.status === 401) return { ok: false, error: 'bad credentials' };
             if (!res.ok) {
-                if (all.length) return { ok: true, repos: all }; // keep partial success
+                if (all.length) return { ok: true, repos: all };
                 return { ok: false, error: (await res.text()) || `HTTP ${res.status}` };
             }
 
@@ -113,12 +165,9 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
     }
 }
 
-/* ---------- Branches (safe headers; SAML + rate limit hints) ---------- */
-
-export interface GhRateInfo {
-    remaining?: number;
-    resetEpochSec?: number;
-}
+/* =========================
+ * Branches
+ * ========================= */
 
 export type GhListBranchesResult =
     | {
@@ -141,14 +190,68 @@ export type GhListBranchesResult =
         rate?: GhRateInfo;
     };
 
-function headerGet(h: any, key: string): string | null {
-    try {
-        if (h && typeof h.get === 'function') return h.get(key);
-    } catch { /* noop */ }
-    return null;
-}
+/** List branches; when `force` add a ts param to bypass caches. */
+export async function ghListBranches(
+    token: string,
+    owner: string,
+    repo: string,
+    page = 1,
+    force = false
+): Promise<GhListBranchesResult> {
+    const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
 
-/* ---------- Create branch (POST /git/refs) ---------- */
+    const ts = force ? `&_ts=${Date.now()}` : '';
+
+    try {
+        const branchesUrl = `${baseRepoUrl}/branches?per_page=100&page=${page}${ts}`;
+        const res = await fetch(branchesUrl, { headers });
+
+        const rate = parseRate((res as any)?.headers);
+        const saml = headerGet((res as any)?.headers, 'x-github-saml');
+
+        if (res.status === 403 && saml) {
+            return {
+                ok: false, owner, repo, status: 403,
+                message: 'SAML/SSO required', samlRequired: true, rate
+            };
+        }
+
+        if (!res.ok) {
+            const text = await safeText(res);
+            return { ok: false, owner, repo, status: res.status, message: text || `HTTP ${res.status}`, rate };
+        }
+
+        const arr = await res.json();
+        const branches: Array<{ name: string }> = Array.isArray(arr)
+            ? arr.filter(b => b && typeof b.name === 'string').map(b => ({ name: b.name }))
+            : [];
+
+        const link = headerGet((res as any)?.headers, 'link');
+        let hasMore = false;
+        if (link && /\brel="next"/i.test(link)) hasMore = true;
+        else if (branches.length === 100) hasMore = true;
+
+        let defaultBranch: string | undefined;
+        if (page === 1) {
+            try {
+                const repoRes = await fetch(`${baseRepoUrl}${force ? `?_ts=${Date.now()}` : ''}`, { headers });
+                if (repoRes.ok) {
+                    const j = await repoRes.json();
+                    if (j && typeof j.default_branch === 'string') defaultBranch = j.default_branch;
+                }
+            } catch { /* ignore */ }
+        }
+
+        return { ok: true, owner, repo, page, branches, defaultBranch, hasMore, rate };
+    } catch (e) {
+        return { ok: false, owner, repo, status: 0, message: (e as Error)?.message || 'network error' };
+    }
+}
 
 export type GhCreateBranchResult =
     | {
@@ -174,113 +277,6 @@ export type GhCreateBranchResult =
         rate?: GhRateInfo;
     };
 
-function parseRate(h: any): GhRateInfo | undefined {
-    const remainingStr = headerGet(h, 'x-ratelimit-remaining');
-    const resetStr = headerGet(h, 'x-ratelimit-reset');
-    const rate: GhRateInfo = {};
-    const rem = remainingStr ? parseInt(remainingStr, 10) : NaN;
-    const rst = resetStr ? parseInt(resetStr, 10) : NaN;
-    if (Number.isFinite(rem)) rate.remaining = rem;
-    if (Number.isFinite(rst)) rate.resetEpochSec = rst;
-    return (rate.remaining !== undefined || rate.resetEpochSec !== undefined) ? rate : undefined;
-}
-
-async function safeText(res: any): Promise<string> {
-    try { return await res.text(); } catch { return ''; }
-}
-
-/**
- * List branches. We bypass caches using a timestamp query param only.
- * (No `cache:` option and no `Cache-Control` header to avoid CORS/preflight issues.)
- */
-export async function ghListBranches(
-    token: string,
-    owner: string,
-    repo: string,
-    page = 1,
-    force = false
-): Promise<GhListBranchesResult> {
-    const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
-    const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
-        // IMPORTANT: do not add 'Cache-Control' here (can trigger blocked preflight)
-    } as const;
-
-    const ts = force ? `&_ts=${Date.now()}` : '';
-
-    try {
-        // 1) Fetch one page of branches
-        const branchesUrl = `${baseRepoUrl}/branches?per_page=100&page=${page}${ts}`;
-        const res = await fetch(branchesUrl, { headers });
-
-        const rate = parseRate((res as any)?.headers);
-        const saml = headerGet((res as any)?.headers, 'x-github-saml');
-
-        if (res.status === 403 && saml) {
-            return {
-                ok: false,
-                owner, repo,
-                status: 403,
-                message: 'SAML/SSO required',
-                samlRequired: true,
-                rate
-            };
-        }
-
-        if (!res.ok) {
-            const text = await safeText(res);
-            return {
-                ok: false,
-                owner, repo,
-                status: res.status,
-                message: text || `HTTP ${res.status}`,
-                rate
-            };
-        }
-
-        const arr = await res.json();
-        const branches: Array<{ name: string }> = Array.isArray(arr)
-            ? arr.filter(b => b && typeof b.name === 'string').map(b => ({ name: b.name }))
-            : [];
-
-        // hasMore: prefer Link: rel="next", fallback to length heuristic
-        const link = headerGet((res as any)?.headers, 'link');
-        let hasMore = false;
-        if (link && /\brel="next"/i.test(link)) hasMore = true;
-        else if (branches.length === 100) hasMore = true;
-
-        // 2) Default branch (only on first page, best effort)
-        let defaultBranch: string | undefined = undefined;
-        if (page === 1) {
-            try {
-                const repoRes = await fetch(`${baseRepoUrl}${force ? `?_ts=${Date.now()}` : ''}`, { headers });
-                if (repoRes.ok) {
-                    const j = await repoRes.json();
-                    if (j && typeof j.default_branch === 'string') defaultBranch = j.default_branch;
-                }
-            } catch { /* ignore; keep undefined */ }
-        }
-
-        return {
-            ok: true,
-            owner, repo, page,
-            branches,
-            defaultBranch,
-            hasMore,
-            rate
-        };
-    } catch (e) {
-        return {
-            ok: false,
-            owner, repo,
-            status: 0,
-            message: (e as Error)?.message || 'network error'
-        };
-    }
-}
-
 export async function ghCreateBranch(
     token: string,
     owner: string,
@@ -295,112 +291,53 @@ export async function ghCreateBranch(
         'X-GitHub-Api-Version': '2022-11-28'
     } as const;
 
-    // Normalize inputs
     const branchName = String(newBranch || '').trim().replace(/^refs\/heads\//, '');
     const baseName = String(baseBranch || '').trim().replace(/^refs\/heads\//, '');
     if (!branchName || !baseName) {
-        return {
-            ok: false,
-            owner, repo,
-            baseBranch: baseName,
-            newBranch: branchName,
-            status: 400,
-            message: 'empty branch name(s)'
-        };
+        return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 400, message: 'empty branch name(s)' };
     }
 
     try {
-        // 0) Preflight: can we push?
+        // Preflight: push permission & SAML hints
         try {
             const repoRes = await fetch(baseRepoUrl, { headers });
             const rate0 = parseRate((repoRes as any)?.headers);
             const saml0 = headerGet((repoRes as any)?.headers, 'x-github-saml');
             if (repoRes.status === 403 && saml0) {
-                return {
-                    ok: false,
-                    owner, repo,
-                    baseBranch: baseName,
-                    newBranch: branchName,
-                    status: 403,
-                    message: 'SAML/SSO required',
-                    samlRequired: true,
-                    rate: rate0
-                };
+                return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 403, message: 'SAML/SSO required', samlRequired: true, rate: rate0 };
             }
             if (!repoRes.ok) {
                 const text = await safeText(repoRes);
-                return {
-                    ok: false,
-                    owner, repo,
-                    baseBranch: baseName,
-                    newBranch: branchName,
-                    status: repoRes.status,
-                    message: text || `HTTP ${repoRes.status}`
-                };
+                return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: repoRes.status, message: text || `HTTP ${repoRes.status}` };
             }
             const repoJson = await repoRes.json();
             const pushAllowed = !!(repoJson?.permissions?.push);
             if (repoJson?.permissions && pushAllowed !== true) {
-                return {
-                    ok: false,
-                    owner, repo,
-                    baseBranch: baseName,
-                    newBranch: branchName,
-                    status: 403,
-                    message: 'Token/user lacks push permission to this repository',
-                    noPushPermission: true,
-                    rate: rate0
-                };
+                return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 403, message: 'Token/user lacks push permission to this repository', noPushPermission: true, rate: rate0 };
             }
-        } catch {
-            // continue; downstream errors will be clearer
-        }
+        } catch { /* ignore */ }
 
-        // 1) Resolve base branch → SHA
-        const refUrl = `${baseRepoUrl}/git/ref/heads/${encodeURIComponent(baseName)}?_ts=${Date.now()}`;
+        // Resolve base → SHA
+        const refUrl = `${baseRepoUrl}/git/ref/heads/${encodeURIComponent(baseName)}`;
         const refRes = await fetch(refUrl, { headers });
         const rate1 = parseRate((refRes as any)?.headers);
         const saml1 = headerGet((refRes as any)?.headers, 'x-github-saml');
 
         if (refRes.status === 403 && saml1) {
-            return {
-                ok: false,
-                owner, repo,
-                baseBranch: baseName,
-                newBranch: branchName,
-                status: 403,
-                message: 'SAML/SSO required',
-                samlRequired: true,
-                rate: rate1
-            };
+            return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 403, message: 'SAML/SSO required', samlRequired: true, rate: rate1 };
         }
         if (!refRes.ok) {
             const text = await safeText(refRes);
-            return {
-                ok: false,
-                owner, repo,
-                baseBranch: baseName,
-                newBranch: branchName,
-                status: refRes.status,
-                message: text || `HTTP ${refRes.status}`,
-                rate: rate1
-            };
+            return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: refRes.status, message: text || `HTTP ${refRes.status}`, rate: rate1 };
         }
 
         const refJson = await refRes.json();
         const sha = (refJson?.object?.sha || refJson?.sha || '').trim();
         if (!sha) {
-            return {
-                ok: false,
-                owner, repo,
-                baseBranch: baseName,
-                newBranch: branchName,
-                status: 500,
-                message: 'could not resolve base SHA'
-            };
+            return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 500, message: 'could not resolve base SHA' };
         }
 
-        // 2) Create new ref
+        // Create ref
         const createUrl = `${baseRepoUrl}/git/refs`;
         const body = JSON.stringify({ ref: `refs/heads/${branchName}`, sha });
         const createRes = await fetch(createUrl, { method: 'POST', headers, body });
@@ -408,48 +345,270 @@ export async function ghCreateBranch(
         const saml2 = headerGet((createRes as any)?.headers, 'x-github-saml');
 
         if (createRes.status === 403 && saml2) {
-            return {
-                ok: false,
-                owner, repo,
-                baseBranch: baseName,
-                newBranch: branchName,
-                status: 403,
-                message: 'SAML/SSO required',
-                samlRequired: true,
-                rate: rate2
-            };
+            return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 403, message: 'SAML/SSO required', samlRequired: true, rate: rate2 };
         }
         if (!createRes.ok) {
             const text = await safeText(createRes);
-            return {
-                ok: false,
-                owner, repo,
-                baseBranch: baseName,
-                newBranch: branchName,
-                status: createRes.status,
-                message: text || `HTTP ${createRes.status}`,
-                rate: rate2
-            };
+            return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: createRes.status, message: text || `HTTP ${createRes.status}`, rate: rate2 };
         }
 
         const html_url = `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branchName)}`;
+        return { ok: true, owner, repo, baseBranch: baseName, newBranch: branchName, sha, html_url, rate: rate2 };
+    } catch (e) {
+        return { ok: false, owner, repo, baseBranch: baseName, newBranch: branchName, status: 0, message: (e as Error)?.message || 'network error' };
+    }
+}
+
+/* =========================
+ * Contents API: list & ensure folder
+ * ========================= */
+
+export type GhDirEntry = {
+    type: 'dir' | 'file';
+    name: string;
+    path: string;
+};
+
+export type GhListDirResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        ref: string;
+        path: string;
+        entries: GhDirEntry[];
+        rate?: GhRateInfo;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        ref: string;
+        path: string;
+        status: number;
+        message: string;
+        rate?: GhRateInfo;
+    };
+
+/** GET /repos/{owner}/{repo}/contents/{path}?ref={ref} */
+export async function ghListDir(
+    token: string,
+    owner: string,
+    repo: string,
+    path: string,
+    ref: string
+): Promise<GhListDirResult> {
+    const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
+    const rel = encodePathSegments(path);
+    const url = rel
+        ? `${baseRepoUrl}/contents/${rel}?ref=${encodeURIComponent(ref)}&_ts=${Date.now()}`
+        : `${baseRepoUrl}/contents?ref=${encodeURIComponent(ref)}&_ts=${Date.now()}`;
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
+
+    try {
+        const res = await fetch(url, { headers });
+        const rate = parseRate((res as any)?.headers);
+        if (!res.ok) {
+            const msg = await safeText(res);
+            return {
+                ok: false,
+                owner, repo, ref, path: String(path || '').replace(/^\/+|\/+$/g, ''),
+                status: res.status,
+                message: msg || `HTTP ${res.status}`,
+                rate
+            };
+        }
+        const json = await res.json();
+        const arr = Array.isArray(json) ? json : [];
+        const entries: GhDirEntry[] = arr.map((it: any) => ({
+            type: it?.type === 'dir' ? 'dir' : 'file',
+            name: String(it?.name || ''),
+            path: String(it?.path || '')
+        }));
         return {
             ok: true,
-            owner, repo,
-            baseBranch: baseName,
-            newBranch: branchName,
-            sha,
-            html_url,
-            rate: rate2
+            owner, repo, ref,
+            path: String(path || '').replace(/^\/+|\/+$/g, ''),
+            entries,
+            rate
         };
     } catch (e) {
         return {
             ok: false,
-            owner, repo,
-            baseBranch: baseName,
-            newBranch: branchName,
+            owner, repo, ref,
+            path: String(path || '').replace(/^\/+|\/+$/g, ''),
             status: 0,
             message: (e as Error)?.message || 'network error'
         };
+    }
+}
+
+/** Wrapper that returns ONLY directories (keeps a legacy `dirs` array). */
+export type GhListDirsResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        branch: string;
+        path: string;
+        entries: GhDirEntry[]; // dirs only
+        dirs: Array<{ name: string; path: string }>;
+        rate?: GhRateInfo;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        branch: string;
+        path: string;
+        status: number;
+        message: string;
+        samlRequired?: boolean;
+        rate?: GhRateInfo;
+    };
+
+export async function ghListDirs(
+    token: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    path = ''
+): Promise<GhListDirsResult> {
+    const res = await ghListDir(token, owner, repo, path, branch);
+    if (!res.ok) {
+        return {
+            ok: false,
+            owner, repo, branch,
+            path: res.path,
+            status: res.status,
+            message: res.message,
+            samlRequired: /SAML|SSO/i.test(res.message || '') || res.status === 403
+        };
+    }
+    const onlyDirs = res.entries.filter(e => e.type === 'dir');
+    return {
+        ok: true,
+        owner, repo, branch,
+        path: res.path,
+        entries: onlyDirs,
+        dirs: onlyDirs.map(d => ({ name: d.name, path: d.path })),
+        rate: res.rate
+    };
+}
+
+/* ---------- Ensure folder (materialize if empty) ---------- */
+
+export type GhEnsureFolderResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        branch: string;
+        folderPath: string; // normalized
+        created: boolean;   // true if a placeholder commit was needed
+        fileSha?: string;
+        html_url?: string;
+        rate?: GhRateInfo;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        branch: string;
+        folderPath: string;
+        status: number;
+        message: string;
+        samlRequired?: boolean;
+        noPushPermission?: boolean;
+        rate?: GhRateInfo;
+    };
+
+export async function ghEnsureFolder(
+    token: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    folderPath: string
+): Promise<GhEnsureFolderResult> {
+    const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
+
+    const norm = String(folderPath || '').replace(/^\/+|\/+$/g, '');
+    if (!norm) {
+        return { ok: false, owner, repo, branch, folderPath: norm, status: 400, message: 'empty folder path' };
+    }
+
+    try {
+        // Exists already?
+        {
+            const rel = encodePathSegments(norm);
+            const url = `${baseRepoUrl}/contents/${rel}?ref=${encodeURIComponent(branch)}&_ts=${Date.now()}`;
+            const res = await fetch(url, { headers });
+            const rate = parseRate((res as any)?.headers);
+            const saml = headerGet((res as any)?.headers, 'x-github-saml');
+
+            if (res.status === 403 && saml) {
+                return { ok: false, owner, repo, branch, folderPath: norm, status: 403, message: 'SAML/SSO required', samlRequired: true, rate };
+            }
+
+            if (res.ok) {
+                return {
+                    ok: true,
+                    owner, repo, branch,
+                    folderPath: norm,
+                    created: false,
+                    html_url: `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branch)}/${encodePathSegments(norm)}`,
+                    rate
+                };
+            }
+            if (res.status !== 404) {
+                const text = await safeText(res);
+                return { ok: false, owner, repo, branch, folderPath: norm, status: res.status, message: text || `HTTP ${res.status}`, rate };
+            }
+        }
+
+        // Materialize with .gitkeep
+        const placeholderRel = `${norm}/.gitkeep`;
+        const putUrl = `${baseRepoUrl}/contents/${encodePathSegments(placeholderRel)}`;
+        const body = JSON.stringify({
+            message: `chore: create folder ${norm}`,
+            content: b64('.'),
+            branch
+        });
+
+        const putRes = await fetch(putUrl, { method: 'PUT', headers, body });
+        const rate2 = parseRate((putRes as any)?.headers);
+        const saml2 = headerGet((putRes as any)?.headers, 'x-github-saml');
+
+        if (putRes.status === 403 && saml2) {
+            return { ok: false, owner, repo, branch, folderPath: norm, status: 403, message: 'SAML/SSO required', samlRequired: true, rate: rate2 };
+        }
+        if (!putRes.ok) {
+            const text = await safeText(putRes);
+            return { ok: false, owner, repo, branch, folderPath: norm, status: putRes.status, message: text || `HTTP ${putRes.status}`, rate: rate2 };
+        }
+
+        const j = await putRes.json();
+        const fileSha = j?.content?.sha || j?.commit?.sha || '';
+
+        return {
+            ok: true,
+            owner, repo, branch,
+            folderPath: norm,
+            created: true,
+            fileSha,
+            html_url: `https://github.com/${owner}/${repo}/tree/${encodeURIComponent(branch)}/${encodePathSegments(norm)}`,
+            rate: rate2
+        };
+    } catch (e) {
+        return { ok: false, owner, repo, branch, folderPath: norm, status: 0, message: (e as Error)?.message || 'network error' };
     }
 }

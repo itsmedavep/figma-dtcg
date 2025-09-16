@@ -1,7 +1,14 @@
 import type { UiToPlugin, PluginToUi } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
 
-import { ghGetUser, ghListRepos, ghListBranches, ghCreateBranch } from '../core/github/api';
+import {
+  ghGetUser,
+  ghListRepos,
+  ghListBranches,
+  ghCreateBranch,
+  ghListDirs,
+  ghEnsureFolder,
+} from '../core/github/api';
 
 // __html__ is injected by your build (esbuild) from dist/ui.html with ui.js inlined.
 declare const __html__: string;
@@ -11,8 +18,7 @@ let ghToken: string | null = null;
 
 // Persisted selection (owner/repo/branch)
 const GH_SELECTED_KEY = 'gh.selected';
-
-type GhSelected = { owner?: string; repo?: string; branch?: string };
+type GhSelected = { owner?: string; repo?: string; branch?: string; folder?: string };
 
 async function getSelected(): Promise<GhSelected> {
   try { return (await figma.clientStorage.getAsync(GH_SELECTED_KEY)) ?? {}; } catch { return {}; }
@@ -292,7 +298,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
 
-    // ---------------- GitHub: set/forget token (no messages.ts churn) ----------------
+    // ---------------- GitHub: set/forget token ----------------
     if ((msg as any).type === 'GITHUB_SET_TOKEN') {
       const payload = (msg as any).payload || {};
       const token = String(payload.token || '').trim();
@@ -338,23 +344,48 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
 
-    // ---------------- GitHub: branch flow (additive, variant 4 UI support) ----------------
+    // ---------------- GitHub: selection persistence ----------------
 
-    // Optional: persist repo choice if UI sends it explicitly.
     if ((msg as any).type === 'GITHUB_SELECT_REPO') {
       const { owner, repo } = (msg as any).payload || {};
       const sel = await getSelected();
-      await setSelected({ owner, repo, branch: sel.branch }); // keep prior branch if any
+      await setSelected({ owner, repo, branch: sel.branch, folder: undefined });
       return;
     }
 
-    // UI requests a page of branches (search/virtualization handled in UI).
+    if ((msg as any).type === 'GITHUB_SELECT_BRANCH') {
+      const p = (msg as any).payload || {};
+      const owner = String(p.owner || '');
+      const repo = String(p.repo || '');
+      const branch = String(p.branch || '');
+      const sel = await getSelected();
+      // Clear folder when branch changes
+      await setSelected({ owner: owner || sel.owner, repo: repo || sel.repo, branch, folder: undefined });
+      return;
+    }
+
+    if ((msg as any).type === 'GITHUB_SET_FOLDER') {
+      const p = (msg as any).payload || {};
+      const owner = String(p.owner || '');
+      const repo = String(p.repo || '');
+      const folder = String(p.folder || '').replace(/^\/+|\/+$/g, '');
+      const sel = await getSelected();
+      await setSelected({
+        owner: owner || sel.owner,
+        repo: repo || sel.repo,
+        branch: sel.branch,
+        folder
+      });
+      return;
+    }
+
+    // ---------------- GitHub: branches (paging) ----------------
     if ((msg as any).type === 'GITHUB_FETCH_BRANCHES') {
       const p = (msg as any).payload || {};
       const owner = String(p.owner || '');
       const repo = String(p.repo || '');
       const page = Number.isFinite(p.page) ? Number(p.page) : 1;
-      const force = !!p.force; // <--- NEW: pass through “force” from UI
+      const force = !!p.force;
 
       if (!ghToken) {
         (figma.ui as any).postMessage({
@@ -364,7 +395,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         return;
       }
 
-      const res = await ghListBranches(ghToken, owner, repo, page, force); // <--- NEW param
+      const res = await ghListBranches(ghToken, owner, repo, page, force);
       if (res.ok) {
         (figma.ui as any).postMessage({
           type: 'GITHUB_BRANCHES',
@@ -379,7 +410,6 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
           }
         });
 
-        // On first page, store the selected repo and default branch (UI may overwrite later).
         if (page === 1) {
           await setSelected({ owner, repo, branch: res.defaultBranch });
         }
@@ -399,7 +429,68 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
 
-    // UI requests create-branch (new ref from selected base)
+    // ---------------- GitHub: folder list / ensure (TOP-LEVEL) ----------------
+
+    if ((msg as any).type === 'GITHUB_FOLDER_LIST') {
+      const p = (msg as any).payload || {};
+      const owner = String(p.owner || '');
+      const repo = String(p.repo || '');
+      const branch = String(p.branch || '');
+      const path = String(p.path || '');
+
+      if (!ghToken) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_FOLDER_LIST_RESULT',
+          payload: { ok: false, owner, repo, branch, path, status: 401, message: 'No token' }
+        });
+        return;
+      }
+
+      const res = await ghListDirs(ghToken, owner, repo, branch, path);
+      if (res.ok) {
+        // Map dirs -> entries (UI expects 'entries')
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_FOLDER_LIST_RESULT',
+          payload: {
+            ok: true,
+            owner, repo,
+            branch,
+            path: res.path,
+            entries: res.dirs.map(d => ({ type: 'dir', name: d.name, path: d.path })),
+            rate: res.rate
+          }
+        });
+      } else {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_FOLDER_LIST_RESULT',
+          payload: { ok: false, owner, repo, branch, path: res.path, status: res.status, message: res.message, rate: res.rate }
+        });
+      }
+      return;
+    }
+
+    // NOTE: We keep this available but the UI does not call it to avoid extra commits.
+    if ((msg as any).type === 'GITHUB_CREATE_FOLDER') {
+      const p = (msg as any).payload || {};
+      const owner = String(p.owner || '');
+      const repo = String(p.repo || '');
+      const branch = String(p.branch || '');
+      const folderPath = String(p.folderPath || '');
+
+      if (!ghToken) {
+        (figma.ui as any).postMessage({
+          type: 'GITHUB_CREATE_FOLDER_RESULT',
+          payload: { ok: false, owner, repo, branch, folderPath, status: 401, message: 'No token' }
+        });
+        return;
+      }
+
+      const res = await ghEnsureFolder(ghToken, owner, repo, branch, folderPath);
+      (figma.ui as any).postMessage({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: res });
+      return;
+    }
+
+    // ---------------- GitHub: create branch ----------------
     if ((msg as any).type === 'GITHUB_CREATE_BRANCH') {
       const p = (msg as any).payload || {};
       const owner = String(p.owner || '');
@@ -424,9 +515,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
 
       const res = await ghCreateBranch(ghToken, owner, repo, newBranch, baseBranch);
       if (res.ok) {
-        // Persist new selection
         await setSelected({ owner, repo, branch: newBranch });
-
         (figma.ui as any).postMessage({
           type: 'GITHUB_CREATE_BRANCH_RESULT',
           payload: {
@@ -440,10 +529,6 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
             rate: res.rate
           }
         });
-
-        // Optional: re-fetch first page to ensure branch list up-to-date (UI also inserts locally)
-        // const sel = await getSelected();
-        // (figma.ui as any).postMessage({ type: 'INFO', payload: { message: `Created branch ${newBranch} from ${baseBranch}.` } });
       } else {
         (figma.ui as any).postMessage({
           type: 'GITHUB_CREATE_BRANCH_RESULT',
@@ -462,8 +547,6 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       }
       return;
     }
-
-    // ---------------- /GitHub branch flow ----------------
 
   } catch (e) {
     let message = 'Unknown error';

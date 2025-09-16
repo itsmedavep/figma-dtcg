@@ -28,8 +28,6 @@ let copyLogBtn: HTMLButtonElement | null = null;
 
 let allowHexChk: HTMLInputElement | null = null;
 
-let resizeHandleEl: HTMLElement | null = null;
-
 /* -------- GitHub controls (robust, optional) -------- */
 let ghTokenInput: HTMLInputElement | null = null;
 let ghRememberChk: HTMLInputElement | null = null;
@@ -37,18 +35,37 @@ let ghConnectBtn: HTMLButtonElement | null = null;
 let ghVerifyBtn: HTMLButtonElement | null = null; // optional if present
 let ghRepoSelect: HTMLSelectElement | null = null;
 
-// --- New (optional) Branch controls (only used if present in DOM) ---
+// --- Branch controls (optional if present) ---
 let ghBranchSearch: HTMLInputElement | null = null;
 let ghBranchSelect: HTMLSelectElement | null = null;
 let ghBranchCountEl: HTMLElement | null = null;
 
-// New-branch composer controls (present in HTML Variant 4)
+// New-branch composer (optional)
 let ghNewBranchBtn: HTMLButtonElement | null = null;
 let ghNewBranchRow: HTMLElement | null = null;
 let ghNewBranchName: HTMLInputElement | null = null;
 let ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
 
 let ghBranchRefreshBtn: HTMLButtonElement | null = null;
+
+// NEW: Folder picker DOM refs
+let ghFolderInput: HTMLInputElement | null = null;
+let ghPickFolderBtn: HTMLButtonElement | null = null;
+
+// ---- Folder list/create waiters (match replies from plugin) ----
+type FolderListEntry = { type: 'dir' | 'file'; name: string; path: string };
+
+const folderListWaiters: Array<{
+  path: string;
+  resolve: (v: { ok: true; entries: FolderListEntry[] }) => void;
+  reject: (v: { ok: false; message: string }) => void;
+}> = [];
+
+const folderCreateWaiters: Array<{
+  folderPath: string;
+  resolve: (v: { ok: true }) => void;
+  reject: (v: { ok: false; message: string; status?: number }) => void;
+}> = [];
 
 // --- TTL for page data (stale-while-revalidate) ---
 const BRANCH_TTL_MS = 60_000; // 60s
@@ -223,7 +240,7 @@ async function copyElText(el: HTMLElement | null, label: string): Promise<void> 
       const anyNavigator = navigator as any;
       if (anyNavigator.permissions && anyNavigator.permissions.query) {
         const perm = await anyNavigator.permissions.query({ name: 'clipboard-write' as PermissionName });
-        if (perm.state === 'granted' || perm.state === 'prompt') {
+        if (perm.state === 'granted' || 'prompt') {
           await navigator.clipboard.writeText((el?.textContent) ?? '');
           log(`Copied ${label} to clipboard.`);
           return;
@@ -390,7 +407,6 @@ function showNewBranchRow(show: boolean): void {
   if (!ghNewBranchRow) return;
   ghNewBranchRow.style.display = show ? 'flex' : 'none';
   if (show && ghNewBranchName) {
-    // Pre-fill suggestion
     if (!ghNewBranchName.value) {
       ghNewBranchName.value = `tokens/update-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
     }
@@ -421,7 +437,6 @@ function revalidateBranchesIfStale(forceLog: boolean = false): void {
     return;
   }
 
-  // Clear current cache and re-fetch page 1
   desiredBranch = restoreBranch || desiredBranch || null; // keep preference if possible
   defaultBranchFromApi = undefined;
   loadedPages = 0; hasMorePages = false; isFetchingBranches = true;
@@ -434,9 +449,8 @@ function revalidateBranchesIfStale(forceLog: boolean = false): void {
 
   (postToPlugin as any)({
     type: 'GITHUB_FETCH_BRANCHES',
-    payload: { owner: currentOwner, repo: currentRepo, page: 1, force: true }
+    payload: { owner: currentOwner, repo: currentRepo, page: 1 }
   });
-
 }
 
 /* -------------------------------------------------------
@@ -575,7 +589,6 @@ function requestPreviewForCurrent(): void {
 
 /* -------------------------------------------------------
  * GitHub: Branch helpers (Variant 4)
- * These functions are guarded by presence of branch DOM nodes.
  * ----------------------------------------------------- */
 function setBranchDisabled(disabled: boolean, placeholder?: string): void {
   if (!ghBranchSelect) return;
@@ -609,21 +622,18 @@ function renderOptions(): void {
     ghBranchSelect.appendChild(opt);
   }
 
-  // Virtualization sentinel: additional items in filtered set
   if (filteredBranches.length > renderCount) {
     const opt = document.createElement('option');
     opt.value = '__more__';
     opt.textContent = `Load more… (${filteredBranches.length - renderCount} more)`;
     ghBranchSelect.appendChild(opt);
   } else if (hasMorePages) {
-    // API has more pages
     const opt = document.createElement('option');
     opt.value = '__fetch__';
     opt.textContent = 'Load next page…';
     ghBranchSelect.appendChild(opt);
   }
 
-  // Restore selection preference
   const want = desiredBranch || defaultBranchFromApi || prev;
   if (want && slice.includes(want)) {
     ghBranchSelect.value = want;
@@ -679,12 +689,12 @@ function onBranchChange(): void {
   if (!v) return;
 
   desiredBranch = v;
-  // Immediately verify branch exists server-side; if 404, plugin tells us to prune it.
   (postToPlugin as any)({
-    type: 'GITHUB_VERIFY_BRANCH',
-    payload: { owner: currentOwner, repo: currentRepo, branch: v, force: true }
+    type: 'GITHUB_SELECT_BRANCH',
+    payload: { owner: currentOwner, repo: currentRepo, branch: v }
   });
 
+  updateFolderControlsEnabled();
 }
 
 /* -------------------------------------------------------
@@ -719,13 +729,237 @@ function onGitHubLogoutClick() {
   if (ghBranchSearch) ghBranchSearch.value = '';
   if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
   updateBranchCount();
+  updateFolderControlsEnabled();
+  if (ghFolderInput) ghFolderInput.value = '';
   log('GitHub: Logged out.');
+}
+
+/* -------------------------------------------------------
+ * Folder picker helpers (UI-only; lists from plugin)
+ * ----------------------------------------------------- */
+
+function getCurrentBranch(): string {
+  const v = (ghBranchSelect && !ghBranchSelect.disabled &&
+    ghBranchSelect.value && ghBranchSelect.value !== '__more__' && ghBranchSelect.value !== '__fetch__')
+    ? ghBranchSelect.value
+    : (desiredBranch || defaultBranchFromApi || '');
+  return v || '';
+}
+
+function updateFolderControlsEnabled(): void {
+  const br = getCurrentBranch();
+  const enable = !!(currentOwner && currentRepo && br);
+  if (ghPickFolderBtn) ghPickFolderBtn.disabled = !enable;
+}
+
+function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string }> {
+  return new Promise((resolve, _reject) => {
+    const req = { path: path.replace(/^\/+|\/+$/g, '') };
+    folderListWaiters.push({
+      path: req.path,
+      resolve: (v) => resolve(v),
+      reject: (v) => resolve(v) // resolve with { ok:false } to keep caller simple
+    });
+    (postToPlugin as any)({
+      type: 'GITHUB_FOLDER_LIST',
+      payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), path: req.path }
+    });
+  });
+}
+
+function ensureFolder(folderPath: string): Promise<{ ok: true } | { ok: false; message: string; status?: number }> {
+  return new Promise((resolve) => {
+    const fp = folderPath.replace(/^\/+|\/+$/g, '');
+    folderCreateWaiters.push({
+      folderPath: fp,
+      resolve: (v) => resolve(v),
+      reject: (v) => resolve(v)
+    });
+    (postToPlugin as any)({
+      type: 'GITHUB_CREATE_FOLDER',
+      payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), folderPath: fp }
+    });
+  });
+}
+
+function openFolderPicker(): void {
+  if (!currentOwner || !currentRepo) { log('Pick a repository first.'); return; }
+  const ref = getCurrentBranch();
+  if (!ref) { log('Pick a branch first.'); return; }
+
+  const startPath = ghFolderInput?.value?.trim() || '';
+
+  // Build a tiny modal
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.background = 'rgba(0,0,0,0.25)';
+  overlay.style.zIndex = '99999';
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  const modal = document.createElement('div');
+  modal.style.position = 'absolute';
+  modal.style.left = '50%';
+  modal.style.top = '50%';
+  modal.style.transform = 'translate(-50%, -50%)';
+  modal.style.width = 'min(560px, 92vw)';
+  modal.style.maxHeight = '80vh';
+  modal.style.display = 'flex';
+  modal.style.flexDirection = 'column';
+  modal.style.background = '#fff';
+  modal.style.border = '1px solid var(--border)';
+  modal.style.borderRadius = '10px';
+  modal.style.boxShadow = '0 10px 30px rgba(0,0,0,.12)';
+  modal.style.padding = '12px';
+  modal.style.gap = '10px';
+
+  const title = document.createElement('div');
+  title.innerHTML = `<div class="eyebrow">Pick destination</div>
+    <div class="title" style="font-size:14px;">${currentOwner}/${currentRepo} @ ${ref}</div>`;
+
+  const pathRow = document.createElement('div');
+  pathRow.style.display = 'flex';
+  pathRow.style.gap = '8px';
+  const pathInput = document.createElement('input');
+  pathInput.type = 'text';
+  pathInput.value = startPath;
+  pathInput.placeholder = 'tokens/ (optional)';
+  pathInput.style.flex = '1';
+  pathInput.readOnly = false;
+  const chooseHereBtn = document.createElement('button');
+  chooseHereBtn.textContent = 'Use this folder';
+  chooseHereBtn.className = 'tab-btn';
+  chooseHereBtn.style.flex = '0 0 auto';
+
+  const list = document.createElement('div');
+  list.style.border = '1px solid var(--border)';
+  list.style.borderRadius = '8px';
+  list.style.background = '#fff';
+  list.style.minHeight = '160px';
+  list.style.maxHeight = '50vh';
+  list.style.overflow = 'auto';
+  list.style.padding = '6px';
+
+  const actionsRow = document.createElement('div');
+  actionsRow.style.display = 'flex';
+  actionsRow.style.gap = '8px';
+  actionsRow.style.justifyContent = 'space-between';
+
+  const newBtn = document.createElement('button');
+  newBtn.textContent = 'New folder…';
+  newBtn.className = 'tab-btn';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className = 'tab-btn';
+
+  pathRow.appendChild(pathInput);
+  pathRow.appendChild(chooseHereBtn);
+  actionsRow.appendChild(newBtn);
+  actionsRow.appendChild(cancelBtn);
+  modal.appendChild(title);
+  modal.appendChild(pathRow);
+  modal.appendChild(list);
+  modal.appendChild(actionsRow);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  let currentPath = startPath.replace(/^\/+|\/+$/g, '');
+
+  function close() {
+    try { document.body.removeChild(overlay); } catch { /* noop */ }
+  }
+
+  function setPath(p: string) {
+    currentPath = p.replace(/^\/+/, '').replace(/\/+$/, '');
+    pathInput.value = currentPath;
+    refreshListing();
+  }
+
+  function item(label: string, click: () => void, muted = false) {
+    const row = document.createElement('div');
+    row.textContent = label;
+    row.style.padding = '6px 8px';
+    row.style.cursor = 'pointer';
+    row.style.borderRadius = '6px';
+    row.style.userSelect = 'none';
+    row.style.color = muted ? 'var(--ink-muted)' : 'inherit';
+    row.addEventListener('click', click);
+    row.addEventListener('mouseenter', () => { row.style.background = '#f3f4f6'; });
+    row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+    return row;
+  }
+
+  async function refreshListing() {
+    list.innerHTML = '';
+    const p = currentPath;
+    const parent = p.split('/').filter(Boolean);
+    parent.pop();
+    if (p) list.appendChild(item('.. (up one level)', () => setPath(parent.join('/')), true));
+
+    const res = await listDir(currentPath);
+    if (!(res as any).ok) {
+      list.appendChild(item(`Error: ${(res as any).message || 'failed to fetch'}`, () => { }, true));
+      return;
+    }
+    const entries = (res as any).entries as FolderListEntry[];
+    const dirs = (entries || []).filter(e => e.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
+    if (dirs.length === 0) {
+      list.appendChild(item('(no subfolders)', () => { }, true));
+    } else {
+      for (const d of dirs) {
+        list.appendChild(item(d.name + '/', () => {
+          const next = currentPath ? (currentPath + '/' + d.name) : d.name;
+          setPath(next);
+        }));
+      }
+    }
+  }
+
+  // allow typing path directly
+  pathInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); setPath(pathInput.value || ''); }
+  });
+  pathInput.addEventListener('blur', () => setPath(pathInput.value || ''));
+
+  chooseHereBtn.addEventListener('click', () => {
+    const normalized = currentPath ? (currentPath.endsWith('/') ? currentPath : currentPath + '/') : '';
+    if (ghFolderInput) ghFolderInput.value = normalized;
+    (postToPlugin as any)({
+      type: 'GITHUB_SET_FOLDER',
+      payload: { owner: currentOwner, repo: currentRepo, folder: normalized }
+    });
+    close();
+    log(`Folder selected: ${normalized || '(repo root)'}`);
+  });
+
+  // NO COMMIT here: virtual create; actual creation will happen with the first write on export/PR.
+  newBtn.addEventListener('click', () => {
+    const name = prompt('New folder name (no spaces; use "-" or "_")', 'tokens');
+    if (!name) return;
+    const n = name.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!n || /\s/.test(n) || /[~^:?*[\]\\]/.test(n)) { alert('Invalid folder name.'); return; }
+    const next = currentPath ? (currentPath + '/' + n) : n;
+    setPath(next);
+    const normalized = next.endsWith('/') ? next : next + '/';
+    if (ghFolderInput) ghFolderInput.value = normalized;
+    (postToPlugin as any)({
+      type: 'GITHUB_SET_FOLDER',
+      payload: { owner: currentOwner, repo: currentRepo, folder: normalized }
+    });
+    close();
+    log(`Folder selected (will be created on export): ${normalized}`);
+  });
+
+  cancelBtn.addEventListener('click', close);
+
+  // initial
+  setPath(currentPath);
 }
 
 /* -------------------------------------------------------
  * Message pump
  * ----------------------------------------------------- */
-// Restore hints sent from plugin (selected repo/branch)
 let restoreOwner: string | null = null;
 let restoreRepo: string | null = null;
 let restoreBranch: string | null = null;
@@ -785,7 +1019,6 @@ window.addEventListener('message', async (event: MessageEvent) => {
       const ok = await finishPendingSave(text);
       if (ok) {
         log('Saved ' + fname + ' via file picker.');
-
         const div = document.createElement('div');
         const link = document.createElement('a');
         link.href = '#';
@@ -853,13 +1086,19 @@ window.addEventListener('message', async (event: MessageEvent) => {
     return;
   }
 
-  // --- New: restore selected repo/branch (from plugin storage)
+  // Restore selected repo/branch/folder (from plugin storage)
   if ((msg as any).type === 'GITHUB_RESTORE_SELECTED') {
     const p = (msg as any).payload || {};
     restoreOwner = typeof p.owner === 'string' ? p.owner : null;
     restoreRepo = typeof p.repo === 'string' ? p.repo : null;
     restoreBranch = typeof p.branch === 'string' ? p.branch : null;
-    desiredBranch = restoreBranch; // preference when options render
+
+    if (typeof p.folder === 'string' && ghFolderInput) {
+      const f = p.folder.replace(/^\/+|\/+$/g, '');
+      ghFolderInput.value = f ? (f.endsWith('/') ? f : f + '/') : '';
+    }
+
+    desiredBranch = restoreBranch;
     // If repos already loaded, try to select now
     if (ghRepoSelect && restoreOwner && restoreRepo) {
       const want = `${restoreOwner}/${restoreRepo}`;
@@ -879,14 +1118,13 @@ window.addEventListener('message', async (event: MessageEvent) => {
     return;
   }
 
-  // --- New: branches page arrived
+  // Branches page arrived
   if ((msg as any).type === 'GITHUB_BRANCHES') {
     const pl = (msg as any).payload || {};
     const owner = String(pl.owner || '');
     const repo = String(pl.repo || '');
     if (owner !== currentOwner || repo !== currentRepo) return; // stale
 
-    // mark fresh
     lastBranchesFetchedAtMs = Date.now();
 
     loadedPages = Number(pl.page || 1);
@@ -897,20 +1135,18 @@ window.addEventListener('message', async (event: MessageEvent) => {
       defaultBranchFromApi = pl.defaultBranch;
     }
 
-    // Enable "Create new…" now that we have a repo context
     const btn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
     if (btn) btn.disabled = false;
 
     const names = Array.isArray(pl.branches) ? (pl.branches as Array<{ name: string }>).map(b => b.name) : [];
-    // Merge unique names
     const set = new Set(allBranches);
     for (const n of names) if (n) set.add(n);
     allBranches = Array.from(set).sort((a, b) => a.localeCompare(b));
 
-    applyBranchFilter(); // also renders + updates count
+    applyBranchFilter();
     setBranchDisabled(false);
+    updateFolderControlsEnabled();
 
-    // Near rate-limit hint (optional)
     const rate = pl.rate as { remaining?: number; resetEpochSec?: number } | undefined;
     if (rate && typeof rate.remaining === 'number' && rate.remaining <= 3 && typeof rate.resetEpochSec === 'number') {
       const t = new Date(rate.resetEpochSec * 1000).toLocaleTimeString();
@@ -921,7 +1157,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
     return;
   }
 
-  // --- New: branch load error
+  // Branch load error
   if ((msg as any).type === 'GITHUB_BRANCHES_ERROR') {
     const pl = (msg as any).payload || {};
     const owner = String(pl.owner || '');
@@ -929,6 +1165,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
     if (owner !== currentOwner || repo !== currentRepo) return; // stale
     isFetchingBranches = false;
     setBranchDisabled(false);
+    updateFolderControlsEnabled();
     log(`Branch load failed (status ${pl.status}): ${pl.message || 'unknown error'}`);
     if (pl.samlRequired) log('This org requires SSO. Open the repo in your browser and authorize SSO for your token.');
     if (pl.rate && typeof pl.rate.resetEpochSec === 'number') {
@@ -940,19 +1177,15 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
   if ((msg as any).type === 'GITHUB_CREATE_BRANCH_RESULT') {
     const pl = (msg as any).payload || {};
-    // Re-enable confirm button for next attempt
     if (ghCreateBranchConfirmBtn) ghCreateBranchConfirmBtn.disabled = false;
 
     if (!pl || typeof pl.ok !== 'boolean') return;
 
     if (pl.ok) {
-      const owner = String(pl.owner || currentOwner || '');
-      const repo = String(pl.repo || currentRepo || '');
       const baseBranch = String(pl.baseBranch || '');
       const newBranch = String(pl.newBranch || '');
       const url = String(pl.html_url || '');
 
-      // Merge new branch into local list if missing
       if (newBranch) {
         const s = new Set(allBranches);
         if (!s.has(newBranch)) {
@@ -960,11 +1193,12 @@ window.addEventListener('message', async (event: MessageEvent) => {
           allBranches = Array.from(s).sort((a, b) => a.localeCompare(b));
         }
         desiredBranch = newBranch;
-        applyBranchFilter(); // re-render + count
+        applyBranchFilter();
         if (ghBranchSelect) ghBranchSelect.value = newBranch;
       }
 
-      // Hide composer and clear field
+      updateFolderControlsEnabled();
+
       showNewBranchRow(false);
       if (ghNewBranchName) ghNewBranchName.value = '';
 
@@ -986,7 +1220,6 @@ window.addEventListener('message', async (event: MessageEvent) => {
       return;
     }
 
-    // Error path
     const status = pl.status ?? 0;
     const message = pl.message || 'unknown error';
     log(`Create branch failed (status ${status}): ${message}`);
@@ -994,12 +1227,11 @@ window.addEventListener('message', async (event: MessageEvent) => {
       log('This org requires SSO. Open the repo in your browser and authorize SSO for your token.');
     } else if (status === 403) {
       if (pl.noPushPermission) {
-        log('You do not have push permission to this repository (or the token does not map to a user with push). Ask a maintainer for write access.');
+        log('You do not have push permission to this repository. Ask a maintainer for write access.');
       } else {
         log('Likely a token permission issue:');
         log('• Classic PAT: add the "repo" scope (or "public_repo" for public repos).');
         log('• Fine-grained PAT: grant this repository and set "Contents: Read and write".');
-        log('If the org enforces SSO, authorize the token for the org.');
       }
     }
     if (pl.rate && typeof pl.rate.resetEpochSec === 'number') {
@@ -1007,33 +1239,44 @@ window.addEventListener('message', async (event: MessageEvent) => {
       log(`Rate limit issue; resets ~${t}`);
     }
     return;
-
   }
 
-  if ((msg as any).type === 'GITHUB_VERIFY_BRANCH_RESULT') {
+  // Folder list result (echoed by plugin)
+  if ((msg as any).type === 'GITHUB_FOLDER_LIST_RESULT') {
     const pl = (msg as any).payload || {};
-    const { owner, repo, branch, ok } = pl;
-    if (owner !== currentOwner || repo !== currentRepo) return; // stale
+    const path = String(pl.path || '').replace(/^\/+|\/+$/g, '');
+    const ok = !!pl.ok;
+    const entries = Array.isArray(pl.entries) ? pl.entries : [];
+    const message = String(pl.message || '');
 
-    if (!ok && branch) {
-      // Prune the missing branch from local state and UI immediately.
-      const before = allBranches.length;
-      allBranches = allBranches.filter(n => n !== branch);
-      applyBranchFilter();
-      if (ghBranchSelect && ghBranchSelect.value === branch) {
-        // If it was selected, fall back to default/first
-        if (defaultBranchFromApi && allBranches.includes(defaultBranchFromApi)) {
-          ghBranchSelect.value = defaultBranchFromApi;
-        } else if (ghBranchSelect.options.length) {
-          ghBranchSelect.selectedIndex = 0;
-        }
+    for (let i = 0; i < folderListWaiters.length; i++) {
+      if (folderListWaiters[i].path === path) {
+        const waiter = folderListWaiters.splice(i, 1)[0];
+        if (ok) waiter.resolve({ ok: true, entries });
+        else waiter.reject({ ok: false, message: message || `HTTP ${pl.status || 0}` });
+        break;
       }
-      const removed = before !== allBranches.length;
-      log(`Branch "${branch}" no longer exists on GitHub; ${removed ? 'removed from list.' : 'list updated.'}`);
     }
     return;
   }
 
+  // Create folder result (kept for future – UI does not call it by default)
+  if ((msg as any).type === 'GITHUB_CREATE_FOLDER_RESULT') {
+    const pl = (msg as any).payload || {};
+    const fp = String(pl.folderPath || '').replace(/^\/+|\/+$/g, '');
+    const ok = !!pl.ok;
+    const message = String(pl.message || '');
+
+    for (let i = 0; i < folderCreateWaiters.length; i++) {
+      if (folderCreateWaiters[i].folderPath === fp) {
+        const waiter = folderCreateWaiters.splice(i, 1)[0];
+        if (ok) waiter.resolve({ ok: true });
+        else waiter.reject({ ok: false, message: message || `HTTP ${pl.status || 0}`, status: pl.status });
+        break;
+      }
+    }
+    return;
+  }
 
 });
 
@@ -1046,8 +1289,6 @@ document.addEventListener('DOMContentLoaded', function () {
   // Assign elements
   logEl = document.getElementById('log');
   rawEl = document.getElementById('raw');
-
-  resizeHandleEl = document.getElementById('resizeHandle');
 
   exportAllChk = document.getElementById('exportAllChk') as HTMLInputElement | null;
   collectionSelect = document.getElementById('collectionSelect') as HTMLSelectElement | null;
@@ -1081,10 +1322,14 @@ document.addEventListener('DOMContentLoaded', function () {
     || (document.getElementById('ghVerifyBtn') as HTMLButtonElement | null);
   ghRepoSelect = document.getElementById('ghRepoSelect') as HTMLSelectElement | null;
 
-  // Optional Branch controls (found only if present in your HTML)
+  // Optional Branch controls
   ghBranchSearch = document.getElementById('ghBranchSearch') as HTMLInputElement | null;
   ghBranchSelect = document.getElementById('ghBranchSelect') as HTMLSelectElement | null;
   ghBranchCountEl = document.getElementById('ghBranchCount') as HTMLElement | null;
+
+  // Folder picker controls
+  ghFolderInput = document.getElementById('ghFolderInput') as HTMLInputElement | null;
+  ghPickFolderBtn = document.getElementById('ghPickFolderBtn') as HTMLButtonElement | null;
 
   // Load saved “remember me” preference immediately (UI-level persistence)
   ghRememberPref = loadRememberPref();
@@ -1102,21 +1347,19 @@ document.addEventListener('DOMContentLoaded', function () {
   if (ghConnectBtn) ghConnectBtn.addEventListener('click', onGitHubConnectClick);
   if (ghVerifyBtn) ghVerifyBtn.addEventListener('click', onGitHubVerifyClick);
 
-  // --- New: repo → branch load (only if branch UI present)
+  // Repo → branch load
   if (ghRepoSelect && ghBranchSelect) {
     ghRepoSelect.addEventListener('change', function () {
       const value = ghRepoSelect!.value; // "owner/repo"
       const parts = value.split('/');
       currentOwner = parts[0] || '';
       currentRepo = parts[1] || '';
-      // new repo -> list freshness resets
+
       lastBranchesFetchedAtMs = 0;
 
-      // Persist repo choice (plugin stores it for restore)
       (postToPlugin as any)({ type: 'GITHUB_SELECT_REPO', payload: { owner: currentOwner, repo: currentRepo } });
 
-      // Reset branch state
-      desiredBranch = restoreBranch || null;      // prefer restored branch on first load
+      desiredBranch = restoreBranch || null;
       defaultBranchFromApi = undefined;
       loadedPages = 0; hasMorePages = false; isFetchingBranches = false;
       allBranches = []; filteredBranches = [];
@@ -1125,20 +1368,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
       setBranchDisabled(true, 'Loading branches…');
       updateBranchCount();
+      updateFolderControlsEnabled();
+
+      // Clear any previously chosen folder when repo changes
+      if (ghFolderInput) ghFolderInput.value = '';
 
       if (currentOwner && currentRepo) {
         log(`GitHub: loading branches for ${currentOwner}/${currentRepo}…`);
         isFetchingBranches = true;
         (postToPlugin as any)({
           type: 'GITHUB_FETCH_BRANCHES',
-          payload: { owner: currentOwner, repo: currentRepo, page: 1, force: true }
+          payload: { owner: currentOwner, repo: currentRepo, page: 1 }
         });
-
       }
     });
   }
 
-  // Branch search and list listeners (if present)
+  // Branch search and list listeners
   if (ghBranchSearch) {
     let t: number | undefined;
     ghBranchSearch.addEventListener('input', () => {
@@ -1156,7 +1402,6 @@ document.addEventListener('DOMContentLoaded', function () {
   if (ghBranchSearch) {
     ghBranchSearch.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
-        // Treat Enter as intent → revalidate-if-stale
         revalidateBranchesIfStale(true);
       }
     });
@@ -1165,10 +1410,14 @@ document.addEventListener('DOMContentLoaded', function () {
   ghBranchRefreshBtn = document.getElementById('ghBranchRefreshBtn') as HTMLButtonElement | null;
   if (ghBranchRefreshBtn) {
     ghBranchRefreshBtn.addEventListener('click', () => {
-      // Always force a refresh by invalidating the TTL
       lastBranchesFetchedAtMs = 0;
       revalidateBranchesIfStale(true);
     });
+  }
+
+  // Folder picker button wiring
+  if (ghPickFolderBtn) {
+    ghPickFolderBtn.addEventListener('click', openFolderPicker);
   }
 
   // Other UI events
@@ -1280,10 +1529,8 @@ document.addEventListener('DOMContentLoaded', function () {
   setDrawerOpen(getSavedDrawerOpen());
   postToPlugin({ type: 'UI_READY' });
 
-  // If branch UI exists, set initial placeholder
   if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
   updateBranchCount();
-  // Request a size that fits current content
   autoFitOnce();
 
   // New-branch composer DOM
@@ -1305,7 +1552,6 @@ document.addEventListener('DOMContentLoaded', function () {
       const err = validateBranchName(name);
       if (err) { log(`New branch: ${err}`); return; }
 
-      // Use currently selected branch as base (fallback to default if available)
       const base =
         (ghBranchSelect && ghBranchSelect.value && !ghBranchSelect.disabled && ghBranchSelect.value !== '__more__' && ghBranchSelect.value !== '__fetch__')
           ? ghBranchSelect.value
@@ -1318,60 +1564,9 @@ document.addEventListener('DOMContentLoaded', function () {
         type: 'GITHUB_CREATE_BRANCH',
         payload: { owner: currentOwner, repo: currentRepo, baseBranch: base, newBranch: name }
       });
-      // UX: prevent double clicks
       ghCreateBranchConfirmBtn!.disabled = true;
     });
   }
-
-  // --- Drag-to-resize wiring (restores manual resizing) ---
-  if (resizeHandleEl) {
-    let dragging = false;
-    let startX = 0, startY = 0;
-    let startW = 0, startH = 0;
-    let raf = 0;
-
-    const onMove = (e: MouseEvent) => {
-      if (!dragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      const nextW = startW + dx;
-      const nextH = startH + dy;
-
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        // postResize already clamps to 720–1600w and 420–1200h
-        postResize(nextW, nextH);
-      });
-    };
-
-    const onUp = () => {
-      dragging = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      // restore selection
-      try { document.body.style.userSelect = ''; } catch { }
-    };
-
-    resizeHandleEl.addEventListener('mousedown', (e: MouseEvent) => {
-      e.preventDefault();
-      dragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      startW = window.innerWidth;
-      startH = window.innerHeight;
-
-      // prevent accidental text selection while dragging
-      try { document.body.style.userSelect = 'none'; } catch { }
-
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-
-    // Optional: double-click to auto-fit once
-    resizeHandleEl.addEventListener('dblclick', () => autoFitOnce());
-  }
-  // --- /Drag-to-resize wiring ---
 
 });
 
