@@ -5,12 +5,12 @@
       "$value": {
         "colorSpace": "srgb",
         "components": [
-          1,
           0,
+          1,
           0
         ],
         "alpha": 1,
-        "hex": "#ff0000"
+        "hex": "#00ff00"
       },
       "$description": "testing color description",
       "$extensions": {
