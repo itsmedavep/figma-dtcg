@@ -63,6 +63,23 @@ function encodePathSegments(path: string): string {
     return norm.split('/').filter(Boolean).map(encodeURIComponent).join('/');
 }
 
+function decodeBase64ToUtf8(b64Text: string): string {
+    try {
+        const bin = atob(b64Text);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const dec = new TextDecoder();
+        return dec.decode(bytes);
+    } catch {
+        // Fallback: attempt via decodeURIComponent escape hatch
+        try {
+            return decodeURIComponent(escape(atob(b64Text)));
+        } catch {
+            return '';
+        }
+    }
+}
+
 /* =========================
  * Auth / Repos
  * ========================= */
@@ -785,5 +802,196 @@ export async function ghCommitFiles(
         };
     } catch (e) {
         return { ok: false, owner, repo, branch, status: 0, message: (e as Error)?.message || 'network error' };
+    }
+}
+
+/* =========================
+ * File contents
+ * ========================= */
+
+export type GhGetFileContentsResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        branch: string;
+        path: string;
+        sha: string;
+        size?: number;
+        contentText: string;
+        encoding: string;
+        rate?: GhRateInfo;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        branch: string;
+        path: string;
+        status: number;
+        message: string;
+        rate?: GhRateInfo;
+        isDirectory?: boolean;
+        samlRequired?: boolean;
+    };
+
+export async function ghGetFileContents(
+    token: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    path: string
+): Promise<GhGetFileContentsResult> {
+    const cleanPath = encodePathSegments(path);
+    const base = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}`;
+    const url = `${base}?ref=${encodeURIComponent(branch)}`;
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
+
+    try {
+        const res = await fetch(url, { headers });
+        const rate = parseRate((res as any)?.headers);
+        const saml = headerGet((res as any)?.headers, 'x-github-saml');
+
+        if (res.status === 403 && saml) {
+            return { ok: false, owner, repo, branch, path: cleanPath, status: 403, message: 'SAML/SSO required', samlRequired: true, rate };
+        }
+
+        if (!res.ok) {
+            const text = await safeText(res);
+            return { ok: false, owner, repo, branch, path: cleanPath, status: res.status, message: text || `HTTP ${res.status}`, rate };
+        }
+
+        const json = await res.json();
+        if (Array.isArray(json)) {
+            return {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: cleanPath,
+                status: 409,
+                message: 'Path refers to a directory. Provide a file path.',
+                rate,
+                isDirectory: true
+            };
+        }
+
+        const encoding = typeof json?.encoding === 'string' ? json.encoding : '';
+        const content = typeof json?.content === 'string' ? json.content : '';
+        const sha = typeof json?.sha === 'string' ? json.sha : '';
+        const size = typeof json?.size === 'number' ? json.size : undefined;
+
+        if (!content) {
+            return { ok: false, owner, repo, branch, path: cleanPath, status: 422, message: 'File had no content', rate };
+        }
+
+        let text = content;
+        if (encoding === 'base64') {
+            text = decodeBase64ToUtf8(content.replace(/\s+/g, ''));
+        }
+
+        return {
+            ok: true,
+            owner,
+            repo,
+            branch,
+            path: cleanPath,
+            sha,
+            size,
+            contentText: text,
+            encoding,
+            rate
+        };
+    } catch (e) {
+        return { ok: false, owner, repo, branch, path: cleanPath, status: 0, message: (e as Error)?.message || 'network error' };
+    }
+}
+
+/* =========================
+ * Pull requests
+ * ========================= */
+
+export type GhCreatePullRequestResult =
+    | {
+        ok: true;
+        owner: string;
+        repo: string;
+        base: string;
+        head: string;
+        number: number;
+        url: string;
+        rate?: GhRateInfo;
+        alreadyExists?: false;
+    }
+    | {
+        ok: false;
+        owner: string;
+        repo: string;
+        base: string;
+        head: string;
+        status: number;
+        message: string;
+        rate?: GhRateInfo;
+        alreadyExists?: boolean;
+        samlRequired?: boolean;
+    };
+
+export async function ghCreatePullRequest(
+    token: string,
+    owner: string,
+    repo: string,
+    params: { title: string; head: string; base: string; body?: string }
+): Promise<GhCreatePullRequestResult> {
+    const url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    } as const;
+
+    const title = String(params.title || '').trim();
+    const head = String(params.head || '').trim();
+    const base = String(params.base || '').trim();
+    const body = typeof params.body === 'string' && params.body.length ? params.body : undefined;
+
+    if (!title || !head || !base) {
+        return { ok: false, owner, repo, base, head, status: 400, message: 'missing PR parameters' };
+    }
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ title, head, base, body })
+        });
+        const rate = parseRate((res as any)?.headers);
+        const saml = headerGet((res as any)?.headers, 'x-github-saml');
+
+        if (res.status === 403 && saml) {
+            return { ok: false, owner, repo, base, head, status: 403, message: 'SAML/SSO required', samlRequired: true, rate };
+        }
+
+        if (!res.ok) {
+            const text = await safeText(res);
+            const msg = text || `HTTP ${res.status}`;
+            const already = res.status === 422 && /already exists/i.test(msg);
+            return { ok: false, owner, repo, base, head, status: res.status, message: msg, rate, alreadyExists: already };
+        }
+
+        const json = await res.json();
+        const number = typeof json?.number === 'number' ? json.number : 0;
+        const prUrl = typeof json?.html_url === 'string' ? json.html_url : '';
+
+        if (!number || !prUrl) {
+            return { ok: false, owner, repo, base, head, status: 500, message: 'invalid PR response', rate };
+        }
+
+        return { ok: true, owner, repo, base, head, number, url: prUrl, rate };
+    } catch (e) {
+        return { ok: false, owner, repo, base, head, status: 0, message: (e as Error)?.message || 'network error' };
     }
 }

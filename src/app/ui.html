@@ -358,6 +358,108 @@
       border-color: var(--ink-muted);
     }
 
+    /* Folder picker modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 1.5rem;
+      z-index: 99999;
+    }
+
+    .modal-overlay.is-open {
+      display: flex;
+    }
+
+    .folder-picker-modal {
+      width: min(560px, 92vw);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .12);
+      padding: 12px;
+    }
+
+    .folder-picker-header {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .folder-picker-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .folder-picker-path-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .folder-picker-path-row input {
+      flex: 1;
+    }
+
+    .folder-picker-list {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      min-height: 160px;
+      max-height: 50vh;
+      overflow: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .folder-picker-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      font-size: 12px;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .folder-picker-row:not([disabled]):hover {
+      background: #f3f4f6;
+    }
+
+    .folder-picker-row.is-muted {
+      color: var(--ink-muted);
+      cursor: default;
+    }
+
+    .folder-picker-row.is-muted:hover {
+      background: transparent;
+    }
+
+    .folder-picker-row[disabled] {
+      cursor: default;
+    }
+
+    .folder-picker-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
     .tab-panel {
       display: none;
       flex-direction: column;
@@ -598,6 +700,22 @@
               </div>
             </div>
 
+            <!-- PR toggle -->
+            <div class="row">
+              <div>
+                <label>Pull request</label>
+                <label style="display:flex; align-items:center; gap:.35rem;">
+                  <input type="checkbox" id="ghCreatePrChk" />
+                  Create a pull request after committing
+                </label>
+                <div id="ghPrOptions" class="stack" style="margin-top:.5rem; display:none; gap:.5rem;">
+                  <input id="ghPrBranchInput" type="text" placeholder="tokens/update-20240101-1200" />
+                  <input id="ghPrTitleInput" type="text" placeholder="Pull request title" />
+                  <textarea id="ghPrBodyInput" rows="3" placeholder="Optional PR description"></textarea>
+                </div>
+              </div>
+            </div>
+
             <!-- Scope -->
             <div class="row">
               <div>
@@ -620,13 +738,45 @@
             <!-- Actions -->
             <div class="row">
               <div class="row" style="gap:.5rem;">
-                <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit</button>
-                <button id="ghOpenPrBtn" class="css-button-neumorphic" disabled>Open PR</button>
-                <button id="ghFetchOriginBtn" class="css-button-neumorphic" disabled>Fetch origin</button>
+                <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit / PR</button>
+              </div>
+            </div>
+
+            <!-- Import from GitHub -->
+            <div class="row">
+              <div>
+                <label>Import tokens from GitHub</label>
+                <div class="row">
+                  <input id="ghFetchPathInput" type="text" placeholder="tokens/Tokens - Light.json" />
+                  <div style="flex:0 0 auto;">
+                    <button id="ghFetchTokensBtn" class="css-button-neumorphic" disabled>Fetch &amp; Import</button>
+                  </div>
+                </div>
+                <div class="muted">Downloads a JSON file from the selected repo/branch and imports it.</div>
               </div>
             </div>
 
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="folderPickerOverlay" class="modal-overlay" hidden aria-hidden="true">
+      <div class="folder-picker-modal" role="dialog" aria-modal="true" aria-labelledby="folderPickerTitle">
+        <div class="folder-picker-header">
+          <div class="eyebrow">Pick destination</div>
+          <div id="folderPickerTitle" class="folder-picker-title">owner/repo @ branch</div>
+        </div>
+        <div class="folder-picker-path-row">
+          <input id="folderPickerPath" type="text" placeholder="tokens/ (optional)" autocomplete="off" />
+          <button id="folderPickerUseBtn" class="tab-btn">Use this folder</button>
+        </div>
+        <div id="folderPickerList" class="folder-picker-list">
+          <button class="folder-picker-row is-muted" type="button" disabled>Loading…</button>
+        </div>
+        <div class="folder-picker-actions">
+          <button id="folderPickerNewBtn" class="tab-btn">New folder…</button>
+          <button id="folderPickerCancelBtn" class="tab-btn">Cancel</button>
         </div>
       </div>
     </div>
