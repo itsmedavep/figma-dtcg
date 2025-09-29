@@ -1,4 +1,7 @@
 // src/core/github/api.ts
+// Lightweight GitHub API wrapper tuned for the Figma plugin sandbox.
+// - Wraps fetch with retries and rate-limit awareness
+// - Normalizes payloads so the UI layer stays framework-agnostic
 
 /* =========================
  * Common types & helpers
@@ -13,6 +16,7 @@ export type GhUserResult =
     | { ok: true; user: GhUser }
     | { ok: false; error: string };
 
+/** Safe header getter that handles figma's Response polyfill. */
 function headerGet(h: any, key: string): string | null {
     try {
         if (h && typeof h.get === 'function') return h.get(key);
@@ -25,6 +29,7 @@ export interface GhRateInfo {
     resetEpochSec?: number;
 }
 
+/** Parse rate limit headers into a tiny struct (when present). */
 function parseRate(h: any): GhRateInfo | undefined {
     const remainingStr = headerGet(h, 'x-ratelimit-remaining');
     const resetStr = headerGet(h, 'x-ratelimit-reset');
@@ -36,6 +41,7 @@ function parseRate(h: any): GhRateInfo | undefined {
     return (rate.remaining !== undefined || rate.resetEpochSec !== undefined) ? rate : undefined;
 }
 
+/** Always resolve `res.text()` without throwing, even inside the sandbox. */
 async function safeText(res: any): Promise<string> {
     try { return await res.text(); } catch { return ''; }
 }
@@ -63,6 +69,7 @@ function encodePathSegments(path: string): string {
     return norm.split('/').filter(Boolean).map(encodeURIComponent).join('/');
 }
 
+/** Decode base64 text to UTF-8 while tolerating malformed inputs. */
 function decodeBase64ToUtf8(b64Text: string): string {
     try {
         const bin = atob(b64Text);
@@ -84,6 +91,7 @@ function decodeBase64ToUtf8(b64Text: string): string {
  * Auth / Repos
  * ========================= */
 
+/** Verify the provided token and return the GitHub user profile. */
 export async function ghGetUser(token: string): Promise<GhUserResult> {
     try {
         const res = await fetch('https://api.github.com/user', {
@@ -122,6 +130,7 @@ export type GhListReposResult =
     | { ok: true; repos: GhRepo[] }
     | { ok: false; error: string };
 
+/** Fetch helper that retries transient failures a couple of times. */
 async function fetchJsonWithRetry(url: string, init: any, tries = 2) {
     let last: any;
     for (let i = 0; i < tries; i++) {
@@ -131,6 +140,7 @@ async function fetchJsonWithRetry(url: string, init: any, tries = 2) {
     throw last;
 }
 
+/** List the user's repositories with pagination and retry handling. */
 export async function ghListRepos(token: string): Promise<GhListReposResult> {
     try {
         const base =
@@ -208,6 +218,7 @@ export type GhListBranchesResult =
     };
 
 /** List branches; when `force` add a ts param to bypass caches. */
+/** Fetch branches paginated, returning rate info alongside the data. */
 export async function ghListBranches(
     token: string,
     owner: string,
@@ -294,6 +305,7 @@ export type GhCreateBranchResult =
         rate?: GhRateInfo;
     };
 
+/** Create a branch from the chosen base ref when the user requests a fork. */
 export async function ghCreateBranch(
     token: string,
     owner: string,
@@ -408,6 +420,7 @@ export type GhListDirResult =
     };
 
 /** GET /repos/{owner}/{repo}/contents/{path}?ref={ref} */
+/** List a single directory in a repo, returning both dir and file entries. */
 export async function ghListDir(
     token: string,
     owner: string,
@@ -488,6 +501,7 @@ export type GhListDirsResult =
         rate?: GhRateInfo;
     };
 
+/** Walk paginated folder listings and stream results back to the caller. */
 export async function ghListDirs(
     token: string,
     owner: string,
@@ -544,6 +558,7 @@ export type GhEnsureFolderResult =
         rate?: GhRateInfo;
     };
 
+/** Create nested folders by committing empty `.keep` blobs as needed. */
 export async function ghEnsureFolder(
     token: string,
     owner: string,
@@ -664,6 +679,7 @@ export type GhCommitFilesResult =
  * Uses Git Data API: blobs → tree → commit → update ref.
  * No extra commits to "create folders"; tree paths handle that.
  */
+/** Create or update a commit containing the provided files on the target branch. */
 export async function ghCommitFiles(
     token: string,
     owner: string,
@@ -835,6 +851,7 @@ export type GhGetFileContentsResult =
         samlRequired?: boolean;
     };
 
+/** Fetch a file and decode it to UTF-8 so previews can render cleanly. */
 export async function ghGetFileContents(
     token: string,
     owner: string,
@@ -940,6 +957,7 @@ export type GhCreatePullRequestResult =
         samlRequired?: boolean;
     };
 
+/** Create a draft or regular pull request against the selected repository. */
 export async function ghCreatePullRequest(
     token: string,
     owner: string,

@@ -1,17 +1,18 @@
 // src/adapters/dtcg-writer.ts
-// IR -> DTCG object (grouped), including aliases and color values.
+// Convert the IR graph back into DTCG JSON while keeping alias strings readable.
+// - Emits groups directly from the IR path so git diffs stay predictable
+// - Uses Figma display metadata only for alias references to preserve user intent
 
 import { type TokenGraph, type TokenNode, type ValueOrAlias } from '../core/ir';
 import { slugSegment } from '../core/normalize';
 
 // ---------- tiny utils (lookup-only; never used for emission) ----------
+/** Join path segments with '.' for alias lookups. */
 function dotRaw(segs: string[]): string {
   return segs.join('.');
 }
 
-/** Matching-only slug so aliases written in slug form still resolve.
- * NEVER used for emission, only for building index keys.
- */
+/** Matching-only slug so aliases written in slug form still resolve (never for emission). */
 function slugForMatch(s: string): string {
   return s
     .trim()
@@ -22,8 +23,10 @@ function slugForMatch(s: string): string {
 
 type DisplayNames = { collection: string; variable: string };
 
-// Extract Figma display names, preferring perContext[ctx], then top-level, then path fallback.
-// IMPORTANT: We do NOT use this to build JSON keys — it’s only used for alias string emission.
+/**
+ * Extract Figma display names for alias emission, preferring per-context overrides.
+ * NEVER used for key generation; JSON structure always follows IR paths.
+ */
 function getFigmaDisplayNames(t: TokenNode, ctx?: string): DisplayNames {
   const extAll = (t.extensions && typeof t.extensions === 'object')
     ? (t.extensions as any)['com.figma'] ?? (t.extensions as any)['org.figma']
@@ -55,6 +58,7 @@ function getFigmaDisplayNames(t: TokenNode, ctx?: string): DisplayNames {
 }
 
 // ---------- Build alias resolution index (using per-context names) ----------
+/** Build a lookup map so alias emission can resolve display names quickly. */
 function buildDisplayNameIndex(graph: TokenGraph): Map<string, DisplayNames> {
   const byKey = new Map<string, DisplayNames>();
 
@@ -83,6 +87,10 @@ function buildDisplayNameIndex(graph: TokenGraph): Map<string, DisplayNames> {
 export interface SerializeResult { json: unknown; }
 export interface ExportOpts { /* reserved */ }
 
+/**
+ * Walk the token graph and emit grouped DTCG JSON.
+ * Keeps all grouping logic deterministic so repeated exports diff cleanly.
+ */
 export function serialize(graph: TokenGraph, _opts?: ExportOpts): SerializeResult {
   const root: { [k: string]: unknown } = {};
   const displayIndex = buildDisplayNameIndex(graph);
@@ -94,6 +102,9 @@ export function serialize(graph: TokenGraph, _opts?: ExportOpts): SerializeResul
   return { json: root };
 }
 
+/**
+ * Emit a single token into the mutable JSON root. Handles alias resolution and metadata.
+ */
 function writeTokenInto(
   root: { [k: string]: unknown },
   t: TokenNode,

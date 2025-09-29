@@ -1,5 +1,7 @@
 // src/adapters/dtcg-reader.ts
-// DTCG JSON -> IR TokenGraph (handles aliases, strict $type, preserves names)
+// Parse raw DTCG token JSON into our IR without losing metadata or alias structure.
+// - Validates values strictly so we fail fast on malformed input
+// - Preserves $extensions fields to keep Figma round-trips intact
 
 import {
   type TokenGraph,
@@ -18,24 +20,29 @@ function logInfo(msg: string) {
 function logWarn(msg: string) { logInfo('Warning: ' + msg); }
 
 // ---------- helpers ----------
+/** Guard for plain-object own keys without letting sneaky prototypes through. */
 function hasKey(o: unknown, k: string): boolean {
   return !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
 }
 
+/** True when the value looks like an alias string: "{collection.group.token}". */
 function isAliasString(v: unknown): v is string {
   return typeof v === 'string' && v.startsWith('{') && v.endsWith('}') && v.length > 2;
 }
 
+/** Split an alias string into raw segments while keeping user formatting intact. */
 function parseAliasToSegments(v: string): string[] {
   // exact segments, keep spacing/punctuation as-is (only trim around the dot delimiter)
   return v.slice(1, -1).split('.').map(s => s.trim());
 }
 
+/** Quick heuristic for hex strings so we only attempt conversions on plausible inputs. */
 function isLikelyHexString(v: unknown): v is string {
   return typeof v === 'string'
     && /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
 }
 
+/** Extract a trimmed $description if present; avoids emitting empty strings. */
 function readDescription(obj: unknown): string | undefined {
   if (!obj || typeof obj !== 'object') return undefined;
   const d = (obj as any)['$description'];

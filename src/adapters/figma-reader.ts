@@ -1,10 +1,13 @@
 // src/adapters/figma-reader.ts
-// Read Figma variables -> IR TokenGraph
+// Convert live Figma variables into the IR token graph shape used everywhere else.
+// - Preserves canonical path splitting for consistent lookups
+// - Captures per-mode metadata so exports can round-trip Figma specifics
 
 import { figmaRGBAToDtcg, type DocumentProfile } from '../core/color';
 import { canonicalPath } from '../core/normalize';
 import { ctxKey, type TokenGraph, type TokenNode, type PrimitiveType, type ValueOrAlias } from '../core/ir';
 
+/** Translate Figma's resolved type into the primitive kinds our IR expects. */
 function mapType(t: VariableResolvedDataType): PrimitiveType {
   if (t === 'COLOR') return 'color';
   if (t === 'FLOAT') return 'number';
@@ -12,10 +15,12 @@ function mapType(t: VariableResolvedDataType): PrimitiveType {
   return 'boolean';
 }
 
+/** Guard for Figma alias payloads so we can branch without optional chaining chains. */
 function isAliasValue(v: unknown): v is { type: 'VARIABLE_ALIAS'; id: string } {
   return !!v && typeof v === 'object' && (v as { type?: string }).type === 'VARIABLE_ALIAS' && typeof (v as { id?: unknown }).id === 'string';
 }
 
+/** Guard raw color values while staying defensive about nullish placeholders. */
 function isRGBA(v: unknown): v is { r: number; g: number; b: number; a: number } {
   return !!v && typeof v === 'object' &&
     typeof (v as { r?: unknown }).r === 'number' &&
@@ -24,6 +29,10 @@ function isRGBA(v: unknown): v is { r: number; g: number; b: number; a: number }
     typeof (v as { a?: unknown }).a === 'number';
 }
 
+/**
+ * Snapshot every local variable into TokenGraph form while annotating per-mode metadata.
+ * We favor direct reads from figma.variables so the IR mirrors whatever is live in the document.
+ */
 export async function readFigmaToIR(): Promise<TokenGraph> {
   const profile = (figma.root.documentColorProfile as DocumentProfile);
   const variablesApi = figma.variables;

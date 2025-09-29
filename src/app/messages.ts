@@ -1,4 +1,7 @@
 // src/app/messages.ts
+// Message contracts between the iframe UI and plugin controller.
+// - Keeps cross-thread communication type-safe
+// - Documents payload shapes for GitHub workflows and token sync
 
 // UI -> Plugin
 export interface GithubRepoTarget {
@@ -6,6 +9,7 @@ export interface GithubRepoTarget {
   repo: string;
 }
 
+/** Scope for export/commit actions coming from the UI. */
 export type GithubScope = 'all' | 'selected';
 
 export interface GithubBranchPayload extends GithubRepoTarget {
