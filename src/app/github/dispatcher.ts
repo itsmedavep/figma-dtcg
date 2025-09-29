@@ -1,0 +1,669 @@
+import { ghGetUser, ghListRepos, ghListBranches, ghCreateBranch, ghListDirs, ghEnsureFolder, ghCommitFiles, ghGetFileContents, ghCreatePullRequest } from '../../core/github/api';
+import type { UiToPlugin, PluginToUi, GithubScope } from '../messages';
+import { normalizeFolderForStorage, folderStorageToCommitPath } from './folders';
+
+type SnapshotFn = typeof import('../collections').snapshotCollectionsForUi;
+type AnalyzeSelectionFn = typeof import('../collections').analyzeSelectionState;
+type SafeKeyFn = typeof import('../collections').safeKeyFromCollectionAndMode;
+type ImportFn = typeof import('../../core/pipeline').importDtcg;
+type ExportFn = typeof import('../../core/pipeline').exportDtcg;
+
+type HandlerDeps = {
+  send: (msg: PluginToUi) => void;
+  snapshotCollectionsForUi: SnapshotFn;
+  analyzeSelectionState: AnalyzeSelectionFn;
+  safeKeyFromCollectionAndMode: SafeKeyFn;
+  importDtcg: ImportFn;
+  exportDtcg: ExportFn;
+};
+
+type GhSelected = {
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  folder?: string;
+  commitMessage?: string;
+  scope?: GithubScope;
+  collection?: string;
+  mode?: string;
+  createPr?: boolean;
+  prBase?: string;
+  prTitle?: string;
+  prBody?: string;
+};
+
+type GithubDispatcher = {
+  handle: (msg: UiToPlugin) => Promise<boolean>;
+  onUiReady: () => Promise<void>;
+};
+
+const GH_SELECTED_KEY = 'gh.selected';
+
+function encodeToken(s: string): string {
+  try { return btoa(s); } catch { return s; }
+}
+
+function decodeToken(s: string): string {
+  try { return atob(s); } catch { return s; }
+}
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
+  let ghToken: string | null = null;
+
+  async function getSelected(): Promise<GhSelected> {
+    try { return (await figma.clientStorage.getAsync(GH_SELECTED_KEY)) ?? {}; } catch { return {}; }
+  }
+
+  async function setSelected(sel: GhSelected): Promise<void> {
+    try { await figma.clientStorage.setAsync(GH_SELECTED_KEY, sel); } catch { /* ignore */ }
+  }
+
+  async function mergeSelected(partial: Partial<GhSelected>): Promise<GhSelected> {
+    const current = await getSelected();
+    const merged = { ...current, ...partial };
+    await setSelected(merged);
+    return merged;
+  }
+
+  async function listAndSendRepos(token: string): Promise<void> {
+    await sleep(75);
+    let repos = await ghListRepos(token);
+    if (!repos.ok && /Failed to fetch|network error/i.test(repos.error || '')) {
+      await sleep(200);
+      repos = await ghListRepos(token);
+    }
+    if (repos.ok) {
+      const minimal = repos.repos.map(r => ({
+        full_name: r.full_name,
+        default_branch: r.default_branch,
+        private: !!r.private
+      }));
+      deps.send({ type: 'GITHUB_REPOS', payload: { repos: minimal } });
+    } else {
+      deps.send({ type: 'ERROR', payload: { message: `GitHub: Could not list repos: ${repos.error}` } });
+      deps.send({ type: 'GITHUB_REPOS', payload: { repos: [] } });
+    }
+  }
+
+  async function restoreGithubTokenAndVerify(): Promise<void> {
+    try {
+      const stored = await figma.clientStorage.getAsync('github_token_b64').catch(() => null);
+      if (!stored || typeof stored !== 'string' || stored.length === 0) return;
+
+      const decoded = decodeToken(stored);
+      ghToken = decoded;
+
+      const who = await ghGetUser(decoded);
+      if (who.ok) {
+        deps.send({
+          type: 'GITHUB_AUTH_RESULT',
+          payload: { ok: true, login: who.user.login, name: who.user.name, remember: true }
+        });
+        await listAndSendRepos(decoded);
+      } else {
+        deps.send({ type: 'ERROR', payload: { message: `GitHub: Authentication failed (stored token): ${who.error}.` } });
+        deps.send({
+          type: 'GITHUB_AUTH_RESULT',
+          payload: { ok: false, error: who.error, remember: false }
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function getSelectedFolderForCommit(folderRaw: string) {
+    const folderStoredResult = normalizeFolderForStorage(folderRaw);
+    if (!folderStoredResult.ok) {
+      return folderStoredResult;
+    }
+    const folderCommitResult = folderStorageToCommitPath(folderStoredResult.storage);
+    if (!folderCommitResult.ok) {
+      return folderCommitResult;
+    }
+    return { ok: true as const, storage: folderStoredResult.storage, path: folderCommitResult.path };
+  }
+
+  async function handle(msg: UiToPlugin): Promise<boolean> {
+    switch (msg.type) {
+      case 'GITHUB_SET_TOKEN': {
+        const token = String(msg.payload.token || '').trim();
+        const remember = !!msg.payload.remember;
+
+        if (!token) {
+          deps.send({ type: 'ERROR', payload: { message: 'GitHub: Empty token.' } });
+          deps.send({ type: 'GITHUB_AUTH_RESULT', payload: { ok: false, error: 'empty token', remember: false } });
+          return true;
+        }
+
+        ghToken = token;
+        if (remember) {
+          await figma.clientStorage.setAsync('github_token_b64', encodeToken(token)).catch(() => { });
+        } else {
+          await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { });
+        }
+
+        const who = await ghGetUser(token);
+        if (who.ok) {
+          deps.send({
+            type: 'GITHUB_AUTH_RESULT',
+            payload: { ok: true, login: who.user.login, name: who.user.name, remember }
+          });
+          await listAndSendRepos(token);
+        } else {
+          deps.send({ type: 'ERROR', payload: { message: `GitHub: Authentication failed: ${who.error}.` } });
+          deps.send({
+            type: 'GITHUB_AUTH_RESULT',
+            payload: { ok: false, error: who.error, remember: false }
+          });
+          deps.send({ type: 'GITHUB_REPOS', payload: { repos: [] } });
+        }
+        return true;
+      }
+
+      case 'GITHUB_FORGET_TOKEN': {
+        ghToken = null;
+        await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { /* ignore */ });
+        deps.send({ type: 'INFO', payload: { message: 'GitHub: Token cleared.' } });
+        deps.send({ type: 'GITHUB_AUTH_RESULT', payload: { ok: false, remember: false } });
+        deps.send({ type: 'GITHUB_REPOS', payload: { repos: [] } });
+        return true;
+      }
+
+      case 'GITHUB_SELECT_REPO': {
+        const sel = await getSelected();
+        await setSelected({
+          owner: msg.payload.owner,
+          repo: msg.payload.repo,
+          branch: sel.branch,
+          folder: undefined,
+          commitMessage: sel.commitMessage,
+          scope: sel.scope,
+          collection: sel.collection,
+          mode: sel.mode,
+          createPr: sel.createPr,
+          prBase: sel.prBase,
+          prTitle: sel.prTitle,
+          prBody: sel.prBody
+        });
+        return true;
+      }
+
+      case 'GITHUB_SELECT_BRANCH': {
+        const sel = await getSelected();
+        await setSelected({
+          owner: msg.payload.owner || sel.owner,
+          repo: msg.payload.repo || sel.repo,
+          branch: msg.payload.branch,
+          folder: undefined,
+          commitMessage: sel.commitMessage,
+          scope: sel.scope,
+          collection: sel.collection,
+          mode: sel.mode,
+          createPr: sel.createPr,
+          prBase: sel.prBase,
+          prTitle: sel.prTitle,
+          prBody: sel.prBody
+        });
+        return true;
+      }
+
+      case 'GITHUB_SET_FOLDER': {
+        const folderResult = normalizeFolderForStorage(String(msg.payload.folder ?? ''));
+        if (!folderResult.ok) {
+          deps.send({ type: 'ERROR', payload: { message: folderResult.message } });
+          return true;
+        }
+        const folder = folderResult.storage;
+        const sel = await getSelected();
+        await setSelected({
+          owner: msg.payload.owner || sel.owner,
+          repo: msg.payload.repo || sel.repo,
+          branch: sel.branch,
+          folder,
+          commitMessage: sel.commitMessage,
+          scope: sel.scope,
+          collection: sel.collection,
+          mode: sel.mode,
+          createPr: sel.createPr,
+          prBase: sel.prBase,
+          prTitle: sel.prTitle,
+          prBody: sel.prBody
+        });
+        return true;
+      }
+
+      case 'GITHUB_SAVE_STATE': {
+        const update: Partial<GhSelected> = {};
+        if (typeof msg.payload.owner === 'string') update.owner = msg.payload.owner;
+        if (typeof msg.payload.repo === 'string') update.repo = msg.payload.repo;
+        if (typeof msg.payload.branch === 'string') update.branch = msg.payload.branch;
+        if (typeof msg.payload.folder === 'string') {
+          const folderResult = normalizeFolderForStorage(msg.payload.folder);
+          if (folderResult.ok) update.folder = folderResult.storage;
+          else deps.send({ type: 'ERROR', payload: { message: folderResult.message } });
+        }
+        if (typeof msg.payload.commitMessage === 'string') update.commitMessage = msg.payload.commitMessage;
+        if (msg.payload.scope === 'all' || msg.payload.scope === 'selected') update.scope = msg.payload.scope;
+        if (typeof msg.payload.collection === 'string') update.collection = msg.payload.collection;
+        if (typeof msg.payload.mode === 'string') update.mode = msg.payload.mode;
+        if (typeof msg.payload.createPr === 'boolean') update.createPr = msg.payload.createPr;
+        if (typeof msg.payload.prBase === 'string') update.prBase = msg.payload.prBase;
+        if (typeof msg.payload.prTitle === 'string') update.prTitle = msg.payload.prTitle;
+        if (typeof msg.payload.prBody === 'string') update.prBody = msg.payload.prBody;
+        await mergeSelected(update);
+        return true;
+      }
+
+      case 'GITHUB_FETCH_BRANCHES': {
+        const owner = String(msg.payload.owner || '');
+        const repo = String(msg.payload.repo || '');
+        const page = Number.isFinite(msg.payload.page) ? Number(msg.payload.page) : 1;
+        const force = !!msg.payload.force;
+
+        if (!ghToken) {
+          deps.send({ type: 'GITHUB_BRANCHES_ERROR', payload: { owner, repo, status: 401, message: 'No token' } });
+          return true;
+        }
+
+        const res = await ghListBranches(ghToken, owner, repo, page, force);
+        if (res.ok) {
+          deps.send({ type: 'GITHUB_BRANCHES', payload: res });
+          if (page === 1 && res.defaultBranch) {
+            await mergeSelected({ owner, repo, branch: res.defaultBranch, prBase: res.defaultBranch });
+          }
+        } else {
+          deps.send({ type: 'GITHUB_BRANCHES_ERROR', payload: res });
+        }
+        return true;
+      }
+
+      case 'GITHUB_FOLDER_LIST': {
+        const owner = String(msg.payload.owner || '');
+        const repo = String(msg.payload.repo || '');
+        const branch = String(msg.payload.branch || '');
+        const pathRaw = String(msg.payload.path || '');
+
+        if (!ghToken) {
+          deps.send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 401, message: 'No token' } });
+          return true;
+        }
+
+        const normalizedPath = normalizeFolderForStorage(pathRaw);
+        if (!normalizedPath.ok) {
+          deps.send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: normalizedPath.message } });
+          return true;
+        }
+        const commitPathResult = folderStorageToCommitPath(normalizedPath.storage);
+        if (!commitPathResult.ok) {
+          deps.send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: commitPathResult.message } });
+          return true;
+        }
+
+        const res = await ghListDirs(ghToken, owner, repo, branch, commitPathResult.path);
+        if (res.ok) {
+          deps.send({
+            type: 'GITHUB_FOLDER_LIST_RESULT',
+            payload: {
+              ok: true,
+              owner,
+              repo,
+              branch,
+              path: res.path,
+              entries: res.dirs.map(d => ({ type: 'dir', name: d.name, path: d.path })),
+              rate: res.rate
+            }
+          });
+        } else {
+          deps.send({
+            type: 'GITHUB_FOLDER_LIST_RESULT',
+            payload: { ok: false, owner, repo, branch, path: res.path, status: res.status, message: res.message, rate: res.rate }
+          });
+        }
+        return true;
+      }
+
+      case 'GITHUB_CREATE_FOLDER': {
+        const owner = String(msg.payload.owner || '');
+        const repo = String(msg.payload.repo || '');
+        const branch = String(msg.payload.branch || '');
+        const folderPathRaw = String((msg.payload as any).folderPath || msg.payload.path || '').trim();
+
+        if (!ghToken) {
+          deps.send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 401, message: 'No token' } });
+          return true;
+        }
+
+        const folderNormalized = normalizeFolderForStorage(folderPathRaw);
+        if (!folderNormalized.ok) {
+          deps.send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: folderNormalized.message } });
+          return true;
+        }
+
+        const folderCommit = folderStorageToCommitPath(folderNormalized.storage);
+        if (!folderCommit.ok) {
+          deps.send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: folderCommit.message } });
+          return true;
+        }
+        if (!folderCommit.path) {
+          deps.send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: 'GitHub: Choose a subfolder name.' } });
+          return true;
+        }
+
+        const res = await ghEnsureFolder(ghToken, owner, repo, branch, folderCommit.path);
+        deps.send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: res });
+        return true;
+      }
+
+      case 'GITHUB_CREATE_BRANCH': {
+        const owner = String(msg.payload.owner || '');
+        const repo = String(msg.payload.repo || '');
+        const baseBranch = String(msg.payload.baseBranch || '');
+        const newBranch = String(msg.payload.newBranch || '');
+
+        if (!ghToken) {
+          deps.send({ type: 'GITHUB_CREATE_BRANCH_RESULT', payload: { ok: false, owner, repo, baseBranch, newBranch, status: 401, message: 'No token' } });
+          return true;
+        }
+        if (!owner || !repo || !baseBranch || !newBranch) {
+          deps.send({ type: 'GITHUB_CREATE_BRANCH_RESULT', payload: { ok: false, owner, repo, baseBranch, newBranch, status: 400, message: 'Missing owner/repo/base/new' } });
+          return true;
+        }
+
+        const res = await ghCreateBranch(ghToken, owner, repo, newBranch, baseBranch);
+        if (res.ok) {
+          await mergeSelected({ owner, repo, branch: newBranch });
+        }
+        deps.send({ type: 'GITHUB_CREATE_BRANCH_RESULT', payload: res });
+        return true;
+      }
+
+      case 'GITHUB_FETCH_TOKENS': {
+        const owner = String(msg.payload.owner || '');
+        const repo = String(msg.payload.repo || '');
+        const branch = String(msg.payload.branch || '');
+        const pathRaw = String(msg.payload.path || '');
+        const allowHex = !!msg.payload.allowHexStrings;
+
+        if (!ghToken) {
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 401, message: 'No token' } });
+          return true;
+        }
+        if (!owner || !repo || !branch || !pathRaw.trim()) {
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: 'Missing owner/repo/branch/path' } });
+          return true;
+        }
+
+        const normalizedPath = normalizeFolderForStorage(pathRaw);
+        if (!normalizedPath.ok) {
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: normalizedPath.message } });
+          return true;
+        }
+        const commitPathResult = folderStorageToCommitPath(normalizedPath.storage);
+        if (!commitPathResult.ok) {
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: commitPathResult.message } });
+          return true;
+        }
+        const path = commitPathResult.path;
+
+        const res = await ghGetFileContents(ghToken, owner, repo, branch, path);
+        if (!res.ok) {
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: res });
+          if (res.samlRequired) {
+            deps.send({ type: 'ERROR', payload: { message: 'GitHub: SSO required for this repository. Authorize your PAT and try again.' } });
+          }
+          return true;
+        }
+
+        try {
+          const json = JSON.parse(res.contentText || '{}');
+          await deps.importDtcg(json, { allowHexStrings: allowHex });
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: true, owner, repo, branch, path, json } });
+          deps.send({ type: 'INFO', payload: { message: `Imported tokens from ${owner}/${repo}@${branch}:${path}` } });
+
+          const snap = await deps.snapshotCollectionsForUi();
+          const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
+          const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
+          const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string' ? last : null;
+          deps.send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
+          deps.send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
+        } catch (err) {
+          const msgText = (err as Error)?.message || 'Invalid JSON';
+          deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path, status: 422, message: msgText } });
+          deps.send({ type: 'ERROR', payload: { message: `GitHub import failed: ${msgText}` } });
+        }
+        return true;
+      }
+
+      case 'GITHUB_EXPORT_FILES': {
+        const scope: GithubScope = msg.payload.scope === 'all' ? 'all' : 'selected';
+        const collection = String(msg.payload.collection || '');
+        const mode = String(msg.payload.mode || '');
+
+        try {
+          if (scope === 'all') {
+            const all = await deps.exportDtcg({ format: 'single' });
+            deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: all.files } });
+          } else {
+            if (!collection || !mode) {
+              deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: [] } });
+              deps.send({ type: 'ERROR', payload: { message: 'GitHub: choose collection and mode before exporting.' } });
+              return true;
+            }
+            const per = await deps.exportDtcg({ format: 'perMode' });
+            const prettyExact = `${collection} - ${mode}.json`;
+            const prettyLoose = `${collection} - ${mode}`;
+            const legacy1 = `${collection}_mode=${mode}`;
+            const legacy2 = `${collection}/mode=${mode}`;
+            const legacy3 = deps.safeKeyFromCollectionAndMode(collection, mode);
+            let picked = per.files.find(f => {
+              const n = String(f?.name || '');
+              return n === prettyExact || n === prettyLoose || n.includes(`${collection} - ${mode}`);
+            });
+            if (!picked) {
+              picked = per.files.find(f => {
+                const n = String(f?.name || '');
+                return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
+              });
+            }
+            const files = picked ? [picked] : per.files;
+            deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files } });
+          }
+        } catch (err) {
+          const msgText = (err as Error)?.message || 'Failed to export';
+          deps.send({ type: 'ERROR', payload: { message: `GitHub export failed: ${msgText}` } });
+          deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: [] } });
+        }
+        return true;
+      }
+
+      case 'GITHUB_EXPORT_AND_COMMIT': {
+        const owner = String(msg.payload.owner || '');
+        const repo = String(msg.payload.repo || '');
+        const baseBranch = String(msg.payload.branch || '');
+        const folderRaw = typeof msg.payload.folder === 'string' ? msg.payload.folder : '';
+        const commitMessage = (String(msg.payload.commitMessage || '') || 'Update tokens from Figma').trim();
+        const scope: GithubScope = msg.payload.scope === 'all' ? 'all' : 'selected';
+        const collection = String(msg.payload.collection || '');
+        const mode = String(msg.payload.mode || '');
+        const createPr = !!msg.payload.createPr;
+        const prBaseBranch = createPr ? String(msg.payload.prBase || '') : '';
+        const prTitle = String(msg.payload.prTitle || commitMessage).trim() || commitMessage;
+        const prBody = typeof msg.payload.prBody === 'string' ? msg.payload.prBody : undefined;
+
+        if (!ghToken) {
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 401, message: 'No token' } });
+          return true;
+        }
+        if (!owner || !repo || !baseBranch) {
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Missing owner/repo/branch' } });
+          return true;
+        }
+        if (!commitMessage) {
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Empty commit message' } });
+          return true;
+        }
+
+        const folderInfo = await getSelectedFolderForCommit(folderRaw);
+        if (!folderInfo.ok) {
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderInfo.message } });
+          return true;
+        }
+
+        if (createPr && !prBaseBranch) {
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Unable to determine target branch for pull request.' } });
+          return true;
+        }
+        if (createPr && prBaseBranch === baseBranch) {
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Selected branch matches PR target branch. Choose a different branch before creating a PR.' } });
+          return true;
+        }
+
+        await mergeSelected({
+          owner,
+          repo,
+          branch: baseBranch,
+          folder: folderInfo.storage,
+          commitMessage,
+          scope,
+          collection: scope === 'selected' ? collection : undefined,
+          mode: scope === 'selected' ? mode : undefined,
+          createPr,
+          prBase: createPr ? prBaseBranch : undefined,
+          prTitle: createPr ? prTitle : undefined,
+          prBody: createPr ? prBody : undefined
+        });
+
+        try {
+          const files: Array<{ name: string; json: unknown }> = [];
+
+          if (scope === 'all') {
+            const all = await deps.exportDtcg({ format: 'single' });
+            for (const f of all.files) files.push({ name: f.name, json: f.json });
+          } else {
+            if (!collection || !mode) {
+              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Pick a collection and a mode.' } });
+              return true;
+            }
+            const per = await deps.exportDtcg({ format: 'perMode' });
+            const prettyExact = `${collection} - ${mode}.json`;
+            const prettyLoose = `${collection} - ${mode}`;
+            const legacy1 = `${collection}_mode=${mode}`;
+            const legacy2 = `${collection}/mode=${mode}`;
+            const legacy3 = deps.safeKeyFromCollectionAndMode(collection, mode);
+
+            let picked = per.files.find(f => {
+              const n = String(f?.name || '');
+              return n === prettyExact || n === prettyLoose || n.includes(`${collection} - ${mode}`);
+            });
+            if (!picked) {
+              picked = per.files.find(f => {
+                const n = String(f?.name || '');
+                return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
+              });
+            }
+            if (!picked) {
+              const available = per.files.map(f => f.name).join(', ');
+              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 404, message: `No export found for "${collection}" / "${mode}". Available: [${available}]` } });
+              return true;
+            }
+            files.push({ name: picked.name, json: picked.json });
+          }
+
+          const isPlainEmptyObject = (v: any) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0;
+          const exportLooksEmpty = files.length === 0 || files.every(f => isPlainEmptyObject(f.json));
+
+          if (exportLooksEmpty) {
+            if (scope === 'selected') {
+              const diag = await deps.analyzeSelectionState(collection, mode);
+              const tail = diag.ok
+                ? `Found ${diag.variableCount} variable(s) in "${collection}", but ${diag.variablesWithValues ?? 0} with a value in "${mode}".`
+                : (diag.message || 'No values present.');
+              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 412, message: `Export for "${collection}" / "${mode}" produced an empty tokens file. ${tail}` } });
+            } else {
+              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 412, message: 'Export produced an empty tokens file. Ensure this file contains local Variables with values.' } });
+            }
+            return true;
+          }
+
+          const prettyExportName = (original: string | undefined | null): string => {
+            const name = (original && typeof original === 'string') ? original : 'tokens.json';
+            const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
+            if (m) return `${m[1].trim()} - ${m[2].trim()}.json`;
+            return name.endsWith('.json') ? name : (name + '.json');
+          };
+          const prefix = folderInfo.path ? (folderInfo.path + '/') : '';
+          const commitFiles = files.map(f => ({
+            path: prefix + prettyExportName(f.name),
+            content: JSON.stringify(f.json, null, 2) + '\n'
+          }));
+
+          const commitRes = await ghCommitFiles(ghToken, owner, repo, baseBranch, commitMessage, commitFiles);
+          if (!commitRes.ok) {
+            deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: commitRes });
+            deps.send({ type: 'ERROR', payload: { message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}` } });
+            return true;
+          }
+
+          let prResult: Awaited<ReturnType<typeof ghCreatePullRequest>> | undefined;
+          if (createPr) {
+            prResult = await ghCreatePullRequest(ghToken, owner, repo, {
+              title: prTitle,
+              head: baseBranch,
+              base: prBaseBranch,
+              body: prBody
+            });
+          }
+
+          const commitOkPayload = {
+            ok: true as const,
+            owner,
+            repo,
+            branch: baseBranch,
+            commitSha: commitRes.commitSha,
+            commitUrl: commitRes.commitUrl,
+            treeUrl: commitRes.treeUrl,
+            rate: commitRes.rate,
+            createdPr: (prResult && prResult.ok)
+              ? { number: prResult.number, url: prResult.url, base: prResult.base, head: prResult.head }
+              : undefined
+          };
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: commitOkPayload });
+
+          deps.send({ type: 'INFO', payload: { message: `Committed ${commitFiles.length} file(s) to ${owner}/${repo}@${baseBranch}` } });
+          if (createPr) {
+            if (prResult && prResult.ok) {
+              deps.send({ type: 'GITHUB_PR_RESULT', payload: prResult });
+              deps.send({ type: 'INFO', payload: { message: `PR created: ${prResult.url}` } });
+            } else if (prResult) {
+              deps.send({ type: 'GITHUB_PR_RESULT', payload: prResult });
+              deps.send({ type: 'ERROR', payload: { message: `GitHub: PR creation failed (${prResult.status}): ${prResult.message}` } });
+            }
+          }
+        } catch (e) {
+          const msgText = (e as Error)?.message || 'unknown error';
+          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 0, message: msgText } });
+        }
+        return true;
+      }
+
+      default:
+        return false;
+    }
+  }
+
+  async function onUiReady(): Promise<void> {
+    await restoreGithubTokenAndVerify();
+    const sel = await getSelected();
+    if (sel.owner && sel.repo) {
+      deps.send({ type: 'GITHUB_RESTORE_SELECTED', payload: sel });
+    }
+  }
+
+  return { handle, onUiReady };
+}
+
