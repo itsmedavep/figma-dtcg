@@ -4,7 +4,6 @@
 // - exportDtcg: read IR from Figma -> serialize to DTCG; package as files
 
 import { normalize } from './normalize';
-import { toDot } from './normalize';
 import { readDtcgToIR } from '../adapters/dtcg-reader';
 import { serialize } from '../adapters/dtcg-writer';
 import { readFigmaToIR } from '../adapters/figma-reader';
@@ -21,6 +20,10 @@ export interface ImportOpts {
 }
 
 
+/**
+ * Capture the enumerable keys on a plain object without trusting prototype mutation.
+ * We keep this helper local so the export path never depends on a broader utility module.
+ */
 function keysOf<T>(obj: { [k: string]: T }): string[] {
   var out: string[] = [];
   var k: string;
@@ -28,6 +31,10 @@ function keysOf<T>(obj: { [k: string]: T }): string[] {
   return out;
 }
 
+/**
+ * Replace file-hostile characters so each export path is safe for Git commits on every OS.
+ * Using a narrow allow list keeps legacy file names stable while preventing accidental nesting.
+ */
 function sanitizeForFile(s: string): string {
   var out = '';
   var i = 0;
@@ -39,6 +46,10 @@ function sanitizeForFile(s: string): string {
   return out;
 }
 
+/**
+ * Build a copy of a token that only contains the requested context so per-mode exports stay minimal.
+ * Returning null when the context is absent lets the caller drop empty files entirely.
+ */
 function cloneTokenWithSingleContext(t: TokenNode, ctx: string): TokenNode | null {
   var val = t.byContext[ctx];
   if (!val) return null;
@@ -60,7 +71,12 @@ function cloneTokenWithSingleContext(t: TokenNode, ctx: string): TokenNode | nul
 
 export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<void> {
   // Build desired graph from DTCG, then write directly to Figma.
-  // (Diffing/plan is optional; we keep a single code path for now.)
+  // We previously shipped an unused "plan" module that tried to diff the desired
+  // graph against the live document. Nothing in the plugin ever called it, and
+  // the write path already overwrites the full state, so keeping the unused
+  // module only increased bundle size and maintenance cost. Keeping a single
+  // happy-path write keeps the observable behavior identical to the versions
+  // that shipped before the cleanup.
   const desired = normalize(readDtcgToIR(json, { allowHexStrings: !!opts.allowHexStrings }));
   await writeIRToFigma(desired);
 }

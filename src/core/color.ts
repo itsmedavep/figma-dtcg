@@ -1,5 +1,7 @@
 // src/core/color.ts
 // Accurate, spec-aligned color handling for DTCG <-> Figma.
+// - Validates incoming data so we never write impossible color spaces
+// - Converts between srgb/display-p3 while keeping precision intact
 
 import type { ColorValue } from './ir';
 
@@ -9,8 +11,10 @@ export type DocumentProfile = 'SRGB' | 'DISPLAY_P3'; // Figma document profiles
 // Only accept these DTCG color spaces in this plugin:
 const SUPPORTED_DTCG_COLOR_SPACES = new Set(['srgb', 'display-p3'] as const);
 
-// --- ADD: strict shape validator for a DTCG color object ---
-// Expects object like { colorSpace: 'srgb'|'display-p3', components: [r,g,b], alpha?: number, hex?: string }
+/**
+ * Strict shape validator for a DTCG color object.
+ * Expects: { colorSpace: 'srgb'|'display-p3', components: [r,g,b], alpha?: number, hex?: string }
+ */
 export function isDtcgColorShapeValid(input: any): { ok: boolean; reason?: string } {
   if (!input || typeof input !== 'object') {
     return { ok: false, reason: 'not an object' };
@@ -49,8 +53,10 @@ export function isDtcgColorShapeValid(input: any): { ok: boolean; reason?: strin
   return { ok: true };
 }
 
-// --- ADD: document representability gate ---
-// In SRGB docs → only 'srgb'. In Display-P3 docs → 'srgb' and 'display-p3'.
+/**
+ * Gate colorSpace by document profile: SRGB docs only allow 'srgb',
+ * Display-P3 docs allow both 'srgb' and 'display-p3'.
+ */
 export function isColorSpaceRepresentableInDocument(
   colorSpace: string,
   profile: DocumentProfile
@@ -354,4 +360,3 @@ export function isDtcgColorInUnitRange(input: {
   }
   return { ok: true };
 }
-

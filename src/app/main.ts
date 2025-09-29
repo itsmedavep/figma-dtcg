@@ -1,3 +1,8 @@
+// src/app/main.ts
+// Main-thread controller: wires UI messages into Figma APIs and GitHub helpers.
+// - Handles persistence so the iframe can reload without losing settings
+// - Wraps GitHub flows with retries and gentle error surfaces
+
 import type { UiToPlugin, PluginToUi, GithubScope } from './messages';
 import { importDtcg, exportDtcg } from '../core/pipeline';
 
@@ -36,13 +41,16 @@ type GhSelected = {
   prBody?: string;
 };
 
+/** Load the last chosen GitHub target from client storage. */
 async function getSelected(): Promise<GhSelected> {
   try { return (await figma.clientStorage.getAsync(GH_SELECTED_KEY)) ?? {}; } catch { return {}; }
 }
+/** Persist the full selection object so the UI can restore it on load. */
 async function setSelected(sel: GhSelected): Promise<void> {
   try { await figma.clientStorage.setAsync(GH_SELECTED_KEY, sel); } catch { /* ignore */ }
 }
 
+/** Merge partial changes into the stored selection atomically. */
 async function mergeSelected(partial: Partial<GhSelected>): Promise<GhSelected> {
   const current = await getSelected();
   const merged = { ...current, ...partial };
@@ -51,15 +59,19 @@ async function mergeSelected(partial: Partial<GhSelected>): Promise<GhSelected> 
 }
 
 // Base64 helpers (btoa/atob exist in Figma plugin iframe)
+/** Store GitHub tokens obfuscated with base64 (good enough for local prefs). */
 function encodeToken(s: string): string {
   try { return btoa(s); } catch { return s; }
 }
+/** Decode the stored GitHub token, falling back gracefully if decoding fails. */
 function decodeToken(s: string): string {
   try { return atob(s); } catch { return s; }
 }
 
+/** Tiny sleep helper for rate limiting and retries. */
 function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 
+/** Canonicalize folder input so stored prefs stay consistent across platforms. */
 function normalizeFolderForStorage(raw: string): string {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return '';
@@ -71,6 +83,7 @@ function normalizeFolderForStorage(raw: string): string {
   return stripped;
 }
 
+/** Convert stored folder values back into repo-relative commit paths. */
 function folderStorageToCommitPath(stored: string): string {
   if (!stored) return '';
   if (stored === '/' || stored === './' || stored === '.') return '';
@@ -78,6 +91,7 @@ function folderStorageToCommitPath(stored: string): string {
   return collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
+/** Fetch repos with a quick retry and mirror the minimal data back to the UI. */
 async function listAndSendRepos(token: string): Promise<void> {
   await sleep(75); // pre-warm
   let repos = await ghListRepos(token);
@@ -98,6 +112,7 @@ async function listAndSendRepos(token: string): Promise<void> {
   }
 }
 
+/** Restore a remembered token (if any) and ping GitHub so the UI reflects reality. */
 async function restoreGithubTokenAndVerify(): Promise<void> {
   try {
     const stored = await figma.clientStorage.getAsync('github_token_b64').catch(() => null);

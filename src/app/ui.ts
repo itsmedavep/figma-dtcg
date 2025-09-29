@@ -1,3 +1,8 @@
+// src/app/ui.ts
+// In-panel UI logic for the plugin: dom wiring, GitHub workflows, and export helpers.
+// - Mirrors plugin state via postMessage so the UI can function offline
+// - Provides guarded DOM helpers to survive partial renders or optional features
+
 import type { PluginToUi, UiToPlugin } from './messages';
 
 /* -------------------------------------------------------
@@ -129,7 +134,7 @@ const RENDER_STEP = 200;                // how many options to render per chunk
  * Utilities
  * ----------------------------------------------------- */
 
-// Turn "Collection 1_mode=Mode 1.tokens.json" → "Collection 1 - Mode 1.json"
+/** Turn `Collection 1_mode=Mode 1.tokens.json` into a readable save name. */
 function prettyExportName(original: string | undefined | null): string {
   const name = (original && typeof original === 'string') ? original : 'tokens.json';
   const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
@@ -144,10 +149,12 @@ function prettyExportName(original: string | undefined | null): string {
 // ---- File save helpers (native picker + fallback) ----
 let pendingSave: { writable: FileSystemWritableFileStream, name: string } | null = null;
 
+/** Feature-detect the async file picker so we can fall back to anchors if absent. */
 function supportsFilePicker(): boolean {
   return typeof (window as any).showSaveFilePicker === 'function';
 }
 
+/** Rebuild the repo select list in-place to avoid reattaching event handlers. */
 function populateGhRepos(list: Array<{ full_name: string; default_branch: string; private: boolean }>): void {
   if (!ghRepoSelect) return;
   while (ghRepoSelect.options.length) ghRepoSelect.remove(0);
@@ -190,6 +197,7 @@ function populateGhRepos(list: Array<{ full_name: string; default_branch: string
 
 }
 
+/** Prompt the user for a file path using the native picker when available. */
 async function beginPendingSave(suggestedName: string): Promise<boolean> {
   try {
     if (!supportsFilePicker()) return false;
@@ -206,6 +214,7 @@ async function beginPendingSave(suggestedName: string): Promise<boolean> {
   }
 }
 
+/** Write the queued Blob to disk and clear the pending handle. */
 async function finishPendingSave(text: string): Promise<boolean> {
   if (!pendingSave) return false;
   try {
@@ -220,6 +229,7 @@ async function finishPendingSave(text: string): Promise<boolean> {
   }
 }
 
+/** Fallback download helper when the native picker is unavailable. */
 function triggerJsonDownload(filename: string, text: string): void {
   try {
     const blob = new Blob([text], { type: 'application/json' });
@@ -235,6 +245,7 @@ function triggerJsonDownload(filename: string, text: string): void {
   } catch { /* no-throw */ }
 }
 
+/** Clamp and forward resize requests to the plugin main thread. */
 function postResize(width: number, height: number): void {
   const w = Math.max(720, Math.min(1600, Math.floor(width)));
   const h = Math.max(420, Math.min(1200, Math.floor(height)));
@@ -253,6 +264,7 @@ let resizeTracking: ResizeTrackingState | null = null;
 let resizeQueued: { width: number; height: number } | null = null;
 let resizeRaf = 0;
 
+/** Coalesce resize events so we do not spam the plugin process. */
 function queueResize(width: number, height: number): void {
   resizeQueued = { width, height };
   if (resizeRaf !== 0) return;
@@ -264,6 +276,7 @@ function queueResize(width: number, height: number): void {
   });
 }
 
+/** Apply pointer deltas to the pending resize rectangle. */
 function applyResizeDelta(ev: PointerEvent): void {
   if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
   const dx = ev.clientX - resizeTracking.startX;
@@ -274,6 +287,7 @@ function applyResizeDelta(ev: PointerEvent): void {
   ev.preventDefault();
 }
 
+/** Finalize the resize interaction and release captured events. */
 function endResize(ev: PointerEvent): void {
   if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
   applyResizeDelta(ev);
@@ -286,6 +300,7 @@ function endResize(ev: PointerEvent): void {
   resizeTracking = null;
 }
 
+/** Cancel the resize interaction without applying the delta. */
 function cancelResize(ev: PointerEvent): void {
   if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
   window.removeEventListener('pointermove', handleResizeMove, true);
@@ -297,10 +312,12 @@ function cancelResize(ev: PointerEvent): void {
   resizeTracking = null;
 }
 
+/** Pointer move handler that feeds deltas into `applyResizeDelta`. */
 function handleResizeMove(ev: PointerEvent): void {
   applyResizeDelta(ev);
 }
 
+/** Copy the textual content of an element into the clipboard with graceful fallbacks. */
 async function copyElText(el: HTMLElement | null, label: string): Promise<void> {
   try {
     const text = el ? (el.textContent ?? '') : '';
@@ -343,6 +360,7 @@ async function copyElText(el: HTMLElement | null, label: string): Promise<void> 
   }
 }
 
+/** Resize the raw output drawer to fit content on first load. */
 function autoFitOnce(): void {
   if (typeof document === 'undefined') return;
   const contentW = Math.max(
@@ -363,6 +381,7 @@ function autoFitOnce(): void {
 /* -------------------------------------------------------
  * GitHub helpers (UI only; token never stored in UI)
  * ----------------------------------------------------- */
+/** Locate the PAT input field if the GitHub section is mounted. */
 function findTokenInput(): HTMLInputElement | null {
   const byId =
     (document.getElementById('githubTokenInput') as HTMLInputElement | null) ||
@@ -375,15 +394,18 @@ function findTokenInput(): HTMLInputElement | null {
   return guess || null;
 }
 
+/** Read and trim the current PAT field value. */
 function readPatFromUi(): string {
   if (!ghTokenInput) ghTokenInput = findTokenInput();
   return (ghTokenInput?.value || '').trim();
 }
 
+/** Persist the user's preference for remembering PATs. */
 function saveRememberPref(checked: boolean): void {
   try { window.localStorage.setItem(GH_REMEMBER_PREF_KEY, checked ? '1' : '0'); } catch { /* ignore */ }
 }
 
+/** Load the saved remember preference (defaults to false). */
 function loadRememberPref(): boolean {
   try {
     const v = window.localStorage.getItem(GH_REMEMBER_PREF_KEY);
@@ -393,12 +415,14 @@ function loadRememberPref(): boolean {
   return false; // default
 }
 
+/** Lazily create GitHub status DOM nodes when we need to display auth info. */
 function ensureGhStatusElements(): void {
   if (!ghAuthStatusEl) ghAuthStatusEl = document.getElementById('ghAuthStatus');
   if (!ghTokenMetaEl) ghTokenMetaEl = document.getElementById('ghTokenMeta');
   if (!ghLogoutBtn) ghLogoutBtn = document.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
 }
 
+/** Convert an expiration ISO string into "5m left" style text. */
 function formatTimeLeft(expIso: string): string {
   const exp = Date.parse(expIso);
   if (!isFinite(exp)) return 'expiration: unknown';
@@ -415,6 +439,7 @@ function formatTimeLeft(expIso: string): string {
   return `${secs}s left`;
 }
 
+/** Toggle the PAT field between masked/unmasked display markers. */
 function setPatFieldObfuscated(filled: boolean): void {
   if (!ghTokenInput) ghTokenInput = findTokenInput();
   if (!ghTokenInput) return;
@@ -428,6 +453,7 @@ function setPatFieldObfuscated(filled: boolean): void {
   }
 }
 
+/** Refresh auth status indicators based on current GitHub state. */
 function updateGhStatusUi(): void {
   ensureGhStatusElements();
 
@@ -464,10 +490,12 @@ function updateGhStatusUi(): void {
   }
 }
 
+/** Enable/disable GitHub controls based on auth and selection state. */
 function setGitHubDisabledStates(): void {
   updateGhStatusUi();
 }
 
+/** Toggle visibility for the new-branch composer controls. */
 function showNewBranchRow(show: boolean): void {
   if (!ghNewBranchRow) return;
   ghNewBranchRow.style.display = show ? 'flex' : 'none';
@@ -480,6 +508,7 @@ function showNewBranchRow(show: boolean): void {
   }
 }
 
+/** Guard new branch names against GitHub's restrictions. */
 function validateBranchName(name: string): string | null {
   const n = name.trim();
   if (!n) return 'Enter a branch name.';
@@ -492,6 +521,7 @@ function validateBranchName(name: string): string | null {
   return null;
 }
 
+/** Kick off a refresh when our cached branch data is older than the TTL. */
 function revalidateBranchesIfStale(forceLog: boolean = false): void {
   if (!ghRepoSelect || !ghBranchSelect) return;
   if (!currentOwner || !currentRepo) return;
@@ -528,6 +558,7 @@ let currentCollections: Array<{
   variables: Array<{ id: string; name: string; type: string }>;
 }> = [];
 
+/** Append a message to the log panel and console. */
 function log(msg: string): void {
   const t = new Date().toLocaleTimeString();
   const line = document.createElement('div');
@@ -538,15 +569,18 @@ function log(msg: string): void {
   }
 }
 
+/** Send a typed message to the plugin controller. */
 function postToPlugin(message: UiToPlugin): void {
   (parent as unknown as { postMessage: (m: unknown, t: string) => void })
     .postMessage({ pluginMessage: message }, '*');
 }
 
+/** Remove every option from a select without replacing the node. */
 function clearSelect(sel: HTMLSelectElement): void {
   while (sel.options.length > 0) sel.remove(0);
 }
 
+/** Update button/checkbox disabled states based on current selections. */
 function setDisabledStates(): void {
   if (importBtn && fileInput) {
     const hasFile = !!(fileInput.files && fileInput.files.length > 0);
@@ -568,6 +602,7 @@ function setDisabledStates(): void {
   setGitHubDisabledStates();
 }
 
+/** Render the collections/modes dropdowns from plugin-provided data. */
 function populateCollections(data: {
   collections: Array<{
     id: string; name: string;
@@ -589,6 +624,7 @@ function populateCollections(data: {
   onCollectionChange();
 }
 
+/** Update mode selection and preview when the collection dropdown changes. */
 function onCollectionChange(): void {
   if (!(collectionSelect && modeSelect)) return;
 
@@ -624,6 +660,7 @@ function onCollectionChange(): void {
 }
 
 
+/** Restore the most recently used collection/mode pair. */
 function applyLastSelection(last: { collection: string; mode: string } | null): void {
   if (!last || !(collectionSelect && modeSelect)) return;
 
@@ -650,10 +687,12 @@ function applyLastSelection(last: { collection: string; mode: string } | null): 
   setDisabledStates();
 }
 
+/** Format JSON with indentation while collapsing undefined/null gracefully. */
 function prettyJson(obj: unknown): string {
   try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
 }
 
+/** Ask the plugin for a preview of the currently selected token scope. */
 function requestPreviewForCurrent(): void {
   if (!(collectionSelect && modeSelect)) return;
   const collection = collectionSelect.value || '';
@@ -668,6 +707,7 @@ function requestPreviewForCurrent(): void {
 /* -------------------------------------------------------
  * GitHub: Branch helpers (Variant 4)
  * ----------------------------------------------------- */
+/** Toggle the branch select and associated placeholders. */
 function setBranchDisabled(disabled: boolean, placeholder?: string): void {
   if (!ghBranchSelect) return;
   ghBranchSelect.disabled = disabled;
@@ -680,6 +720,7 @@ function setBranchDisabled(disabled: boolean, placeholder?: string): void {
   }
 }
 
+/** Refresh the counter that shows how many branches are visible vs total. */
 function updateBranchCount(): void {
   if (!ghBranchCountEl) return;
   const total = allBranches.length;
@@ -687,6 +728,7 @@ function updateBranchCount(): void {
   ghBranchCountEl.textContent = `${showing} / ${total}${hasMorePages ? ' +' : ''}`;
 }
 
+/** Render branch options in chunks to keep the UI responsive. */
 function renderOptions(): void {
   if (!ghBranchSelect) return;
   const prev = ghBranchSelect.value;
@@ -720,6 +762,7 @@ function renderOptions(): void {
   }
 }
 
+/** Filter the branch list by the current search input. */
 function applyBranchFilter(): void {
   const q = (ghBranchSearch?.value || '').toLowerCase().trim();
   filteredBranches = q
@@ -731,6 +774,7 @@ function applyBranchFilter(): void {
   updateBranchCount();
 }
 
+/** Fetch the next branch page when the user scrolls near the end. */
 function ensureNextPageIfNeeded(): void {
   if (!ghBranchSelect || !ghRepoSelect) return;
   if (!hasMorePages || isFetchingBranches) return;
@@ -743,6 +787,7 @@ function ensureNextPageIfNeeded(): void {
   });
 }
 
+/** Scroll handler that triggers virtualization + pagination. */
 function onBranchScroll(): void {
   if (!ghBranchSelect) return;
   const el = ghBranchSelect;
@@ -752,6 +797,7 @@ function onBranchScroll(): void {
   }
 }
 
+/** React to branch dropdown changes and persist the selection. */
 function onBranchChange(): void {
   if (!ghBranchSelect) return;
   const v = ghBranchSelect.value;
@@ -783,6 +829,7 @@ function onBranchChange(): void {
 /* -------------------------------------------------------
  * GitHub button handlers
  * ----------------------------------------------------- */
+/** Kick off the PAT verification flow from the UI button. */
 function onGitHubConnectClick() {
   const tokenRaw = readPatFromUi();
   const isMasked = ghTokenInput?.getAttribute('data-filled') === '1';
@@ -793,10 +840,12 @@ function onGitHubConnectClick() {
   postToPlugin({ type: 'GITHUB_SET_TOKEN', payload: { token: tokenRaw, remember } } as any);
 }
 
+/** Re-verify the stored token without changing the remember preference. */
 function onGitHubVerifyClick() {
   onGitHubConnectClick();
 }
 
+/** Clear stored GitHub state and notify the plugin to forget the token. */
 function onGitHubLogoutClick() {
   postToPlugin({ type: 'GITHUB_FORGET_TOKEN' } as any);
   ghIsAuthed = false;
@@ -821,6 +870,7 @@ function onGitHubLogoutClick() {
  * Folder picker helpers (UI-only; lists from plugin)
  * ----------------------------------------------------- */
 
+/** Grab the currently selected branch value (or ''). */
 function getCurrentBranch(): string {
   const v = (ghBranchSelect && !ghBranchSelect.disabled &&
     ghBranchSelect.value && ghBranchSelect.value !== '__more__' && ghBranchSelect.value !== '__fetch__')
@@ -829,10 +879,12 @@ function getCurrentBranch(): string {
   return v || '';
 }
 
+/** Read the PR base branch field, defaulting to the main selection. */
 function getPrBaseBranch(): string {
   return defaultBranchFromApi || '';
 }
 
+/** Persist a subset of GitHub state back to the plugin controller. */
 function persistGhState(partial: Partial<{
   owner: string;
   repo: string;
@@ -850,6 +902,7 @@ function persistGhState(partial: Partial<{
   postToPlugin({ type: 'GITHUB_SAVE_STATE', payload: partial });
 }
 
+/** Normalize folder input for display vs payload usage. */
 function normalizeFolderInput(raw: string): { display: string; payload: string } {
   const trimmed = raw.trim();
   if (!trimmed) return { display: '', payload: '' };
@@ -867,6 +920,7 @@ function normalizeFolderInput(raw: string): { display: string; payload: string }
   return { display: stripped + '/', payload: stripped };
 }
 
+/** Enable or disable export/commit buttons depending on current inputs. */
 function updateExportCommitEnabled(): void {
   const hasRepo = !!(currentOwner && currentRepo);
   const br = getCurrentBranch();
@@ -893,6 +947,7 @@ function updateExportCommitEnabled(): void {
 }
 
 
+/** Toggle folder picker UI pieces based on current auth + branch state. */
 function updateFolderControlsEnabled(): void {
   const br = getCurrentBranch();
   const enable = !!(currentOwner && currentRepo && br);
@@ -903,6 +958,7 @@ function updateFolderControlsEnabled(): void {
   updateFetchButtonEnabled();
 }
 
+/** Decide whether the fetch-from-repo button should be active. */
 function updateFetchButtonEnabled(): void {
   const hasRepo = !!(ghIsAuthed && currentOwner && currentRepo);
   const branch = getCurrentBranch();
@@ -912,6 +968,7 @@ function updateFetchButtonEnabled(): void {
 
 
 
+/** Proxy a folder list request to the plugin and wait for the matching reply. */
 function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string }> {
   return new Promise((resolve, _reject) => {
     const req = { path: path.replace(/^\/+|\/+$/g, '') };
@@ -927,6 +984,7 @@ function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] }
   });
 }
 
+/** Ask the plugin to create a folder if one does not already exist. */
 function ensureFolder(folderPath: string): Promise<{ ok: true } | { ok: false; message: string; status?: number }> {
   return new Promise((resolve) => {
     const fp = folderPath.replace(/^\/+|\/+$/g, '');
@@ -942,6 +1000,7 @@ function ensureFolder(folderPath: string): Promise<{ ok: true } | { ok: false; m
   });
 }
 
+/** Display the folder picker overlay and load the initial directory listing. */
 function openFolderPicker(): void {
   if (!currentOwner || !currentRepo) { log('Pick a repository first.'); return; }
   const ref = getCurrentBranch();
@@ -970,6 +1029,7 @@ function openFolderPicker(): void {
   }, 0);
 }
 
+/** Close the folder picker overlay and restore focus. */
 function closeFolderPicker(): void {
   if (!folderPickerOverlay) return;
   folderPickerOverlay.classList.remove('is-open');
@@ -987,6 +1047,7 @@ function closeFolderPicker(): void {
   folderPickerLastFocus = null;
 }
 
+/** Canonicalize folder picker input for comparisons + plugin requests. */
 function normalizeFolderPickerPath(raw: string): string {
   const trimmed = (raw || '').trim();
   if (!trimmed || trimmed === '/' || trimmed === './' || trimmed === '.') return '';
@@ -994,6 +1055,7 @@ function normalizeFolderPickerPath(raw: string): string {
   return collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
+/** Update the folder picker path display and optionally refresh the listing. */
 function setFolderPickerPath(raw: string, refresh: boolean = true): void {
   const normalized = normalizeFolderPickerPath(raw);
   folderPickerCurrentPath = normalized;
@@ -1003,6 +1065,7 @@ function setFolderPickerPath(raw: string, refresh: boolean = true): void {
   }
 }
 
+/** Reload the folder picker contents, respecting in-flight refresh tokens. */
 async function refreshFolderPickerList(): Promise<void> {
   if (!(folderPickerListEl && folderPickerIsOpen)) return;
   const listEl = folderPickerListEl;
@@ -1051,6 +1114,7 @@ async function refreshFolderPickerList(): Promise<void> {
   listEl.replaceChildren(...nodes);
 }
 
+/** Build a row inside the folder picker list with optional buttons. */
 function createFolderPickerRow(label: string, options?: {
   onClick?: () => void;
   muted?: boolean;
@@ -1071,6 +1135,7 @@ function createFolderPickerRow(label: string, options?: {
   return btn;
 }
 
+/** Update the picker headline so users know which branch they are browsing. */
 function updateFolderPickerTitle(branch: string): void {
   if (!folderPickerTitleEl) return;
   if (currentOwner && currentRepo) {
@@ -1080,6 +1145,7 @@ function updateFolderPickerTitle(branch: string): void {
   }
 }
 
+/** Trap focus within the folder picker and wire up keyboard shortcuts. */
 function handleFolderPickerKeydown(event: KeyboardEvent): void {
   if (!folderPickerIsOpen) return;
   if (event.key === 'Escape') {
@@ -2060,6 +2126,7 @@ document.addEventListener('DOMContentLoaded', function () {
 /* -------------------------------------------------------
  * Drawer helpers
  * ----------------------------------------------------- */
+/** Persist drawer state and adjust CSS hooks so the UI animates correctly. */
 function setDrawerOpen(open: boolean): void {
   if (shellEl) {
     if (open) shellEl.classList.remove('drawer-collapsed');
@@ -2073,6 +2140,7 @@ function setDrawerOpen(open: boolean): void {
   try { window.localStorage.setItem('drawerOpen', open ? '1' : '0'); } catch { /* ignore */ }
 }
 
+/** Load the saved drawer state flag from local storage. */
 function getSavedDrawerOpen(): boolean {
   try {
     const v = window.localStorage.getItem('drawerOpen');

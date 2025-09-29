@@ -1,5 +1,7 @@
 // src/adapters/figma-writer.ts
-// Apply IR TokenGraph -> Figma variables (create/update, then set per-mode values)
+// Apply TokenGraph changes back into Figma's variables API safely and predictably.
+// - Buckets tokens so we only mutate what the document can represent
+// - Preserves figma-specific metadata hints to keep round trips stable
 
 import { slugSegment } from '../core/normalize';
 import { type TokenGraph, type TokenNode, type PrimitiveType } from '../core/ir';
@@ -15,6 +17,7 @@ import {
 } from '../core/color';
 
 // ---------- logging to UI (no toasts) ----------
+/** Post a quiet log line to the UI without risking plugin runtime errors. */
 function logInfo(msg: string) {
   try { figma.ui?.postMessage({ type: 'INFO', payload: { message: msg } }); } catch { /* ignore */ }
 }
@@ -25,7 +28,7 @@ function logError(msg: string) { logInfo('Error: ' + msg); }
 
 // ---------- boolean import helpers (hint + mild note) ----------
 
-// Read the explicit figma type hint from $extensions.com.figma.variableType
+/** Read the explicit figma type hint from $extensions.com.figma.variableType. */
 function readFigmaVariableTypeHint(t: TokenNode): 'BOOLEAN' | undefined {
   try {
     const ext = t.extensions && typeof t.extensions === 'object'
@@ -36,12 +39,12 @@ function readFigmaVariableTypeHint(t: TokenNode): 'BOOLEAN' | undefined {
   } catch { return undefined; }
 }
 
-// true/false detector for string values
+/** Detect string payloads that look like boolean literals so we can warn users. */
 function looksBooleanString(s: unknown): s is string {
   return typeof s === 'string' && /^(true|false)$/i.test(s.trim());
 }
 
-// Does the token have any direct string value that looks boolean?
+/** Identify tokens that store booleans-as-strings so we can hint at safer conversion. */
 function tokenHasBooleanLikeString(t: TokenNode): boolean {
   const byCtx = t.byContext || {};
   for (const k in byCtx) {
@@ -52,7 +55,7 @@ function tokenHasBooleanLikeString(t: TokenNode): boolean {
   return false;
 }
 
-// Token has at least one non-alias, correctly-typed value in any context
+/** Token has at least one non-alias, correctly-typed value in any context. */
 function tokenHasDirectValue(t: TokenNode): boolean {
   const byCtx = t.byContext || {};
   for (const k in byCtx) {
@@ -70,8 +73,10 @@ function tokenHasDirectValue(t: TokenNode): boolean {
   return false;
 }
 
-// True if token has at least one *settable* direct value in any context.
-// (Color requires strict shape + document representability; other primitives just need correct kind.)
+/**
+ * True if the token has a direct value that we can safely write for at least one context.
+ * Colors require strict validation and profile checks; other primitives just need correct kind.
+ */
 function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfile): boolean {
   const byCtx = t.byContext || {};
   for (const ctx in byCtx) {
@@ -97,12 +102,14 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfi
   return false;
 }
 
+/** Convert our primitive type into the Figma enum that createVariable expects. */
 function resolvedTypeFor(t: PrimitiveType): VariableResolvedDataType {
   if (t === 'color') return 'COLOR';
   if (t === 'number') return 'FLOAT';
   if (t === 'string') return 'STRING';
   return 'BOOLEAN';
 }
+/** Enumerate own-string keys without trusting prototype state. */
 function forEachKey<T>(obj: { [k: string]: T } | undefined): string[] {
   const out: string[] = [];
   if (!obj) return out;
@@ -110,7 +117,7 @@ function forEachKey<T>(obj: { [k: string]: T } | undefined): string[] {
   return out;
 }
 
-// Token has at least one alias among its contexts
+/** Token has at least one alias among its contexts. */
 function tokenHasAlias(t: TokenNode): boolean {
   const byCtx = t.byContext || {};
   for (const k in byCtx) {
@@ -120,7 +127,7 @@ function tokenHasAlias(t: TokenNode): boolean {
   return false;
 }
 
-// Compare value-hex vs extensions-hex and warn (but prefer $value)
+/** Compare imported hex values against stored metadata and raise a gentle warning if they diverge. */
 function maybeWarnColorMismatch(t: TokenNode, ctx: string, importedHexOrNull: string | null): void {
   try {
     const extAll = t.extensions && typeof t.extensions === 'object' ? (t.extensions as any)['com.figma'] : undefined;
@@ -138,7 +145,7 @@ function maybeWarnColorMismatch(t: TokenNode, ctx: string, importedHexOrNull: st
   } catch { /* never throw from logging */ }
 }
 
-// Normalize alias path segments (array or string) and adjust first segment:
+/** Normalize alias path segments and map collection slugs back to display names when possible. */
 function normalizeAliasSegments(
   rawPath: string[] | string,
   currentCollection: string,
@@ -164,7 +171,10 @@ function normalizeAliasSegments(
   return [currentCollection, ...segs];
 }
 
-// ---- strict name check helper (extensions vs JSON path)
+/**
+ * Ensure $extensions name hints line up with the JSON path we are about to write.
+ * Helps catch renamed variables that could otherwise split into duplicate nodes.
+ */
 function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
   const ext = t.extensions && typeof t.extensions === 'object'
     ? (t.extensions as any)['com.figma']

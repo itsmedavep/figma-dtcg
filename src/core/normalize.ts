@@ -1,15 +1,14 @@
 // src/core/normalize.ts
 // Shared helpers for names, paths, alias parsing, and graph checks.
+// - Normalizes paths so adapters stay in sync
+// - Provides alias analysis utilities for validation and exports
 
 import type { TokenGraph, TokenNode, ValueOrAlias } from './ir';
 
 /* =========================
    Naming & Path Utilities
    ========================= */
-/* 
- * Slug a single path segment for lookup (never for emission).
- * Used only to broaden alias resolution lookups.
- */
+/** Slug a single path segment for lookup (never for emission). */
 export function slugSegment(s: string): string {
   return String(s)
     .trim()
@@ -21,8 +20,6 @@ export function slugSegment(s: string): string {
 /**
  * Return a canonical token path using Figma's display names.
  * Always splits variable names on '/', trims segments, and removes empties.
- * Example: canonicalPath("Collection 1", "group1/group2/baseVar")
- *   -> ["Collection 1", "group1", "group2", "baseVar"]
  */
 export function canonicalPath(collection: string, variableName: string): string[] {
   const segs = String(variableName)
@@ -58,6 +55,10 @@ export function parseAliasString(s: string): string[] | null {
    Graph Utilities
    ========================= */
 
+/**
+ * Deduplicate tokens by slash path and sort them for stable comparisons.
+ * Keeps adapters from reordering content across reads/writes.
+ */
 export function normalize(graph: TokenGraph): TokenGraph {
   var seen: { [k: string]: 1 } = {};
   var copy: TokenNode[] = [];
@@ -89,6 +90,7 @@ function slashPath(path: string[]): string {
   return s;
 }
 
+/** Build a dot-path index for quick alias resolution. */
 export function indexByDotPath(graph: TokenGraph): { [dot: string]: TokenNode } {
   var idx: { [dot: string]: TokenNode } = {};
   var i = 0;
@@ -99,10 +101,15 @@ export function indexByDotPath(graph: TokenGraph): { [dot: string]: TokenNode } 
   return idx;
 }
 
+/** Type guard: true if the value is an alias entry. */
 export function isAlias(v: ValueOrAlias): v is { kind: 'alias'; path: string[] } {
   return !!v && v.kind === 'alias';
 }
 
+/**
+ * Walk alias edges to find missing references and cycles.
+ * Useful for validation before exporting or writing to Figma.
+ */
 export function analyzeAliases(graph: TokenGraph): { missing: string[]; cycles: string[][] } {
   var idx = indexByDotPath(graph);
   var edges: { [from: string]: string[] } = {};
