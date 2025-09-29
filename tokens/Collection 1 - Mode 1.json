@@ -6,11 +6,11 @@
         "colorSpace": "srgb",
         "components": [
           1,
-          1,
-          1
+          0,
+          0
         ],
         "alpha": 1,
-        "hex": "#ffffff"
+        "hex": "#ff0000"
       },
       "$description": "testing color description",
       "$extensions": {
