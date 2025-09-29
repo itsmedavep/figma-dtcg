@@ -273,6 +273,8 @@
       display: grid;
       place-items: center;
       z-index: 2147483647;
+      touch-action: none;
+      user-select: none;
     }
 
     .resize-handle::after {
@@ -473,10 +475,95 @@
       display: flex;
     }
 
-    #ghConnectBtn {
-      margin-top: 2rem;
+    .tab-panel--scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
     }
 
+    .github-panel {
+      gap: 12px;
+    }
+
+    #panel-github button {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-width: 1px;
+    }
+
+    #panel-github .css-button-neumorphic {
+      min-width: 0;
+      height: auto;
+      padding: 6px 10px;
+    }
+
+    .gh-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .gh-auth-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .gh-auth-actions button {
+      min-width: 0;
+    }
+
+    .gh-auth-status,
+    .gh-auth-meta {
+      font-size: 12px;
+    }
+
+    .gh-remember {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .gh-remember-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .gh-branch-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .gh-branch-search input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .gh-branch-count {
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    .gh-branch-refresh,
+    .gh-new-branch-btn,
+    #ghPickFolderBtn {
+      align-self: flex-start;
+    }
+
+    .gh-new-branch-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .gh-new-branch-row input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
     #ghTokenInput.gh-mask {
       -webkit-text-security: disc;
     }
@@ -491,13 +578,15 @@
         <div class="panel-header">
           <div>
             <div class="eyebrow">Actions</div>
-            <h2 class="title">Import & Export</h2>
+            <h2 class="title">Actions - Import, Export &amp; GitHub</h2>
           </div>
-          <div class="tabs" role="tablist" aria-label="Import and Export">
+          <div class="tabs" role="tablist" aria-label="Actions tabs">
             <button class="tab-btn is-active" data-tab="import" role="tab" aria-selected="true"
               aria-controls="panel-import">Import</button>
             <button class="tab-btn" data-tab="export" role="tab" aria-selected="false"
               aria-controls="panel-export">Export</button>
+            <button class="tab-btn" data-tab="github" role="tab" aria-selected="false"
+              aria-controls="panel-github">GitHub</button>
           </div>
         </div>
 
@@ -549,6 +638,126 @@
             </div>
           </div>
           <!-- /Export tab -->
+
+          <!-- GitHub tab -->
+          <div class="tab-panel" id="panel-github" data-tab="github" role="tabpanel" aria-labelledby="tab-github">
+            <div class="stack tab-panel--scroll github-panel">
+
+              <!-- Auth row -->
+              <div class="stack gh-section gh-auth">
+                <label>Personal Access Token (PAT)</label>
+                <input id="ghTokenInput" type="password" placeholder="GitHub personal access token" autocomplete="off" />
+                <div class="muted gh-remember">
+                  <span>Store on this device?</span>
+                  <label class="gh-remember-toggle">
+                    <input id="ghRememberChk" type="checkbox" />
+                    Remember me (base64 on device)
+                  </label>
+                </div>
+                <div class="gh-auth-actions">
+                  <button id="ghConnectBtn" class="css-button-neumorphic">Connect</button>
+                  <button id="ghLogoutBtn" class="css-button-neumorphic" type="button">Log out</button>
+                </div>
+                <div id="ghAuthStatus" class="muted gh-auth-status"></div>
+                <div id="ghTokenMeta" class="muted gh-auth-meta"></div>
+              </div>
+
+              <!-- Repo picker -->
+              <div class="stack gh-section">
+                <label>Repository</label>
+                <select id="ghRepoSelect" disabled></select>
+                <div class="muted">Repos you own or are a member of (populated after Connect).</div>
+              </div>
+
+              <!-- Branch controls -->
+              <div class="stack gh-section">
+                <label>Branch</label>
+                <div class="gh-branch-search">
+                  <input id="ghBranchSearch" type="text" placeholder="Search branches… (press Enter to refresh)" />
+                  <div id="ghBranchCount" class="muted gh-branch-count"></div>
+                </div>
+                <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh" type="button">Refresh</button>
+                <select id="ghBranchSelect" disabled></select>
+                <button id="ghNewBranchBtn" class="css-button-neumorphic gh-new-branch-btn" disabled type="button">Create new…</button>
+                <div id="ghNewBranchRow" class="gh-new-branch-row" style="display:none;">
+                  <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
+                  <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic" type="button">Create</button>
+                </div>
+              </div>
+
+              <!-- Destination folder -->
+              <div class="stack gh-section">
+                <label>Destination folder (in repo)</label>
+                <input id="ghFolderInput" type="text" placeholder="tokens/" />
+                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick…</button>
+                <div class="muted">Files will be committed under this path (e.g., <code>tokens/</code>).</div>
+              </div>
+
+              <!-- Commit -->
+              <div class="row">
+                <div>
+                  <label>Commit message</label>
+                  <input id="ghCommitMsgInput" type="text" value="Update tokens from Figma" />
+                </div>
+              </div>
+
+              <!-- PR toggle -->
+              <div class="row">
+                <div>
+                  <label>Pull request</label>
+                  <label style="display:flex; align-items:center; gap:.35rem;">
+                    <input type="checkbox" id="ghCreatePrChk" />
+                    Create a pull request after committing
+                  </label>
+                  <div id="ghPrOptions" class="stack" style="margin-top:.5rem; display:none; gap:.5rem;">
+                    <input id="ghPrTitleInput" type="text" placeholder="Pull request title" />
+                    <textarea id="ghPrBodyInput" rows="3" placeholder="Optional PR description"></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Scope -->
+              <div class="row">
+                <div>
+                  <label>Export scope</label>
+                  <div class="row" style="gap:1rem;">
+                    <label style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="radio" name="ghScope" id="ghScopeSelected" checked />
+                      Use current selection (left Export pickers)
+                    </label>
+                    <label style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="radio" name="ghScope" id="ghScopeAll" />
+                      All collections &amp; modes
+                    </label>
+
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="row">
+                <div class="row" style="gap:.5rem;">
+                  <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit / PR</button>
+                </div>
+              </div>
+
+              <!-- Import from GitHub -->
+              <div class="row">
+                <div>
+                  <label>Import tokens from GitHub</label>
+                  <div class="row">
+                    <input id="ghFetchPathInput" type="text" placeholder="tokens/Tokens - Light.json" />
+                    <div style="flex:0 0 auto;">
+                      <button id="ghFetchTokensBtn" class="css-button-neumorphic" disabled>Fetch &amp; Import</button>
+                    </div>
+                  </div>
+                  <div class="muted">Downloads a JSON file from the selected repo/branch and imports it.</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -593,171 +802,16 @@
       <div class="panel-header">
         <div>
           <div class="eyebrow">Diagnostics</div>
-          <h2 class="title">Activity</h2>
+          <h2 class="title">Activity Log</h2>
         </div>
-
-        <!-- Drawer tabs -->
-        <div class="tabs" role="tablist" aria-label="Drawer tabs">
-          <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true"
-            aria-controls="panel-log">Log</button>
-          <button class="tab-btn" data-tab="github" role="tab" aria-selected="false"
-            aria-controls="panel-github">GitHub</button>
-
-          <!-- Right-side actions stay the same -->
-          <div class="actions" style="margin-left: 12px;">
-            <button id="copyLogBtn" title="Copy log">Copy</button>
-            <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
-          </div>
+        <div class="actions">
+          <button id="copyLogBtn" title="Copy log">Copy</button>
+          <button id="drawerToggleBtn" class="drawer-toggle" aria-expanded="true" title="Hide log">Hide</button>
         </div>
       </div>
 
       <div class="drawer-body">
-        <!-- LOG PANEL -->
-        <div class="tab-panel is-active" id="panel-log" data-tab="log" role="tabpanel" aria-labelledby="tab-log">
-          <div id="log"></div>
-        </div>
-
-        <!-- GITHUB PANEL (UI only; no network) -->
-        <div class="tab-panel" id="panel-github" data-tab="github" role="tabpanel" aria-labelledby="tab-github">
-          <div class="stack" style="gap: 10px;">
-
-            <!-- Auth row -->
-            <div class="row">
-              <div>
-                <label>Personal Access Token (PAT)</label>
-                <input id="ghTokenInput" type="password" placeholder="GitHub personal access token" autocomplete="off"
-                  style="flex:1; min-width:220px;" />
-                <div class="muted" style="margin-top:4px;">
-                  Store on this device? <input id="ghRememberChk" type="checkbox" />
-                  <label for="ghRememberChk" style="display:inline; margin-left:.25rem;">Remember me (base64 on
-                    device)</label>
-                </div>
-              </div>
-              <div style="flex:0 0 auto;">
-                <button id="ghConnectBtn" class="css-button-neumorphic">Connect</button>
-              </div>
-            </div>
-
-            <!-- Repo picker -->
-            <div class="row">
-              <div>
-                <label>Repository</label>
-                <select id="ghRepoSelect" disabled></select>
-                <div class="muted">Repos you own or are a member of (populated after Connect).</div>
-              </div>
-            </div>
-
-            <!-- Branch controls -->
-            <div class="row">
-              <div>
-                <label>Branch</label>
-
-                <!-- Search + Count + Refresh row (always visible) -->
-                <div class="row" style="align-items:center;">
-                  <input id="ghBranchSearch" type="text" placeholder="Search branches… (press Enter to refresh)" />
-                  <div style="flex:0 0 auto; display:flex; gap:.25rem; align-items:center;">
-                    <button id="ghBranchRefreshBtn" class="css-button-neumorphic">Refresh</button>
-                    <div id="ghBranchCount" class="muted" style="white-space:nowrap;"></div>
-                  </div>
-                </div>
-
-                <!-- Branch select + new branch -->
-                <div class="row">
-                  <select id="ghBranchSelect" disabled></select>
-                  <div style="flex:0 0 auto; display:flex; gap:.25rem; align-items:center;">
-                    <button id="ghNewBranchBtn" class="css-button-neumorphic" disabled>Create new…</button>
-                  </div>
-                </div>
-
-                <!-- Inline new-branch composer (hidden until clicked) -->
-                <div id="ghNewBranchRow" class="row" style="display:none; margin-top:.25rem;">
-                  <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
-                  <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic">Create</button>
-                </div>
-
-              </div>
-            </div>
-
-            <!-- Destination folder -->
-            <div class="row">
-              <div>
-                <label>Destination folder (in repo)</label>
-                <div class="row">
-                  <input id="ghFolderInput" type="text" placeholder="tokens/" />
-                  <div style="flex:0 0 auto;">
-                    <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled>Pick…</button>
-                  </div>
-                </div>
-                <div class="muted">Files will be committed under this path (e.g., <code>tokens/</code>).</div>
-              </div>
-            </div>
-
-            <!-- Commit -->
-            <div class="row">
-              <div>
-                <label>Commit message</label>
-                <input id="ghCommitMsgInput" type="text" value="Update tokens from Figma" />
-              </div>
-            </div>
-
-            <!-- PR toggle -->
-            <div class="row">
-              <div>
-                <label>Pull request</label>
-                <label style="display:flex; align-items:center; gap:.35rem;">
-                  <input type="checkbox" id="ghCreatePrChk" />
-                  Create a pull request after committing
-                </label>
-                <div id="ghPrOptions" class="stack" style="margin-top:.5rem; display:none; gap:.5rem;">
-                  <input id="ghPrBranchInput" type="text" placeholder="tokens/update-20240101-1200" />
-                  <input id="ghPrTitleInput" type="text" placeholder="Pull request title" />
-                  <textarea id="ghPrBodyInput" rows="3" placeholder="Optional PR description"></textarea>
-                </div>
-              </div>
-            </div>
-
-            <!-- Scope -->
-            <div class="row">
-              <div>
-                <label>Export scope</label>
-                <div class="row" style="gap:1rem;">
-                  <label style="display:flex; align-items:center; gap:.35rem;">
-                    <input type="radio" name="ghScope" id="ghScopeSelected" checked />
-                    Use current selection (left Export pickers)
-                  </label>
-                  <label style="display:flex; align-items:center; gap:.35rem;">
-                    <input type="radio" name="ghScope" id="ghScopeAll" />
-                    All collections &amp; modes
-                  </label>
-
-
-                </div>
-              </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="row">
-              <div class="row" style="gap:.5rem;">
-                <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit / PR</button>
-              </div>
-            </div>
-
-            <!-- Import from GitHub -->
-            <div class="row">
-              <div>
-                <label>Import tokens from GitHub</label>
-                <div class="row">
-                  <input id="ghFetchPathInput" type="text" placeholder="tokens/Tokens - Light.json" />
-                  <div style="flex:0 0 auto;">
-                    <button id="ghFetchTokensBtn" class="css-button-neumorphic" disabled>Fetch &amp; Import</button>
-                  </div>
-                </div>
-                <div class="muted">Downloads a JSON file from the selected repo/branch and imports it.</div>
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <div id="log"></div>
       </div>
     </div>
 

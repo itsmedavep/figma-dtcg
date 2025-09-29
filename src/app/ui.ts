@@ -19,6 +19,7 @@ let refreshBtn: HTMLButtonElement | null = null;
 
 let shellEl: HTMLElement | null = null;
 let drawerToggleBtn: HTMLButtonElement | null = null;
+let resizeHandleEl: HTMLElement | null = null;
 
 let w3cPreviewEl: HTMLElement | null = null;
 
@@ -56,7 +57,6 @@ let ghCommitMsgInput: HTMLInputElement | null = null;
 let ghExportAndCommitBtn: HTMLButtonElement | null = null;
 let ghCreatePrChk: HTMLInputElement | null = null;
 let ghPrOptionsEl: HTMLElement | null = null;
-let ghPrBranchInput: HTMLInputElement | null = null;
 let ghPrTitleInput: HTMLInputElement | null = null;
 let ghPrBodyInput: HTMLTextAreaElement | null = null;
 let ghFetchPathInput: HTMLInputElement | null = null;
@@ -241,6 +241,66 @@ function postResize(width: number, height: number): void {
   postToPlugin({ type: 'UI_RESIZE', payload: { width: w, height: h } });
 }
 
+type ResizeTrackingState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startWidth: number;
+  startHeight: number;
+};
+
+let resizeTracking: ResizeTrackingState | null = null;
+let resizeQueued: { width: number; height: number } | null = null;
+let resizeRaf = 0;
+
+function queueResize(width: number, height: number): void {
+  resizeQueued = { width, height };
+  if (resizeRaf !== 0) return;
+  resizeRaf = window.requestAnimationFrame(() => {
+    resizeRaf = 0;
+    if (!resizeQueued) return;
+    postResize(resizeQueued.width, resizeQueued.height);
+    resizeQueued = null;
+  });
+}
+
+function applyResizeDelta(ev: PointerEvent): void {
+  if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
+  const dx = ev.clientX - resizeTracking.startX;
+  const dy = ev.clientY - resizeTracking.startY;
+  const nextW = resizeTracking.startWidth + dx;
+  const nextH = resizeTracking.startHeight + dy;
+  queueResize(nextW, nextH);
+  ev.preventDefault();
+}
+
+function endResize(ev: PointerEvent): void {
+  if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
+  applyResizeDelta(ev);
+  window.removeEventListener('pointermove', handleResizeMove, true);
+  window.removeEventListener('pointerup', endResize, true);
+  window.removeEventListener('pointercancel', cancelResize, true);
+  if (resizeHandleEl) {
+    try { resizeHandleEl.releasePointerCapture(resizeTracking.pointerId); } catch { /* ignore */ }
+  }
+  resizeTracking = null;
+}
+
+function cancelResize(ev: PointerEvent): void {
+  if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
+  window.removeEventListener('pointermove', handleResizeMove, true);
+  window.removeEventListener('pointerup', endResize, true);
+  window.removeEventListener('pointercancel', cancelResize, true);
+  if (resizeHandleEl) {
+    try { resizeHandleEl.releasePointerCapture(resizeTracking.pointerId); } catch { /* ignore */ }
+  }
+  resizeTracking = null;
+}
+
+function handleResizeMove(ev: PointerEvent): void {
+  applyResizeDelta(ev);
+}
+
 async function copyElText(el: HTMLElement | null, label: string): Promise<void> {
   try {
     const text = el ? (el.textContent ?? '') : '';
@@ -334,36 +394,9 @@ function loadRememberPref(): boolean {
 }
 
 function ensureGhStatusElements(): void {
-  ghAuthStatusEl = document.getElementById('ghAuthStatus');
-  ghTokenMetaEl = document.getElementById('ghTokenMeta');
-  ghLogoutBtn = document.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
-
-  const anchor = ghConnectBtn || ghVerifyBtn;
-  if (!anchor || !anchor.parentElement) return;
-
-  if (!ghAuthStatusEl) {
-    ghAuthStatusEl = document.createElement('div');
-    ghAuthStatusEl.id = 'ghAuthStatus';
-    ghAuthStatusEl.className = 'muted';
-    ghAuthStatusEl.style.marginTop = '6px';
-    anchor.parentElement.appendChild(ghAuthStatusEl);
-  }
-  if (!ghTokenMetaEl) {
-    ghTokenMetaEl = document.createElement('div');
-    ghTokenMetaEl.id = 'ghTokenMeta';
-    ghTokenMetaEl.className = 'muted';
-    ghTokenMetaEl.style.marginTop = '2px';
-    anchor.parentElement.appendChild(ghTokenMetaEl);
-  }
-  if (!ghLogoutBtn) {
-    ghLogoutBtn = document.createElement('button');
-    ghLogoutBtn.id = 'ghLogoutBtn';
-    ghLogoutBtn.textContent = 'Log out';
-    ghLogoutBtn.className = 'tab-btn';
-    ghLogoutBtn.style.marginTop = '6px';
-    ghLogoutBtn.addEventListener('click', onGitHubLogoutClick);
-    anchor.parentElement.appendChild(ghLogoutBtn);
-  }
+  if (!ghAuthStatusEl) ghAuthStatusEl = document.getElementById('ghAuthStatus');
+  if (!ghTokenMetaEl) ghTokenMetaEl = document.getElementById('ghTokenMeta');
+  if (!ghLogoutBtn) ghLogoutBtn = document.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
 }
 
 function formatTimeLeft(expIso: string): string {
@@ -796,6 +829,10 @@ function getCurrentBranch(): string {
   return v || '';
 }
 
+function getPrBaseBranch(): string {
+  return defaultBranchFromApi || '';
+}
+
 function persistGhState(partial: Partial<{
   owner: string;
   repo: string;
@@ -806,7 +843,7 @@ function persistGhState(partial: Partial<{
   collection: string;
   mode: string;
   createPr: boolean;
-  prBranch: string;
+  prBase: string;
   prTitle: string;
   prBody: string;
 }>): void {
@@ -843,7 +880,14 @@ function updateExportCommitEnabled(): void {
     ? true
     : !!(collectionSelect && collectionSelect.value && modeSelect && modeSelect.value);
 
-  const ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder);
+  let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder);
+
+  if (ghCreatePrChk && ghCreatePrChk.checked) {
+    const prBase = getPrBaseBranch();
+    if (!prBase || prBase === br) {
+      ready = false;
+    }
+  }
 
   if (ghExportAndCommitBtn) ghExportAndCommitBtn.disabled = !ready;
 }
@@ -1205,7 +1249,6 @@ window.addEventListener('message', async (event: MessageEvent) => {
       ghCreatePrChk.checked = p.createPr;
       if (ghPrOptionsEl) ghPrOptionsEl.style.display = p.createPr ? 'flex' : 'none';
     }
-    if (typeof p.prBranch === 'string' && ghPrBranchInput) ghPrBranchInput.value = p.prBranch;
     if (typeof p.prTitle === 'string' && ghPrTitleInput) ghPrTitleInput.value = p.prTitle;
     if (typeof p.prBody === 'string' && ghPrBodyInput) ghPrBodyInput.value = p.prBody;
 
@@ -1471,6 +1514,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   shellEl = document.querySelector('.shell') as HTMLElement | null;
   drawerToggleBtn = document.getElementById('drawerToggleBtn') as HTMLButtonElement | null;
+  resizeHandleEl = document.getElementById('resizeHandle');
 
   w3cPreviewEl = document.getElementById('w3cPreview') as HTMLElement | null;
 
@@ -1480,6 +1524,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
   allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
 
+  if (resizeHandleEl) {
+    resizeHandleEl.addEventListener('pointerdown', (event: PointerEvent) => {
+      if (event.button !== 0 && event.pointerType === 'mouse') return;
+      if (resizeTracking) return;
+      event.preventDefault();
+      resizeTracking = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startWidth: window.innerWidth,
+        startHeight: window.innerHeight
+      };
+      try { resizeHandleEl!.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+      window.addEventListener('pointermove', handleResizeMove, true);
+      window.addEventListener('pointerup', endResize, true);
+      window.addEventListener('pointercancel', cancelResize, true);
+    });
+  }
+
   // GitHub controls (robust lookups)
   ghTokenInput = findTokenInput();
   ghRememberChk = (document.getElementById('githubRememberChk') as HTMLInputElement | null)
@@ -1488,6 +1551,7 @@ document.addEventListener('DOMContentLoaded', function () {
     || (document.getElementById('ghConnectBtn') as HTMLButtonElement | null);
   ghVerifyBtn = (document.getElementById('githubVerifyBtn') as HTMLButtonElement | null)
     || (document.getElementById('ghVerifyBtn') as HTMLButtonElement | null);
+  ghLogoutBtn = document.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
   ghRepoSelect = document.getElementById('ghRepoSelect') as HTMLSelectElement | null;
 
   // Optional Branch controls
@@ -1503,7 +1567,6 @@ document.addEventListener('DOMContentLoaded', function () {
   ghExportAndCommitBtn = document.getElementById('ghExportAndCommitBtn') as HTMLButtonElement | null;
   ghCreatePrChk = document.getElementById('ghCreatePrChk') as HTMLInputElement | null;
   ghPrOptionsEl = document.getElementById('ghPrOptions') as HTMLElement | null;
-  ghPrBranchInput = document.getElementById('ghPrBranchInput') as HTMLInputElement | null;
   ghPrTitleInput = document.getElementById('ghPrTitleInput') as HTMLInputElement | null;
   ghPrBodyInput = document.getElementById('ghPrBodyInput') as HTMLTextAreaElement | null;
   ghFetchPathInput = document.getElementById('ghFetchPathInput') as HTMLInputElement | null;
@@ -1535,6 +1598,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // Wire GitHub buttons
   if (ghConnectBtn) ghConnectBtn.addEventListener('click', onGitHubConnectClick);
   if (ghVerifyBtn) ghVerifyBtn.addEventListener('click', onGitHubVerifyClick);
+  if (ghLogoutBtn) ghLogoutBtn.addEventListener('click', onGitHubLogoutClick);
 
   // Repo → branch load
   if (ghRepoSelect && ghBranchSelect) {
@@ -1720,13 +1784,10 @@ document.addEventListener('DOMContentLoaded', function () {
     ghCreatePrChk.addEventListener('change', () => {
       const on = !!ghCreatePrChk!.checked;
       if (ghPrOptionsEl) ghPrOptionsEl.style.display = on ? 'flex' : 'none';
-      persistGhState({ createPr: on });
+      const save: Partial<{ createPr: boolean; prBase: string }> = { createPr: on };
+      if (on) save.prBase = getPrBaseBranch();
+      persistGhState(save);
       updateExportCommitEnabled();
-    });
-  }
-  if (ghPrBranchInput) {
-    ghPrBranchInput.addEventListener('input', () => {
-      persistGhState({ prBranch: ghPrBranchInput!.value });
     });
   }
   if (ghPrTitleInput) {
@@ -1828,7 +1889,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       if (createPr) {
-        payload.payload.prBranch = (ghPrBranchInput?.value || '').trim();
+        payload.payload.prBase = getPrBaseBranch();
         payload.payload.prTitle = (ghPrTitleInput?.value || '').trim();
         payload.payload.prBody = ghPrBodyInput?.value || '';
       }

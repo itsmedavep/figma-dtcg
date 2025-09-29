@@ -31,7 +31,7 @@ type GhSelected = {
   collection?: string;
   mode?: string;
   createPr?: boolean;
-  prBranch?: string;
+  prBase?: string;
   prTitle?: string;
   prBody?: string;
 };
@@ -463,7 +463,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         collection: sel.collection,
         mode: sel.mode,
         createPr: sel.createPr,
-        prBranch: sel.prBranch,
+        prBase: sel.prBase,
         prTitle: sel.prTitle,
         prBody: sel.prBody
       });
@@ -483,7 +483,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         collection: sel.collection,
         mode: sel.mode,
         createPr: sel.createPr,
-        prBranch: sel.prBranch,
+        prBase: sel.prBase,
         prTitle: sel.prTitle,
         prBody: sel.prBody
       });
@@ -503,7 +503,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         collection: sel.collection,
         mode: sel.mode,
         createPr: sel.createPr,
-        prBranch: sel.prBranch,
+        prBase: sel.prBase,
         prTitle: sel.prTitle,
         prBody: sel.prBody
       });
@@ -521,7 +521,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       if (typeof msg.payload.collection === 'string') update.collection = msg.payload.collection;
       if (typeof msg.payload.mode === 'string') update.mode = msg.payload.mode;
       if (typeof msg.payload.createPr === 'boolean') update.createPr = msg.payload.createPr;
-      if (typeof msg.payload.prBranch === 'string') update.prBranch = msg.payload.prBranch;
+      if (typeof msg.payload.prBase === 'string') update.prBase = msg.payload.prBase;
       if (typeof msg.payload.prTitle === 'string') update.prTitle = msg.payload.prTitle;
       if (typeof msg.payload.prBody === 'string') update.prBody = msg.payload.prBody;
       await mergeSelected(update);
@@ -544,7 +544,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       if (res.ok) {
         send({ type: 'GITHUB_BRANCHES', payload: res });
         if (page === 1 && res.defaultBranch) {
-          await mergeSelected({ owner, repo, branch: res.defaultBranch });
+          await mergeSelected({ owner, repo, branch: res.defaultBranch, prBase: res.defaultBranch });
         }
       } else {
         send({ type: 'GITHUB_BRANCHES_ERROR', payload: res });
@@ -736,7 +736,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
     const collection = String(msg.payload.collection || '');
     const mode = String(msg.payload.mode || '');
     const createPr = !!msg.payload.createPr;
-    const requestedPrBranch = String(msg.payload.prBranch || '');
+    const prBaseBranch = createPr ? String(msg.payload.prBase || '') : '';
     const prTitle = String(msg.payload.prTitle || commitMessage).trim() || commitMessage;
     const prBody = typeof msg.payload.prBody === 'string' ? msg.payload.prBody : undefined;
 
@@ -763,8 +763,12 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
     const folderForCommit = folderStorageToCommitPath(folderStored);
-    if (createPr && requestedPrBranch && requestedPrBranch.trim() === baseBranch) {
-      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'PR branch must differ from base branch.' } });
+    if (createPr && !prBaseBranch) {
+      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Unable to determine target branch for pull request.' } });
+      return;
+    }
+    if (createPr && prBaseBranch === baseBranch) {
+      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Selected branch matches PR target branch. Choose a different branch before creating a PR.' } });
       return;
     }
 
@@ -778,34 +782,11 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       collection: scope === 'selected' ? collection : undefined,
       mode: scope === 'selected' ? mode : undefined,
       createPr,
-      prBranch: createPr ? requestedPrBranch : undefined,
+      prBase: createPr ? prBaseBranch : undefined,
       prTitle: createPr ? prTitle : undefined,
       prBody: createPr ? prBody : undefined
     });
-
-    const sanitizeBranchName = (raw: string): string => {
-      const trimmed = raw.trim().replace(/\s+/g, '-');
-      const cleaned = trimmed.replace(/[^A-Za-z0-9._\/-]+/g, '-').replace(/-+/g, '-');
-      return cleaned.replace(/^-+|-+$/g, '');
-    };
-    const defaultBranchName = (): string => {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      return `tokens/update-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-    };
-
-    const pickPrBranch = (): string => {
-      const candidate = sanitizeBranchName(requestedPrBranch || '');
-      if (candidate) return candidate;
-      return sanitizeBranchName(defaultBranchName());
-    };
-
-    const branchForCommit = createPr ? pickPrBranch() : baseBranch;
-
-    if (createPr && !branchForCommit) {
-      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Could not determine PR branch name.' } });
-      return;
-    }
+    const branchForCommit = baseBranch;
 
     try {
       const files: Array<{ name: string; json: unknown }> = [];
@@ -871,21 +852,6 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         content: JSON.stringify(f.json, null, 2) + '\n'
       }));
 
-      let prBranchCreated = false;
-      if (createPr) {
-        const branchRes = await ghCreateBranch(ghToken, owner, repo, branchForCommit, baseBranch);
-        if (!branchRes.ok) {
-          const alreadyExists = branchRes.status === 422 && /reference already exists/i.test(branchRes.message || '');
-          if (!alreadyExists) {
-            send({ type: 'GITHUB_COMMIT_RESULT', payload: branchRes });
-            return;
-          }
-        } else {
-          prBranchCreated = true;
-          send({ type: 'GITHUB_CREATE_BRANCH_RESULT', payload: branchRes });
-        }
-      }
-
       const commitRes = await ghCommitFiles(ghToken, owner, repo, branchForCommit, commitMessage, commitFiles);
       if (!commitRes.ok) {
         send({ type: 'GITHUB_COMMIT_RESULT', payload: commitRes });
@@ -898,7 +864,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         prResult = await ghCreatePullRequest(ghToken, owner, repo, {
           title: prTitle,
           head: branchForCommit,
-          base: baseBranch,
+          base: prBaseBranch,
           body: prBody
         });
       }
@@ -926,8 +892,6 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         } else if (prResult) {
           send({ type: 'GITHUB_PR_RESULT', payload: prResult });
           send({ type: 'ERROR', payload: { message: `GitHub: PR creation failed (${prResult.status}): ${prResult.message}` } });
-        } else if (prBranchCreated) {
-          send({ type: 'INFO', payload: { message: `Branch ${branchForCommit} created from ${baseBranch}.` } });
         }
       }
     } catch (e) {

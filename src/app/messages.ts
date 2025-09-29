@@ -63,7 +63,7 @@ export type UiToPlugin =
         collection?: string;
         mode?: string;
         createPr?: boolean;
-        prBranch?: string;
+        prBase?: string;
         prTitle?: string;
         prBody?: string;
       };
@@ -88,7 +88,7 @@ export type UiToPlugin =
         collection: string;
         mode: string;
         createPr: boolean;
-        prBranch: string;
+        prBase: string;
         prTitle: string;
         prBody: string;
       }>;
@@ -154,7 +154,7 @@ export type PluginToUi =
         collection?: string;
         mode?: string;
         createPr?: boolean;
-        prBranch?: string;
+        prBase?: string;
         prTitle?: string;
         prBody?: string;
       };
