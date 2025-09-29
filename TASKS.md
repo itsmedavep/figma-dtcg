@@ -19,3 +19,8 @@
 - **Issue**: There is no automated coverage ensuring `readDtcgToIR` rejects or preserves numeric tokens when `$type` is `number` but `$value` is a string, so the regression above could recur silently.
 - **Suggested Fix**: Add a unit test around `readDtcgToIR` that feeds a `$type: "number"` token with a string `$value` and asserts that the importer either preserves the string type or surfaces a validation error.
 - **Files**: Add a new test under `tests/` or a dedicated test suite exercising `src/adapters/dtcg-reader.ts`.
+
+## Implementation Notes
+- Token import/export now relies on `loadCollectionsSnapshot` (`src/core/figma-cache.ts`) to cache `Variable` handles; reuse this helper instead of issuing fresh `getVariableByIdAsync` loops.
+- GitHub folder inputs are validated and normalized through `normalizeFolderForStorage`/`folderStorageToCommitPath` (`src/app/main.ts:75-127`); callers should surface the returned error message when `.ok` is `false` rather than persisting raw input.
+- Export filenames replace Windows-hostile characters via `sanitizeForFile` (`src/core/pipeline.ts:38-45`), with regression coverage in `tests/sanitizeForFile.test.ts`.

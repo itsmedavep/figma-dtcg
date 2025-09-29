@@ -5,6 +5,7 @@
 
 import { figmaRGBAToDtcg, type DocumentProfile } from '../core/color';
 import { canonicalPath } from '../core/normalize';
+import { loadCollectionsSnapshot } from '../core/figma-cache';
 import { ctxKey, type TokenGraph, type TokenNode, type PrimitiveType, type ValueOrAlias } from '../core/ir';
 
 /** Translate Figma's resolved type into the primitive kinds our IR expects. */
@@ -37,17 +38,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
   const profile = (figma.root.documentColorProfile as DocumentProfile);
   const variablesApi = figma.variables;
 
-  // Load collections
-  const collections = await variablesApi.getLocalVariableCollectionsAsync();
-
-  // Build a map variableId -> { name, collectionId }
-  const varMeta: { [id: string]: { name: string; collectionId: string } } = {};
-  for (const col of collections) {
-    for (const id of col.variableIds) {
-      const v = await variablesApi.getVariableByIdAsync(id);
-      if (v) varMeta[v.id] = { name: v.name, collectionId: col.id };
-    }
-  }
+  const { collections, variablesById, collectionNameById } = await loadCollectionsSnapshot(variablesApi);
 
   const tokens: TokenNode[] = [];
 
@@ -57,7 +48,8 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
     for (const m of c.modes) modeNameById[m.modeId] = m.name;
 
     for (const vid of c.variableIds) {
-      const v2 = await variablesApi.getVariableByIdAsync(vid);
+      const v2 = variablesById.get(vid) || await variablesApi.getVariableByIdAsync(vid);
+      if (v2 && !variablesById.has(vid)) variablesById.set(vid, v2);
       if (!v2) continue;
 
       // ***** CRITICAL: always split variable name by '/' into path segments *****
@@ -91,13 +83,10 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         };
 
         if (isAliasValue(mv)) {
-          const target = await variablesApi.getVariableByIdAsync(mv.id);
+          const target = variablesById.get(mv.id) || await variablesApi.getVariableByIdAsync(mv.id);
+          if (target && !variablesById.has(target.id)) variablesById.set(target.id, target);
           if (target) {
-            const meta = varMeta[target.id];
-            const collName =
-              meta
-                ? collections.find(cc => cc.id === meta.collectionId)?.name || c.name
-                : c.name;
+            const collName = collectionNameById.get(target.variableCollectionId) || c.name;
             const aPath = canonicalPath(collName, target.name);
             byContext[ctx] = { kind: 'alias', path: aPath };
           }

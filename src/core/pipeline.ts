@@ -35,15 +35,14 @@ function keysOf<T>(obj: { [k: string]: T }): string[] {
  * Replace file-hostile characters so each export path is safe for Git commits on every OS.
  * Using a narrow allow list keeps legacy file names stable while preventing accidental nesting.
  */
+const INVALID_FILE_CHARS = /[<>:"/\\|?*\u0000-\u001F]/g;
+
 function sanitizeForFile(s: string): string {
-  var out = '';
-  var i = 0;
-  for (i = 0; i < s.length; i++) {
-    var ch = s.charAt(i);
-    if (ch === '/' || ch === '\\' || ch === ':') out += '_';
-    else out += ch;
-  }
-  return out;
+  var cleaned = String(s);
+  cleaned = cleaned.replace(INVALID_FILE_CHARS, '_');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  cleaned = cleaned.replace(/[. ]+$/g, '');
+  return cleaned;
 }
 
 /**
@@ -146,3 +145,5 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
   return { files: files };
 }
+
+export { sanitizeForFile };

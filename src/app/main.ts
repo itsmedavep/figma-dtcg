@@ -72,23 +72,58 @@ function decodeToken(s: string): string {
 function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 
 /** Canonicalize folder input so stored prefs stay consistent across platforms. */
-function normalizeFolderForStorage(raw: string): string {
+const INVALID_FOLDER_SEGMENT = /[<>:"\\|?*\u0000-\u001F]/;
+
+type FolderNormalization =
+  | { ok: true; storage: string }
+  | { ok: false; message: string };
+
+type FolderCommitPath =
+  | { ok: true; path: string }
+  | { ok: false; message: string };
+
+function validateFolderSegments(segments: string[]): string | null {
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (!seg) return 'GitHub: Folder path has an empty segment.';
+    if (seg === '.' || seg === '..') {
+      return 'GitHub: Folder path cannot include "." or ".." segments.';
+    }
+    if (INVALID_FOLDER_SEGMENT.test(seg)) {
+      return `GitHub: Folder segment "${seg}" contains invalid characters.`;
+    }
+  }
+  return null;
+}
+
+function normalizeFolderForStorage(raw: string): FolderNormalization {
   const trimmed = (raw ?? '').trim();
-  if (!trimmed) return '';
-  if (trimmed === '/' || trimmed === './' || trimmed === '.') return '/';
+  if (!trimmed) return { ok: true, storage: '' };
+  if (trimmed === '/' || trimmed === './' || trimmed === '.') return { ok: true, storage: '/' };
 
   const collapsed = trimmed.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
   const stripped = collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
-  if (!stripped) return '/';
-  return stripped;
+  if (!stripped) return { ok: true, storage: '/' };
+
+  const segments = stripped.split('/').filter(Boolean);
+  const err = validateFolderSegments(segments);
+  if (err) return { ok: false, message: err };
+  return { ok: true, storage: segments.join('/') };
 }
 
 /** Convert stored folder values back into repo-relative commit paths. */
-function folderStorageToCommitPath(stored: string): string {
-  if (!stored) return '';
-  if (stored === '/' || stored === './' || stored === '.') return '';
-  const collapsed = stored.replace(/\\/g, '/');
-  return collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
+function folderStorageToCommitPath(stored: string): FolderCommitPath {
+  if (!stored) return { ok: true, path: '' };
+  if (stored === '/' || stored === './' || stored === '.') return { ok: true, path: '' };
+
+  const collapsed = stored.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  const stripped = collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!stripped) return { ok: true, path: '' };
+
+  const segments = stripped.split('/').filter(Boolean);
+  const err = validateFolderSegments(segments);
+  if (err) return { ok: false, message: err };
+  return { ok: true, path: segments.join('/') };
 }
 
 /** Fetch repos with a quick retry and mirror the minimal data back to the UI. */
@@ -506,7 +541,12 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
     }
 
     if (msg.type === 'GITHUB_SET_FOLDER') {
-      const folder = normalizeFolderForStorage(String(msg.payload.folder ?? ''));
+      const folderResult = normalizeFolderForStorage(String(msg.payload.folder ?? ''));
+      if (!folderResult.ok) {
+        send({ type: 'ERROR', payload: { message: folderResult.message } });
+        return;
+      }
+      const folder = folderResult.storage;
       const sel = await getSelected();
       await setSelected({
         owner: msg.payload.owner || sel.owner,
@@ -530,7 +570,11 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       if (typeof msg.payload.owner === 'string') update.owner = msg.payload.owner;
       if (typeof msg.payload.repo === 'string') update.repo = msg.payload.repo;
       if (typeof msg.payload.branch === 'string') update.branch = msg.payload.branch;
-      if (typeof msg.payload.folder === 'string') update.folder = normalizeFolderForStorage(msg.payload.folder);
+      if (typeof msg.payload.folder === 'string') {
+        const folderResult = normalizeFolderForStorage(msg.payload.folder);
+        if (folderResult.ok) update.folder = folderResult.storage;
+        else send({ type: 'ERROR', payload: { message: folderResult.message } });
+      }
       if (typeof msg.payload.commitMessage === 'string') update.commitMessage = msg.payload.commitMessage;
       if (msg.payload.scope === 'all' || msg.payload.scope === 'selected') update.scope = msg.payload.scope;
       if (typeof msg.payload.collection === 'string') update.collection = msg.payload.collection;
@@ -573,14 +617,25 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       const owner = String(msg.payload.owner || '');
       const repo = String(msg.payload.repo || '');
       const branch = String(msg.payload.branch || '');
-      const path = String(msg.payload.path || '');
+      const pathRaw = String(msg.payload.path || '');
 
       if (!ghToken) {
-        send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path, status: 401, message: 'No token' } });
+        send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 401, message: 'No token' } });
         return;
       }
 
-      const res = await ghListDirs(ghToken, owner, repo, branch, path);
+      const normalizedPath = normalizeFolderForStorage(pathRaw);
+      if (!normalizedPath.ok) {
+        send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: normalizedPath.message } });
+        return;
+      }
+      const commitPathResult = folderStorageToCommitPath(normalizedPath.storage);
+      if (!commitPathResult.ok) {
+        send({ type: 'GITHUB_FOLDER_LIST_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: commitPathResult.message } });
+        return;
+      }
+
+      const res = await ghListDirs(ghToken, owner, repo, branch, commitPathResult.path);
       if (res.ok) {
         send({
           type: 'GITHUB_FOLDER_LIST_RESULT',
@@ -608,14 +663,30 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       const owner = String(msg.payload.owner || '');
       const repo = String(msg.payload.repo || '');
       const branch = String(msg.payload.branch || '');
-      const folderPath = String((msg.payload as any).folderPath || msg.payload.path || '').trim();
+      const folderPathRaw = String((msg.payload as any).folderPath || msg.payload.path || '').trim();
 
       if (!ghToken) {
-        send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath, status: 401, message: 'No token' } });
+        send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 401, message: 'No token' } });
         return;
       }
 
-      const res = await ghEnsureFolder(ghToken, owner, repo, branch, folderPath);
+      const folderNormalized = normalizeFolderForStorage(folderPathRaw);
+      if (!folderNormalized.ok) {
+        send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: folderNormalized.message } });
+        return;
+      }
+
+      const folderCommit = folderStorageToCommitPath(folderNormalized.storage);
+      if (!folderCommit.ok) {
+        send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: folderCommit.message } });
+        return;
+      }
+      if (!folderCommit.path) {
+        send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: 'GitHub: Choose a subfolder name.' } });
+        return;
+      }
+
+      const res = await ghEnsureFolder(ghToken, owner, repo, branch, folderCommit.path);
       send({ type: 'GITHUB_CREATE_FOLDER_RESULT', payload: res });
       return;
     }
@@ -648,17 +719,29 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       const owner = String(msg.payload.owner || '');
       const repo = String(msg.payload.repo || '');
       const branch = String(msg.payload.branch || '');
-      const path = String(msg.payload.path || '').replace(/^\/+/, '');
+      const pathRaw = String(msg.payload.path || '');
       const allowHex = !!msg.payload.allowHexStrings;
 
       if (!ghToken) {
-        send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path, status: 401, message: 'No token' } });
+        send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 401, message: 'No token' } });
         return;
       }
-      if (!owner || !repo || !branch || !path) {
-        send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path, status: 400, message: 'Missing owner/repo/branch/path' } });
+      if (!owner || !repo || !branch || !pathRaw.trim()) {
+        send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: 'Missing owner/repo/branch/path' } });
         return;
       }
+
+      const normalizedPath = normalizeFolderForStorage(pathRaw);
+      if (!normalizedPath.ok) {
+        send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: normalizedPath.message } });
+        return;
+      }
+      const commitPathResult = folderStorageToCommitPath(normalizedPath.storage);
+      if (!commitPathResult.ok) {
+        send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: commitPathResult.message } });
+        return;
+      }
+      const path = commitPathResult.path;
 
       const res = await ghGetFileContents(ghToken, owner, repo, branch, path);
       if (!res.ok) {
@@ -772,12 +855,18 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
       return;
     }
 
-    const folderStored = normalizeFolderForStorage(folderRaw);
-    if (!folderStored) {
-      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Invalid folder selection.' } });
+    const folderStoredResult = normalizeFolderForStorage(folderRaw);
+    if (!folderStoredResult.ok) {
+      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderStoredResult.message } });
       return;
     }
-    const folderForCommit = folderStorageToCommitPath(folderStored);
+    const folderStored = folderStoredResult.storage;
+    const folderCommitResult = folderStorageToCommitPath(folderStored);
+    if (!folderCommitResult.ok) {
+      send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderCommitResult.message } });
+      return;
+    }
+    const folderForCommit = folderCommitResult.path;
     if (createPr && !prBaseBranch) {
       send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Unable to determine target branch for pull request.' } });
       return;
