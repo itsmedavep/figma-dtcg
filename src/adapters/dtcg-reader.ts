@@ -140,10 +140,7 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
       const rawVal = (obj as any).$value;
 
       // Optional $description (DTCG)
-      const desc =
-        hasKey(obj, '$description') && typeof (obj as any)['$description'] === 'string'
-          ? ((obj as any)['$description'] as string)
-          : undefined;
+      const desc = readDescription(obj);
 
 
       // Aliases are always strings of the form {a.b.c}
@@ -152,9 +149,6 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
         const { irPath, ctx } = computePathAndCtx(path, obj);
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'alias', path: segs };
-
-        const desc = readDescription(obj);
-
 
         tokens.push({
           path: irPath,
@@ -247,6 +241,7 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
           path: irPath,
           type: finalType,
           byContext: byCtx,
+          ...(desc ? { description: desc } : {}),
           ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
         });
       }
