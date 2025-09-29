@@ -5,6 +5,7 @@
 
 import { slugSegment } from '../core/normalize';
 import { type TokenGraph, type TokenNode, type PrimitiveType } from '../core/ir';
+import { loadCollectionsSnapshot } from '../core/figma-cache';
 
 import {
   dtcgToFigmaRGBA,
@@ -77,8 +78,11 @@ function tokenHasDirectValue(t: TokenNode): boolean {
  * True if the token has a direct value that we can safely write for at least one context.
  * Colors require strict validation and profile checks; other primitives just need correct kind.
  */
-function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfile): boolean {
+type DirectValueCheck = { ok: true } | { ok: false; reason?: string };
+
+function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfile): DirectValueCheck {
   const byCtx = t.byContext || {};
+  let lastReason: string | undefined;
   for (const ctx in byCtx) {
     const v = (byCtx as any)[ctx];
     if (!v || v.kind === 'alias') continue;
@@ -88,18 +92,27 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfi
 
       // STRICT 1: shape (supported colorSpace; 3 numeric components; alpha number in [0..1] or undefined)
       const shape = isDtcgColorShapeValid(v.value);
-      if (!shape.ok) continue;
+      if (!shape.ok) {
+        lastReason = `color in ${ctx} is invalid: ${shape.reason}`;
+        continue;
+      }
 
       // STRICT 2: representable in this document profile (sRGB doc: only 'srgb'; P3 doc: 'srgb' and 'display-p3')
       const cs = (v.value.colorSpace || 'srgb').toLowerCase();
-      if (!isColorSpaceRepresentableInDocument(cs, profile)) continue;
+      if (!isColorSpaceRepresentableInDocument(cs, profile)) {
+        lastReason = `colorSpace “${cs}” isn’t representable in this document (${profile}).`;
+        continue;
+      }
 
-      return true;
+      return { ok: true };
     } else if (t.type === 'number' || t.type === 'string' || t.type === 'boolean') {
-      if (v.kind === t.type) return true;
+      if (v.kind === t.type) return { ok: true };
     }
   }
-  return false;
+  if (t.type === 'number' || t.type === 'string' || t.type === 'boolean') {
+    return { ok: false };
+  }
+  return { ok: false, reason: lastReason || 'no valid color values in any context; not creating variable or collection.' };
 }
 
 /** Convert our primitive type into the Figma enum that createVariable expects. */
@@ -265,21 +278,23 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const profile = figma.root.documentColorProfile as DocumentProfile;
   const variablesApi = figma.variables;
 
-  // ---- snapshot existing collections + variables
-  const existingCollections = await variablesApi.getLocalVariableCollectionsAsync();
+  const {
+    collections: existingCollections,
+    variablesById,
+    collectionNameById
+  } = await loadCollectionsSnapshot(variablesApi);
+
   const colByName: { [name: string]: VariableCollection } = {};
   for (const c of existingCollections) colByName[c.name] = c;
 
-  // Build existing variables map keyed by display/slug *for collection and variable segments*
-  const existing = await variablesApi.getLocalVariableCollectionsAsync();
   const existingVarIdByPathDot: { [dot: string]: string } = {};
-  for (const c of existing) {
+  for (const c of existingCollections) {
     const cDisplay = c.name;
     for (const vid of c.variableIds) {
-      const v = await variablesApi.getVariableByIdAsync(vid);
-      if (!v) continue;
-      const varSegs = v.name.split('/'); // keep exact segs as Figma stores them
-      indexVarKeys(existingVarIdByPathDot, cDisplay, varSegs, v.id);
+      const variable = variablesById.get(vid);
+      if (!variable) continue;
+      const varSegs = variable.name.split('/');
+      indexVarKeys(existingVarIdByPathDot, cDisplay, varSegs, variable.id);
     }
   }
 
@@ -324,6 +339,7 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       colByName[name] = col;
       knownCollections.add(name);
       displayBySlug[slugSegment(name)] = name;
+      collectionNameById.set(col.id, name);
     }
     return col;
   }
@@ -347,8 +363,13 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     const varName = varNameFromPath(t.path);
 
     // Do NOT create a collection or variable unless we have at least one *valid* direct value.
-    if (!tokenHasAtLeastOneValidDirectValue(t, profile)) {
-      logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
+    const directCheck = tokenHasAtLeastOneValidDirectValue(t, profile);
+    if (!directCheck.ok) {
+      if (directCheck.reason) {
+        logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — ${directCheck.reason}`);
+      } else {
+        logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
+      }
       continue;
     }
 
@@ -357,15 +378,16 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     // find existing
     let existingVarId: string | null = null;
     for (const vid of col.variableIds) {
-      const cand = await variablesApi.getVariableByIdAsync(vid);
+      const cand = variablesById.get(vid) || await variablesApi.getVariableByIdAsync(vid);
+      if (cand && !variablesById.has(vid) && cand) variablesById.set(vid, cand);
       if (cand && cand.name === varName) { existingVarId = cand.id; break; }
     }
 
-    let v: Variable;
+    let v: Variable | null = null;
     if (existingVarId) {
-      const got = await variablesApi.getVariableByIdAsync(existingVarId);
-      if (!got) continue;
-      v = got;
+      v = variablesById.get(existingVarId) || await variablesApi.getVariableByIdAsync(existingVarId);
+      if (v && !variablesById.has(existingVarId)) variablesById.set(existingVarId, v);
+      if (!v) continue;
     } else {
       const hint = readFigmaVariableTypeHint(t);
       // Strict rule: only honor BOOLEAN hint when DTCG $type is "string".
@@ -373,6 +395,7 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         (hint === 'BOOLEAN' && t.type === 'string') ? 'BOOLEAN' : resolvedTypeFor(t.type);
 
       v = variablesApi.createVariable(varName, col, createAs);
+      variablesById.set(v.id, v);
     }
 
 
@@ -443,23 +466,25 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
       // find existing
       let existingVarId: string | null = null;
-      for (const vid of col.variableIds) {
-        const cand = await variablesApi.getVariableByIdAsync(vid);
-        if (cand && cand.name === varName) { existingVarId = cand.id; break; }
-      }
+    for (const vid of col.variableIds) {
+      const cand = variablesById.get(vid) || await variablesApi.getVariableByIdAsync(vid);
+      if (cand && !variablesById.has(vid)) variablesById.set(vid, cand);
+      if (cand && cand.name === varName) { existingVarId = cand.id; break; }
+    }
 
-      let v: Variable;
-      if (existingVarId) {
-        const got = await variablesApi.getVariableByIdAsync(existingVarId);
-        if (!got) continue;
-        v = got;
-      } else {
-        const hint = readFigmaVariableTypeHint(t);
-        const createAs: VariableResolvedDataType =
-          (hint === 'BOOLEAN' && t.type === 'string') ? 'BOOLEAN' : resolvedTypeFor(t.type);
+    let v: Variable | null = null;
+    if (existingVarId) {
+      v = variablesById.get(existingVarId) || await variablesApi.getVariableByIdAsync(existingVarId);
+      if (v && !variablesById.has(existingVarId)) variablesById.set(existingVarId, v);
+      if (!v) continue;
+    } else {
+      const hint = readFigmaVariableTypeHint(t);
+      const createAs: VariableResolvedDataType =
+        (hint === 'BOOLEAN' && t.type === 'string') ? 'BOOLEAN' : resolvedTypeFor(t.type);
 
-        v = variablesApi.createVariable(varName, col, createAs);
-      }
+      v = variablesApi.createVariable(varName, col, createAs);
+      variablesById.set(v.id, v);
+    }
 
 
       // --- set description if provided (safe & idempotent)
@@ -519,7 +544,8 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     for (const k of possibleSelfKeys) { varId = idByPath[k]; if (varId) break; }
     if (!varId) continue; // not created (e.g., unresolved alias or name mismatch)
 
-    const targetVar = await variablesApi.getVariableByIdAsync(varId);
+    const targetVar = variablesById.get(varId) || await variablesApi.getVariableByIdAsync(varId);
+    if (targetVar && !variablesById.has(varId)) variablesById.set(varId, targetVar);
     if (!targetVar) continue;
 
     // Optional: keep existing variables' descriptions in sync with incoming IR
@@ -602,7 +628,14 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         // STRICT: check representability in this document profile
         const cs = (val.value.colorSpace || 'srgb').toLowerCase();
         if (!isColorSpaceRepresentableInDocument(cs, profile)) {
-          logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — colorSpace “${cs}” isn’t representable in this document (${profile}).`);
+          if (cs === 'display-p3' && profile === 'SRGB') {
+            logWarn(
+              `Skipped “${node.path.join('/')}” in ${ctx}: the token is display-p3 but this file is set to sRGB. ` +
+              'Open File → File Settings → Color Space and switch to Display P3, or convert the token to sRGB.'
+            );
+          } else {
+            logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — colorSpace “${cs}” isn’t representable in this document (${profile}).`);
+          }
           continue;
         }
 

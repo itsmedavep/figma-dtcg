@@ -62,11 +62,36 @@ function b64(s: string): string {
     }
 }
 
+const INVALID_REPO_SEGMENT = /[<>:"\\|?*\u0000-\u001F]/;
+
+function sanitizeRepoPathInput(path: string): { ok: true; path: string } | { ok: false; message: string } {
+    const collapsed = String(path || '')
+        .replace(/\\/g, '/')
+        .replace(/\/{2,}/g, '/')
+        .replace(/^\/+|\/+$/g, '');
+
+    if (!collapsed) return { ok: true, path: '' };
+
+    const segments = collapsed.split('/').filter(Boolean);
+    for (const seg of segments) {
+        if (!seg) return { ok: false, message: 'Path contains an empty segment.' };
+        if (seg === '.' || seg === '..') {
+            return { ok: false, message: 'Path cannot include "." or ".." segments.' };
+        }
+        if (INVALID_REPO_SEGMENT.test(seg)) {
+            return { ok: false, message: `Path component "${seg}" contains invalid characters.` };
+        }
+    }
+
+    return { ok: true, path: segments.join('/') };
+}
+
 /** Encode a repo *path* but preserve `/` separators. */
 function encodePathSegments(path: string): string {
-    const norm = String(path || '').replace(/^\/+|\/+$/g, '');
-    if (!norm) return '';
-    return norm.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+    const sanitized = sanitizeRepoPathInput(path);
+    if (!sanitized.ok) throw new Error(sanitized.message);
+    if (!sanitized.path) return '';
+    return sanitized.path.split('/').map(encodeURIComponent).join('/');
 }
 
 /** Decode base64 text to UTF-8 while tolerating malformed inputs. */
@@ -429,7 +454,22 @@ export async function ghListDir(
     ref: string
 ): Promise<GhListDirResult> {
     const baseRepoUrl = `https://api.github.com/repos/${owner}/${repo}`;
-    const rel = encodePathSegments(path);
+    const sanitized = sanitizeRepoPathInput(path);
+    if (!sanitized.ok) {
+        return {
+            ok: false,
+            owner,
+            repo,
+            ref,
+            path: String(path || '').replace(/^\/+|\/+$/g, ''),
+            status: 400,
+            message: sanitized.message
+        };
+    }
+    const rel = sanitized.path
+        ? sanitized.path.split('/').map(encodeURIComponent).join('/')
+        : '';
+    const canonicalPath = sanitized.path;
     const url = rel
         ? `${baseRepoUrl}/contents/${rel}?ref=${encodeURIComponent(ref)}&_ts=${Date.now()}`
         : `${baseRepoUrl}/contents?ref=${encodeURIComponent(ref)}&_ts=${Date.now()}`;
@@ -446,7 +486,7 @@ export async function ghListDir(
             const msg = await safeText(res);
             return {
                 ok: false,
-                owner, repo, ref, path: String(path || '').replace(/^\/+|\/+$/g, ''),
+                owner, repo, ref, path: canonicalPath,
                 status: res.status,
                 message: msg || `HTTP ${res.status}`,
                 rate
@@ -462,7 +502,7 @@ export async function ghListDir(
         return {
             ok: true,
             owner, repo, ref,
-            path: String(path || '').replace(/^\/+|\/+$/g, ''),
+            path: canonicalPath,
             entries,
             rate
         };
@@ -470,7 +510,7 @@ export async function ghListDir(
         return {
             ok: false,
             owner, repo, ref,
-            path: String(path || '').replace(/^\/+|\/+$/g, ''),
+            path: canonicalPath,
             status: 0,
             message: (e as Error)?.message || 'network error'
         };
@@ -573,7 +613,11 @@ export async function ghEnsureFolder(
         'X-GitHub-Api-Version': '2022-11-28'
     } as const;
 
-    const norm = String(folderPath || '').replace(/^\/+|\/+$/g, '');
+    const sanitized = sanitizeRepoPathInput(folderPath);
+    if (!sanitized.ok) {
+        return { ok: false, owner, repo, branch, folderPath: '', status: 400, message: sanitized.message };
+    }
+    const norm = sanitized.path;
     if (!norm) {
         return { ok: false, owner, repo, branch, folderPath: norm, status: 400, message: 'empty folder path' };
     }
@@ -696,16 +740,28 @@ export async function ghCommitFiles(
     } as const;
 
     function normPath(p: string): string {
-        return String(p || '')
-            .replace(/^\/*/, '')    // trim leading /
-            .replace(/\/*$/, '');   // trim trailing /
+        const sanitized = sanitizeRepoPathInput(p);
+        if (!sanitized.ok) throw new Error(sanitized.message);
+        return sanitized.path;
     }
 
-    const cleaned: GhCommitFile[] = files.map(f => ({
-        path: normPath(f.path),
-        content: f.content,
-        mode: f.mode || '100644'
-    })).filter(f => f.path && typeof f.content === 'string');
+    const cleaned: GhCommitFile[] = [];
+    for (let i = 0; i < files.length; i++) {
+        const src = files[i];
+        let normalizedPath: string;
+        try {
+            normalizedPath = normPath(src.path);
+        } catch (err) {
+            return { ok: false, owner, repo, branch, status: 400, message: (err as Error)?.message || 'invalid path' };
+        }
+        if (!normalizedPath) continue;
+        if (typeof src.content !== 'string') continue;
+        cleaned.push({
+            path: normalizedPath,
+            content: src.content,
+            mode: src.mode || '100644'
+        });
+    }
 
     if (cleaned.length === 0) {
         return { ok: false, owner, repo, branch, status: 400, message: 'no files to commit' };
@@ -859,8 +915,15 @@ export async function ghGetFileContents(
     branch: string,
     path: string
 ): Promise<GhGetFileContentsResult> {
-    const cleanPath = encodePathSegments(path);
-    const base = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}`;
+    const sanitized = sanitizeRepoPathInput(path);
+    if (!sanitized.ok) {
+        return { ok: false, owner, repo, branch, path: '', status: 400, message: sanitized.message };
+    }
+    if (!sanitized.path) {
+        return { ok: false, owner, repo, branch, path: '', status: 400, message: 'Empty path' };
+    }
+    const cleanPath = sanitized.path;
+    const base = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath.split('/').map(encodeURIComponent).join('/')}`;
     const url = `${base}?ref=${encodeURIComponent(branch)}`;
     const headers = {
         Authorization: `Bearer ${token}`,
