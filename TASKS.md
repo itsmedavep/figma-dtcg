@@ -18,3 +18,6 @@
 - During import, rebuild those variables from the extension block and merge them with the normative token graph before writing back to Figma.
 - Provide an opt-in “permissive” export that emits `$type:"string"` / `$type:"boolean"` for teams willing to trade spec compliance for a single round-trip artifact, and surface a warning when it’s used.
 - Document the dual-mode behavior and continue advocating with the Design Tokens CG for first-class string/boolean support to retire the workaround later.
+
+## Testing suite
+- Review codebase and add tests to ensure that everything is correct and we dont have regressions.
