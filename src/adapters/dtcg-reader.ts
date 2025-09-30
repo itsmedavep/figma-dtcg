@@ -13,11 +13,30 @@ import {
 // ---------- color parsing (strict) ----------
 import { hexToDtcgColor, isDtcgColorShapeValid } from '../core/color';
 
-// ---------- lightweight logging (no toasts) ----------
-function logInfo(msg: string) {
-  try { figma.ui?.postMessage({ type: 'INFO', payload: { message: msg } }); } catch { /* ignore */ }
+// ---------- lightweight logging (console fallback outside Figma) ----------
+function postInfoToUi(msg: string): boolean {
+  try {
+    if (typeof figma !== 'undefined' && figma.ui?.postMessage) {
+      figma.ui.postMessage({ type: 'INFO', payload: { message: msg } });
+      return true;
+    }
+  } catch { /* ignore */ }
+  return false;
 }
-function logWarn(msg: string) { logInfo('Warning: ' + msg); }
+
+function logInfo(msg: string) {
+  if (postInfoToUi(msg)) return;
+  try { globalThis.console?.log?.(msg); } catch { /* ignore */ }
+}
+
+function logWarn(msg: string) {
+  const payload = 'Warning: ' + msg;
+  if (postInfoToUi(payload)) return;
+  try { globalThis.console?.warn?.(payload); }
+  catch {
+    try { globalThis.console?.log?.(payload); } catch { /* ignore */ }
+  }
+}
 
 // ---------- helpers ----------
 /** Guard for plain-object own keys without letting sneaky prototypes through. */
@@ -114,13 +133,6 @@ function computePathAndCtx(path: string[], obj: unknown): { irPath: string[]; ct
   return { irPath, ctx: `${collection}/${mode}` };
 }
 
-function guessTypeFromValue(v: unknown): PrimitiveType {
-  if (typeof v === 'number') return 'number';
-  if (typeof v === 'boolean') return 'boolean';
-  if (typeof v === 'string') return 'string';
-  return 'string';
-}
-
 export interface DtcgReaderOptions {
   /** When true, accept hex strings like "#RRGGBB[AA]" and coerce to a DTCG color object (srgb). Default: false (strict). */
   allowHexStrings?: boolean;
@@ -129,6 +141,13 @@ export interface DtcgReaderOptions {
 export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): TokenGraph {
   const allowHexStrings = !!opts.allowHexStrings;
   const tokens: TokenNode[] = [];
+  const tokensByPath = new Map<string, TokenNode>();
+  const aliasTokens: Array<{ token: TokenNode; declaredType: PrimitiveType | null }> = [];
+
+  function registerToken(token: TokenNode): void {
+    tokens.push(token);
+    tokensByPath.set(token.path.join('/'), token);
+  }
 
   function visit(obj: unknown, path: string[], inheritedType: PrimitiveType | null): void {
     if (!obj || typeof obj !== 'object') return;
@@ -157,13 +176,15 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'alias', path: segs };
 
-        tokens.push({
+        const token: TokenNode = {
           path: irPath,
           type: groupType ?? 'string',
           byContext: byCtx,
           ...(desc ? { description: desc } : {}),
           ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
-        });
+        };
+        registerToken(token);
+        aliasTokens.push({ token, declaredType: groupType ?? null });
         return;
       }
 
@@ -185,14 +206,14 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
           return;
         }
 
-        if (parsed.coercedFromHex) {
-          logInfo(`Coerced string hex to DTCG color object for “${irPath.join('/')}”.`);
-        }
+      if (parsed.coercedFromHex) {
+        logInfo(`Coerced string hex to DTCG color object for “${irPath.join('/')}”.`);
+      }
 
         const byCtx: { [k: string]: ValueOrAlias } = {};
         byCtx[ctx] = { kind: 'color', value: parsed.value };
 
-        tokens.push({
+        registerToken({
           path: irPath,
           type: 'color',
           byContext: byCtx,
@@ -202,21 +223,27 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
         return;
       }
 
-      // Primitives (respect declared type; no color coercion here)
-      const t2: PrimitiveType = groupType ?? guessTypeFromValue(rawVal);
+      // Primitives (respect declared type; only fall back when no type was declared)
+      const declaredType = groupType;
+      if (!declaredType) {
+        logWarn(`Skipped token “${path.join('/')}” — no $type found in token or parent groups.`);
+        return;
+      }
+
+      let effectiveType: PrimitiveType = declaredType;
       let valObj: ValueOrAlias | null = null;
 
-      if (t2 === 'number' && typeof rawVal === 'number') {
+      if (declaredType === 'number' && typeof rawVal === 'number') {
         valObj = { kind: 'number', value: rawVal };
-      } else if (t2 === 'boolean' && typeof rawVal === 'boolean') {
+      } else if (declaredType === 'boolean' && typeof rawVal === 'boolean') {
         valObj = { kind: 'boolean', value: rawVal };
-      } else if (t2 === 'string' && typeof rawVal === 'string') {
+      } else if (declaredType === 'string' && typeof rawVal === 'string') {
         valObj = { kind: 'string', value: rawVal };
       }
       // DTCG-compliant boolean round-trip:
       // If $type is (or resolves to) "string" and $extensions.com.figma.variableType == "BOOLEAN"
       // and $value is "true"/"false", coerce back to boolean with a mild note.
-      if (!valObj && (t2 === 'string') && typeof rawVal === 'string') {
+      if (!valObj && (declaredType === 'string') && typeof rawVal === 'string') {
         const ext = hasKey(obj, '$extensions') ? (obj as any)['$extensions'] as Record<string, unknown> : undefined;
         const com = ext && typeof ext === 'object' ? (ext as any)['com.figma'] : undefined;
         const varType = com && typeof com === 'object' ? (com as any)['variableType'] : undefined;
@@ -226,32 +253,28 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
             valObj = { kind: 'boolean', value: (raw === 'true') };
             // mild note in the plugin log
             logInfo(`Note: coerced string “${rawVal}” to boolean due to $extensions.com.figma.variableType=BOOLEAN at “${path.join('/')}”.`);
-            // also set the effective token type to boolean
-            groupType = 'boolean';
+            effectiveType = 'boolean';
           }
         }
       }
-      else {
-        // Fallback: minimally coerce by JS type (but still never to color)
-        if (typeof rawVal === 'string') valObj = { kind: 'string', value: rawVal };
-        else if (typeof rawVal === 'number') valObj = { kind: 'number', value: rawVal };
-        else if (typeof rawVal === 'boolean') valObj = { kind: 'boolean', value: rawVal };
+
+      if (!valObj) {
+        const observed = typeof rawVal;
+        logWarn(`Skipped token “${path.join('/')}” — declared $type ${declaredType} but found ${observed}.`);
+        return;
       }
 
-      if (valObj) {
-        const { irPath, ctx } = computePathAndCtx(path, obj);
-        const byCtx: { [k: string]: ValueOrAlias } = {};
-        byCtx[ctx] = valObj;
+      const { irPath, ctx } = computePathAndCtx(path, obj);
+      const byCtx: { [k: string]: ValueOrAlias } = {};
+      byCtx[ctx] = valObj;
 
-        const finalType: PrimitiveType = (groupType ?? t2);
-        tokens.push({
-          path: irPath,
-          type: finalType,
-          byContext: byCtx,
-          ...(desc ? { description: desc } : {}),
-          ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
-        });
-      }
+      registerToken({
+        path: irPath,
+        type: effectiveType,
+        byContext: byCtx,
+        ...(desc ? { description: desc } : {}),
+        ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
+      });
       return;
     }
 
@@ -266,5 +289,91 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
   }
 
   visit(root, [], null);
-  return { tokens };
+
+  const aliasTokenSet = new Set(aliasTokens.map(a => a.token));
+  const resolvedTypeCache = new Map<string, PrimitiveType | null>();
+  const invalidTokens = new Set<TokenNode>();
+
+  function resolveTypeForPath(pathSegs: string[], stack: Set<string>): PrimitiveType | null {
+    const key = pathSegs.join('/');
+    if (resolvedTypeCache.has(key)) return resolvedTypeCache.get(key)!;
+    if (stack.has(key)) {
+      resolvedTypeCache.set(key, null);
+      return null;
+    }
+
+    const target = tokensByPath.get(key);
+    if (!target) {
+      resolvedTypeCache.set(key, null);
+      return null;
+    }
+
+    if (!aliasTokenSet.has(target)) {
+      resolvedTypeCache.set(key, target.type);
+      return target.type;
+    }
+
+    stack.add(key);
+    let detected: PrimitiveType | null = null;
+    const ctxValues = Object.values(target.byContext);
+    for (const ctxVal of ctxValues) {
+      if (!ctxVal || ctxVal.kind !== 'alias') {
+        detected = null;
+        break;
+      }
+      const nested = resolveTypeForPath(ctxVal.path, stack);
+      if (!nested) {
+        detected = null;
+        break;
+      }
+      if (!detected) detected = nested;
+      else if (detected !== nested) {
+        detected = null;
+        break;
+      }
+    }
+    stack.delete(key);
+    resolvedTypeCache.set(key, detected);
+    return detected;
+  }
+
+  for (const { token, declaredType } of aliasTokens) {
+    const tokenKey = token.path.join('/');
+    let resolvedType: PrimitiveType | null = null;
+    let unresolved = false;
+
+    for (const ctxVal of Object.values(token.byContext)) {
+      if (!ctxVal || ctxVal.kind !== 'alias') {
+        unresolved = true;
+        break;
+      }
+      const stack = new Set<string>([tokenKey]);
+      const nestedType = resolveTypeForPath(ctxVal.path, stack);
+      if (!nestedType) {
+        unresolved = true;
+        break;
+      }
+      if (!resolvedType) resolvedType = nestedType;
+      else if (resolvedType !== nestedType) {
+        unresolved = true;
+        break;
+      }
+    }
+
+    if (!resolvedType || unresolved) {
+      logWarn(`Skipped token “${token.path.join('/')}” — could not resolve alias type.`);
+      invalidTokens.add(token);
+      continue;
+    }
+
+    if (declaredType && declaredType !== resolvedType) {
+      logWarn(`Token “${token.path.join('/')}” declared $type ${declaredType} but resolves to ${resolvedType}; using resolved type.`);
+    }
+
+    token.type = resolvedType;
+    tokensByPath.set(tokenKey, token);
+  }
+
+  const finalTokens = tokens.filter(t => !invalidTokens.has(t));
+  return { tokens: finalTokens };
 }
