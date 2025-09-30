@@ -4,6 +4,7 @@
 // - Provides guarded DOM helpers to survive partial renders or optional features
 
 import type { PluginToUi, UiToPlugin } from './messages';
+import { createGithubUi } from './github/ui';
 
 /* -------------------------------------------------------
  * Globals (assigned after DOMContentLoaded)
@@ -34,107 +35,11 @@ let copyLogBtn: HTMLButtonElement | null = null;
 
 let allowHexChk: HTMLInputElement | null = null;
 
-/* -------- GitHub controls (robust, optional) -------- */
-let ghTokenInput: HTMLInputElement | null = null;
-let ghRememberChk: HTMLInputElement | null = null;
-let ghConnectBtn: HTMLButtonElement | null = null;
-let ghVerifyBtn: HTMLButtonElement | null = null; // optional if present
-let ghRepoSelect: HTMLSelectElement | null = null;
-
-// --- Branch controls (optional if present) ---
-let ghBranchSearch: HTMLInputElement | null = null;
-let ghBranchSelect: HTMLSelectElement | null = null;
-let ghBranchCountEl: HTMLElement | null = null;
-
-// New-branch composer (optional)
-let ghNewBranchBtn: HTMLButtonElement | null = null;
-let ghNewBranchRow: HTMLElement | null = null;
-let ghNewBranchName: HTMLInputElement | null = null;
-let ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
-
-let ghBranchRefreshBtn: HTMLButtonElement | null = null;
-
-// NEW: Folder picker DOM refs
-let ghFolderInput: HTMLInputElement | null = null;
-let ghPickFolderBtn: HTMLButtonElement | null = null;
-
-let ghCommitMsgInput: HTMLInputElement | null = null;
-let ghExportAndCommitBtn: HTMLButtonElement | null = null;
-let ghCreatePrChk: HTMLInputElement | null = null;
-let ghPrOptionsEl: HTMLElement | null = null;
-let ghPrTitleInput: HTMLInputElement | null = null;
-let ghPrBodyInput: HTMLTextAreaElement | null = null;
-let ghFetchPathInput: HTMLInputElement | null = null;
-let ghFetchTokensBtn: HTMLButtonElement | null = null;
-let ghScopeSelected: HTMLInputElement | null = null;
-let ghScopeAll: HTMLInputElement | null = null;
-
-let folderPickerOverlay: HTMLElement | null = null;
-let folderPickerTitleEl: HTMLElement | null = null;
-let folderPickerPathInput: HTMLInputElement | null = null;
-let folderPickerUseBtn: HTMLButtonElement | null = null;
-let folderPickerListEl: HTMLElement | null = null;
-let folderPickerNewBtn: HTMLButtonElement | null = null;
-let folderPickerCancelBtn: HTMLButtonElement | null = null;
-
-let folderPickerIsOpen = false;
-let folderPickerCurrentPath = '';
-let folderPickerLastFocus: HTMLElement | null = null;
-let folderPickerRefreshNonce = 0;
-
-
-// ---- Folder list/create waiters (match replies from plugin) ----
-type FolderListEntry = { type: 'dir' | 'file'; name: string; path?: string };
-
-const folderListWaiters: Array<{
-  path: string;
-  resolve: (v: { ok: true; entries: FolderListEntry[] }) => void;
-  reject: (v: { ok: false; message: string }) => void;
-}> = [];
-
-const folderCreateWaiters: Array<{
-  folderPath: string;
-  resolve: (v: { ok: true }) => void;
-  reject: (v: { ok: false; message: string; status?: number }) => void;
-}> = [];
-
-// --- TTL for page data (stale-while-revalidate) ---
-const BRANCH_TTL_MS = 60_000; // 60s
-let lastBranchesFetchedAtMs = 0; // updated when any GITHUB_BRANCHES page arrives
-
-// Inserted if missing:
-let ghAuthStatusEl: HTMLElement | null = null; // “Authenticated as …”
-let ghTokenMetaEl: HTMLElement | null = null;  // “Expires in …”
-let ghLogoutBtn: HTMLButtonElement | null = null;
-
-// Simple state
-let ghIsAuthed = false;
-let ghTokenExpiresAt: string | null = null; // ISO string if provided
-let ghRememberPref: boolean = false;
-
-const GH_REMEMBER_PREF_KEY = 'ghRememberPref';
-const GH_MASK = '••••••••••';
-
-/* --------- Branch local state (search + virtualization + paging) --------- */
-let currentOwner = '';
-let currentRepo = '';
-let desiredBranch: string | null = null;       // from restore or user choice
-let defaultBranchFromApi: string | undefined = undefined;
-
-let loadedPages = 0;
-let hasMorePages = false;
-let isFetchingBranches = false;
-
-let allBranches: string[] = [];         // merged across pages
-let filteredBranches: string[] = [];    // result of search filter
-let renderCount = 0;
-const RENDER_STEP = 200;                // how many options to render per chunk
 
 /* -------------------------------------------------------
- * Utilities
+ * Shared helpers
  * ----------------------------------------------------- */
 
-/** Turn `Collection 1_mode=Mode 1.tokens.json` into a readable save name. */
 function prettyExportName(original: string | undefined | null): string {
   const name = (original && typeof original === 'string') ? original : 'tokens.json';
   const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
@@ -146,58 +51,12 @@ function prettyExportName(original: string | undefined | null): string {
   return name.endsWith('.json') ? name : (name + '.json');
 }
 
-// ---- File save helpers (native picker + fallback) ----
 let pendingSave: { writable: FileSystemWritableFileStream, name: string } | null = null;
 
-/** Feature-detect the async file picker so we can fall back to anchors if absent. */
 function supportsFilePicker(): boolean {
   return typeof (window as any).showSaveFilePicker === 'function';
 }
 
-/** Rebuild the repo select list in-place to avoid reattaching event handlers. */
-function populateGhRepos(list: Array<{ full_name: string; default_branch: string; private: boolean }>): void {
-  if (!ghRepoSelect) return;
-  while (ghRepoSelect.options.length) ghRepoSelect.remove(0);
-  for (const r of list) {
-    const opt = document.createElement('option');
-    opt.value = r.full_name;
-    opt.textContent = r.full_name; // "org/repo"
-    ghRepoSelect.appendChild(opt);
-  }
-  ghRepoSelect.disabled = list.length === 0;
-
-  // Auto-select restored repo if we have one
-  if (list.length > 0) {
-    if (restoreOwner && restoreRepo) {
-      const want = `${restoreOwner}/${restoreRepo}`;
-      let matched = false;
-      for (let i = 0; i < ghRepoSelect.options.length; i++) {
-        if (ghRepoSelect.options[i].value === want) {
-          ghRepoSelect.selectedIndex = i;
-          matched = true;
-          break;
-        }
-      }
-      if (matched) {
-        const ev = new Event('change', { bubbles: true });
-        ghRepoSelect.dispatchEvent(ev);
-      } else {
-        ghRepoSelect.selectedIndex = 0;
-        // 🔧 ensure owner/repo + branches populate
-        const ev = new Event('change', { bubbles: true });
-        ghRepoSelect.dispatchEvent(ev);
-      }
-    } else {
-      ghRepoSelect.selectedIndex = 0;
-      // 🔧 ensure owner/repo + branches populate
-      const ev = new Event('change', { bubbles: true });
-      ghRepoSelect.dispatchEvent(ev);
-    }
-  }
-
-}
-
-/** Prompt the user for a file path using the native picker when available. */
 async function beginPendingSave(suggestedName: string): Promise<boolean> {
   try {
     if (!supportsFilePicker()) return false;
@@ -209,12 +68,11 @@ async function beginPendingSave(suggestedName: string): Promise<boolean> {
     pendingSave = { writable, name: suggestedName };
     return true;
   } catch {
-    pendingSave = null; // canceled or blocked
+    pendingSave = null;
     return false;
   }
 }
 
-/** Write the queued Blob to disk and clear the pending handle. */
 async function finishPendingSave(text: string): Promise<boolean> {
   if (!pendingSave) return false;
   try {
@@ -229,7 +87,6 @@ async function finishPendingSave(text: string): Promise<boolean> {
   }
 }
 
-/** Fallback download helper when the native picker is unavailable. */
 function triggerJsonDownload(filename: string, text: string): void {
   try {
     const blob = new Blob([text], { type: 'application/json' });
@@ -242,10 +99,40 @@ function triggerJsonDownload(filename: string, text: string): void {
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
-  } catch { /* no-throw */ }
+  } catch { /* ignore */ }
 }
 
-/** Clamp and forward resize requests to the plugin main thread. */
+function copyElText(el: HTMLElement | null, label: string): void {
+  if (!el) return;
+  try {
+    const text = el.textContent ?? '';
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(() => {
+        log(`Copied ${label} to clipboard.`);
+      }).catch(() => {
+        throw new Error('clipboard write failed');
+      });
+      return;
+    }
+
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+
+    if (ok) log(`Copied ${label} to clipboard (${text.length} chars).`);
+    else throw new Error('execCommand(copy) returned false');
+  } catch {
+    log(`Could not copy ${label}.`);
+  }
+}
+
 function postResize(width: number, height: number): void {
   const w = Math.max(720, Math.min(1600, Math.floor(width)));
   const h = Math.max(420, Math.min(1200, Math.floor(height)));
@@ -264,7 +151,6 @@ let resizeTracking: ResizeTrackingState | null = null;
 let resizeQueued: { width: number; height: number } | null = null;
 let resizeRaf = 0;
 
-/** Coalesce resize events so we do not spam the plugin process. */
 function queueResize(width: number, height: number): void {
   resizeQueued = { width, height };
   if (resizeRaf !== 0) return;
@@ -276,7 +162,6 @@ function queueResize(width: number, height: number): void {
   });
 }
 
-/** Apply pointer deltas to the pending resize rectangle. */
 function applyResizeDelta(ev: PointerEvent): void {
   if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
   const dx = ev.clientX - resizeTracking.startX;
@@ -287,7 +172,6 @@ function applyResizeDelta(ev: PointerEvent): void {
   ev.preventDefault();
 }
 
-/** Finalize the resize interaction and release captured events. */
 function endResize(ev: PointerEvent): void {
   if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
   applyResizeDelta(ev);
@@ -300,7 +184,6 @@ function endResize(ev: PointerEvent): void {
   resizeTracking = null;
 }
 
-/** Cancel the resize interaction without applying the delta. */
 function cancelResize(ev: PointerEvent): void {
   if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
   window.removeEventListener('pointermove', handleResizeMove, true);
@@ -312,55 +195,10 @@ function cancelResize(ev: PointerEvent): void {
   resizeTracking = null;
 }
 
-/** Pointer move handler that feeds deltas into `applyResizeDelta`. */
 function handleResizeMove(ev: PointerEvent): void {
   applyResizeDelta(ev);
 }
 
-/** Copy the textual content of an element into the clipboard with graceful fallbacks. */
-async function copyElText(el: HTMLElement | null, label: string): Promise<void> {
-  try {
-    const text = el ? (el.textContent ?? '') : '';
-    if (!text) { log(`Nothing to copy for ${label}.`); return; }
-
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      await navigator.clipboard.writeText(text);
-      log(`Copied ${label} to clipboard (${text.length} chars).`);
-      return;
-    }
-
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.top = '-9999px';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    ta.setSelectionRange(0, ta.value.length);
-
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-
-    if (ok) log(`Copied ${label} to clipboard (${text.length} chars).`);
-    else throw new Error('execCommand(copy) returned false');
-  } catch {
-    try {
-      const anyNavigator = navigator as any;
-      if (anyNavigator.permissions && anyNavigator.permissions.query) {
-        const perm = await anyNavigator.permissions.query({ name: 'clipboard-write' as PermissionName });
-        if (perm.state === 'granted' || 'prompt') {
-          await navigator.clipboard.writeText((el?.textContent) ?? '');
-          log(`Copied ${label} to clipboard.`);
-          return;
-        }
-      }
-    } catch { /* ignore */ }
-    log(`Could not copy ${label}.`);
-  }
-}
-
-/** Resize the raw output drawer to fit content on first load. */
 function autoFitOnce(): void {
   if (typeof document === 'undefined') return;
   const contentW = Math.max(
@@ -376,176 +214,6 @@ function autoFitOnce(): void {
   const needsW = contentW > vw ? contentW : vw;
   const needsH = contentH > vh ? contentH : vh;
   if (needsW > vw || needsH > vh) postResize(needsW, needsH);
-}
-
-/* -------------------------------------------------------
- * GitHub helpers (UI only; token never stored in UI)
- * ----------------------------------------------------- */
-/** Locate the PAT input field if the GitHub section is mounted. */
-function findTokenInput(): HTMLInputElement | null {
-  const byId =
-    (document.getElementById('githubTokenInput') as HTMLInputElement | null) ||
-    (document.getElementById('ghTokenInput') as HTMLInputElement | null) ||
-    (document.getElementById('githubPatInput') as HTMLInputElement | null) ||
-    (document.querySelector('input[name="githubToken"]') as HTMLInputElement | null);
-  if (byId) return byId;
-  // Fallback: guess
-  const guess = document.querySelector('input[type="password"], input[type="text"]') as HTMLInputElement | null;
-  return guess || null;
-}
-
-/** Read and trim the current PAT field value. */
-function readPatFromUi(): string {
-  if (!ghTokenInput) ghTokenInput = findTokenInput();
-  return (ghTokenInput?.value || '').trim();
-}
-
-/** Persist the user's preference for remembering PATs. */
-function saveRememberPref(checked: boolean): void {
-  try { window.localStorage.setItem(GH_REMEMBER_PREF_KEY, checked ? '1' : '0'); } catch { /* ignore */ }
-}
-
-/** Load the saved remember preference (defaults to false). */
-function loadRememberPref(): boolean {
-  try {
-    const v = window.localStorage.getItem(GH_REMEMBER_PREF_KEY);
-    if (v === '1') return true;
-    if (v === '0') return false;
-  } catch { /* ignore */ }
-  return false; // default
-}
-
-/** Lazily create GitHub status DOM nodes when we need to display auth info. */
-function ensureGhStatusElements(): void {
-  if (!ghAuthStatusEl) ghAuthStatusEl = document.getElementById('ghAuthStatus');
-  if (!ghTokenMetaEl) ghTokenMetaEl = document.getElementById('ghTokenMeta');
-  if (!ghLogoutBtn) ghLogoutBtn = document.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
-}
-
-/** Convert an expiration ISO string into "5m left" style text. */
-function formatTimeLeft(expIso: string): string {
-  const exp = Date.parse(expIso);
-  if (!isFinite(exp)) return 'expiration: unknown';
-  const now = Date.now();
-  const ms = exp - now;
-  if (ms <= 0) return 'expired';
-  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
-  const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-  if (days > 0) return `${days}d ${hours}h left`;
-  const mins = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
-  if (hours > 0) return `${hours}h ${mins}m left`;
-  const secs = Math.floor((ms % (60 * 1000)) / 1000);
-  if (mins > 0) return `${mins}m ${secs}s left`;
-  return `${secs}s left`;
-}
-
-/** Toggle the PAT field between masked/unmasked display markers. */
-function setPatFieldObfuscated(filled: boolean): void {
-  if (!ghTokenInput) ghTokenInput = findTokenInput();
-  if (!ghTokenInput) return;
-  ghTokenInput.type = 'password'; // keep masked even when user types
-  if (filled) {
-    ghTokenInput.value = GH_MASK;
-    ghTokenInput.setAttribute('data-filled', '1');
-  } else {
-    ghTokenInput.value = '';
-    ghTokenInput.removeAttribute('data-filled');
-  }
-}
-
-/** Refresh auth status indicators based on current GitHub state. */
-function updateGhStatusUi(): void {
-  ensureGhStatusElements();
-
-  if (ghAuthStatusEl) {
-    ghAuthStatusEl.textContent = ghIsAuthed ? 'GitHub: authenticated.' : 'GitHub: not authenticated.';
-  }
-
-  if (ghTokenMetaEl) {
-    const rememberTxt = ghRememberPref ? 'Remember me: on' : 'Remember me: off';
-    const expTxt = ghTokenExpiresAt ? `Token ${formatTimeLeft(ghTokenExpiresAt)}` : 'Token expiration: unknown';
-    ghTokenMetaEl.textContent = `${expTxt} • ${rememberTxt}`;
-  }
-
-  if (ghTokenInput) {
-    ghTokenInput.oninput = () => {
-      if (ghTokenInput!.getAttribute('data-filled') === '1') {
-        ghTokenInput!.removeAttribute('data-filled');
-      }
-      if (ghConnectBtn) ghConnectBtn.disabled = false;
-    };
-  }
-
-  if (ghConnectBtn && ghTokenInput) {
-    const isMasked = ghTokenInput.getAttribute('data-filled') === '1';
-    ghConnectBtn.disabled = ghIsAuthed && isMasked;
-  }
-
-  if (ghLogoutBtn) {
-    ghLogoutBtn.disabled = !ghIsAuthed;
-  }
-
-  if (ghRememberChk) {
-    ghRememberChk.checked = ghRememberPref;
-  }
-}
-
-/** Enable/disable GitHub controls based on auth and selection state. */
-function setGitHubDisabledStates(): void {
-  updateGhStatusUi();
-}
-
-/** Toggle visibility for the new-branch composer controls. */
-function showNewBranchRow(show: boolean): void {
-  if (!ghNewBranchRow) return;
-  ghNewBranchRow.style.display = show ? 'flex' : 'none';
-  if (show && ghNewBranchName) {
-    if (!ghNewBranchName.value) {
-      ghNewBranchName.value = `tokens/update-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
-    }
-    ghNewBranchName.focus();
-    ghNewBranchName.select();
-  }
-}
-
-/** Guard new branch names against GitHub's restrictions. */
-function validateBranchName(name: string): string | null {
-  const n = name.trim();
-  if (!n) return 'Enter a branch name.';
-  if (/\s/.test(n)) return 'Branch name cannot contain spaces.';
-  if (n.startsWith('refs/')) return 'Do not include "refs/heads/"; just the branch name.';
-  if (n.endsWith('/') || n.startsWith('/')) return 'Branch name cannot start or end with "/".';
-  if (n.includes('..') || n.includes('~') || n.includes('^') || n.includes(':') || n.includes('?') || n.includes('*') || n.includes('[')) {
-    return 'Branch name contains invalid characters.';
-  }
-  return null;
-}
-
-/** Kick off a refresh when our cached branch data is older than the TTL. */
-function revalidateBranchesIfStale(forceLog: boolean = false): void {
-  if (!ghRepoSelect || !ghBranchSelect) return;
-  if (!currentOwner || !currentRepo) return;
-
-  const stale = (Date.now() - lastBranchesFetchedAtMs) > BRANCH_TTL_MS;
-  if (!stale) {
-    if (forceLog) log('Branches are up to date (no refresh needed).');
-    return;
-  }
-
-  desiredBranch = restoreBranch || desiredBranch || null; // keep preference if possible
-  defaultBranchFromApi = undefined;
-  loadedPages = 0; hasMorePages = false; isFetchingBranches = true;
-  allBranches = []; filteredBranches = [];
-  renderCount = 0;
-
-  setBranchDisabled(true, 'Refreshing branches…');
-  updateBranchCount();
-  log('Refreshing branches…');
-
-  postToPlugin({
-    type: 'GITHUB_FETCH_BRANCHES',
-    payload: { owner: currentOwner, repo: currentRepo, page: 1 }
-  });
 }
 
 /* -------------------------------------------------------
@@ -575,6 +243,15 @@ function postToPlugin(message: UiToPlugin): void {
     .postMessage({ pluginMessage: message }, '*');
 }
 
+const githubUi = createGithubUi({
+  postToPlugin: (message) => postToPlugin(message),
+  log: (message) => log(message),
+  getLogElement: () => logEl,
+  getCollectionSelect: () => collectionSelect,
+  getModeSelect: () => modeSelect,
+  getAllowHexCheckbox: () => allowHexChk
+});
+
 /** Remove every option from a select without replacing the node. */
 function clearSelect(sel: HTMLSelectElement): void {
   while (sel.options.length > 0) sel.remove(0);
@@ -599,7 +276,6 @@ function setDisabledStates(): void {
     }
   }
 
-  setGitHubDisabledStates();
 }
 
 /** Render the collections/modes dropdowns from plugin-provided data. */
@@ -652,8 +328,7 @@ function onCollectionChange(): void {
   }
 
   setDisabledStates();
-  // make sure Export & Commit enablement reacts immediately
-  updateExportCommitEnabled();
+  githubUi.onSelectionChange();
 
   // If we auto-set a mode (firstModeSet), update the preview as well
   if (firstModeSet) requestPreviewForCurrent();
@@ -708,459 +383,11 @@ function requestPreviewForCurrent(): void {
  * GitHub: Branch helpers (Variant 4)
  * ----------------------------------------------------- */
 /** Toggle the branch select and associated placeholders. */
-function setBranchDisabled(disabled: boolean, placeholder?: string): void {
-  if (!ghBranchSelect) return;
-  ghBranchSelect.disabled = disabled;
-  if (placeholder !== undefined) {
-    clearSelect(ghBranchSelect);
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = placeholder;
-    ghBranchSelect.appendChild(opt);
-  }
-}
 
-/** Refresh the counter that shows how many branches are visible vs total. */
-function updateBranchCount(): void {
-  if (!ghBranchCountEl) return;
-  const total = allBranches.length;
-  const showing = filteredBranches.length;
-  ghBranchCountEl.textContent = `${showing} / ${total}${hasMorePages ? ' +' : ''}`;
-}
-
-/** Render branch options in chunks to keep the UI responsive. */
-function renderOptions(): void {
-  if (!ghBranchSelect) return;
-  const prev = ghBranchSelect.value;
-  clearSelect(ghBranchSelect);
-
-  const slice = filteredBranches.slice(0, renderCount);
-  for (const name of slice) {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    ghBranchSelect.appendChild(opt);
-  }
-
-  if (filteredBranches.length > renderCount) {
-    const opt = document.createElement('option');
-    opt.value = '__more__';
-    opt.textContent = `Load more… (${filteredBranches.length - renderCount} more)`;
-    ghBranchSelect.appendChild(opt);
-  } else if (hasMorePages) {
-    const opt = document.createElement('option');
-    opt.value = '__fetch__';
-    opt.textContent = 'Load next page…';
-    ghBranchSelect.appendChild(opt);
-  }
-
-  const want = desiredBranch || defaultBranchFromApi || prev;
-  if (want && slice.includes(want)) {
-    ghBranchSelect.value = want;
-  } else if (ghBranchSelect.options.length) {
-    ghBranchSelect.selectedIndex = 0;
-  }
-}
-
-/** Filter the branch list by the current search input. */
-function applyBranchFilter(): void {
-  const q = (ghBranchSearch?.value || '').toLowerCase().trim();
-  filteredBranches = q
-    ? allBranches.filter(n => n.toLowerCase().includes(q))
-    : [...allBranches];
-
-  renderCount = Math.min(RENDER_STEP, filteredBranches.length);
-  renderOptions();
-  updateBranchCount();
-}
-
-/** Fetch the next branch page when the user scrolls near the end. */
-function ensureNextPageIfNeeded(): void {
-  if (!ghBranchSelect || !ghRepoSelect) return;
-  if (!hasMorePages || isFetchingBranches) return;
-  if (!currentOwner || !currentRepo) return;
-
-  isFetchingBranches = true;
-  postToPlugin({
-    type: 'GITHUB_FETCH_BRANCHES',
-    payload: { owner: currentOwner, repo: currentRepo, page: loadedPages + 1 }
-  });
-}
-
-/** Scroll handler that triggers virtualization + pagination. */
-function onBranchScroll(): void {
-  if (!ghBranchSelect) return;
-  const el = ghBranchSelect;
-  const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
-  if (nearBottom && filteredBranches.length === allBranches.length && hasMorePages && !isFetchingBranches) {
-    ensureNextPageIfNeeded();
-  }
-}
-
-/** React to branch dropdown changes and persist the selection. */
-function onBranchChange(): void {
-  if (!ghBranchSelect) return;
-  const v = ghBranchSelect.value;
-  if (v === '__more__') {
-    renderCount = Math.min(renderCount + RENDER_STEP, filteredBranches.length);
-    renderOptions();
-    return;
-  }
-  if (v === '__fetch__') {
-    ensureNextPageIfNeeded();
-    return;
-  }
-  if (!v) return;
-
-  desiredBranch = v;
-  postToPlugin({
-    type: 'GITHUB_SELECT_BRANCH',
-    payload: { owner: currentOwner, repo: currentRepo, branch: v }
-  });
-
-  updateFolderControlsEnabled();
-  // NEW: make sure CTA reflects the new branch choice
-  updateExportCommitEnabled();
-  updateFetchButtonEnabled();
-}
-
-
-
-/* -------------------------------------------------------
- * GitHub button handlers
- * ----------------------------------------------------- */
-/** Kick off the PAT verification flow from the UI button. */
-function onGitHubConnectClick() {
-  const tokenRaw = readPatFromUi();
-  const isMasked = ghTokenInput?.getAttribute('data-filled') === '1';
-  if (ghIsAuthed && isMasked) return; // already authenticated with stored token
-  if (!tokenRaw) { log('GitHub: Paste a Personal Access Token first.'); return; }
-  const remember = !!(ghRememberChk && ghRememberChk.checked);
-  log('GitHub: Verifying token…');
-  postToPlugin({ type: 'GITHUB_SET_TOKEN', payload: { token: tokenRaw, remember } } as any);
-}
-
-/** Re-verify the stored token without changing the remember preference. */
-function onGitHubVerifyClick() {
-  onGitHubConnectClick();
-}
-
-/** Clear stored GitHub state and notify the plugin to forget the token. */
-function onGitHubLogoutClick() {
-  postToPlugin({ type: 'GITHUB_FORGET_TOKEN' } as any);
-  ghIsAuthed = false;
-  ghTokenExpiresAt = null;
-  setPatFieldObfuscated(false);
-  populateGhRepos([]);
-  updateGhStatusUi();
-  // Clear branch UI
-  currentOwner = ''; currentRepo = '';
-  allBranches = []; filteredBranches = [];
-  desiredBranch = null; defaultBranchFromApi = undefined;
-  loadedPages = 0; hasMorePages = false; isFetchingBranches = false;
-  if (ghBranchSearch) ghBranchSearch.value = '';
-  if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
-  updateBranchCount();
-  updateFolderControlsEnabled();
-  if (ghFolderInput) ghFolderInput.value = '';
-  log('GitHub: Logged out.');
-}
-
-/* -------------------------------------------------------
- * Folder picker helpers (UI-only; lists from plugin)
- * ----------------------------------------------------- */
-
-/** Grab the currently selected branch value (or ''). */
-function getCurrentBranch(): string {
-  const v = (ghBranchSelect && !ghBranchSelect.disabled &&
-    ghBranchSelect.value && ghBranchSelect.value !== '__more__' && ghBranchSelect.value !== '__fetch__')
-    ? ghBranchSelect.value
-    : (desiredBranch || defaultBranchFromApi || '');
-  return v || '';
-}
-
-/** Read the PR base branch field, defaulting to the main selection. */
-function getPrBaseBranch(): string {
-  return defaultBranchFromApi || '';
-}
-
-/** Persist a subset of GitHub state back to the plugin controller. */
-function persistGhState(partial: Partial<{
-  owner: string;
-  repo: string;
-  branch: string;
-  folder: string;
-  commitMessage: string;
-  scope: 'all' | 'selected';
-  collection: string;
-  mode: string;
-  createPr: boolean;
-  prBase: string;
-  prTitle: string;
-  prBody: string;
-}>): void {
-  postToPlugin({ type: 'GITHUB_SAVE_STATE', payload: partial });
-}
-
-/** Normalize folder input for display vs payload usage. */
-function normalizeFolderInput(raw: string): { display: string; payload: string } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { display: '', payload: '' };
-
-  // Accept explicit root selections via “/” or “./”.
-  if (trimmed === '/' || trimmed === './' || trimmed === '.') {
-    return { display: '/', payload: '/' };
-  }
-
-  const collapsed = trimmed
-    .replace(/\\/g, '/')
-    .replace(/\/{2,}/g, '/');
-  const stripped = collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
-  if (!stripped) return { display: '/', payload: '/' };
-  return { display: stripped + '/', payload: stripped };
-}
-
-/** Enable or disable export/commit buttons depending on current inputs. */
-function updateExportCommitEnabled(): void {
-  const hasRepo = !!(currentOwner && currentRepo);
-  const br = getCurrentBranch();
-  const commitMsg = (ghCommitMsgInput?.value || '').trim();
-  const scopeAll = !!(ghScopeAll && ghScopeAll.checked);
-  const folderRaw = ghFolderInput ? ghFolderInput.value.trim() : '';
-  const hasFolder = normalizeFolderInput(folderRaw).display.length > 0;
-
-  // If using “selected” scope, require collection+mode selected.
-  const hasSelection = scopeAll
-    ? true
-    : !!(collectionSelect && collectionSelect.value && modeSelect && modeSelect.value);
-
-  let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder);
-
-  if (ghCreatePrChk && ghCreatePrChk.checked) {
-    const prBase = getPrBaseBranch();
-    if (!prBase || prBase === br) {
-      ready = false;
-    }
-  }
-
-  if (ghExportAndCommitBtn) ghExportAndCommitBtn.disabled = !ready;
-}
-
-
-/** Toggle folder picker UI pieces based on current auth + branch state. */
-function updateFolderControlsEnabled(): void {
-  const br = getCurrentBranch();
-  const enable = !!(currentOwner && currentRepo && br);
-  if (ghPickFolderBtn) ghPickFolderBtn.disabled = !enable;
-
-  // NEW: also re-evaluate primary CTA readiness whenever folder controls change
-  updateExportCommitEnabled();
-  updateFetchButtonEnabled();
-}
-
-/** Decide whether the fetch-from-repo button should be active. */
-function updateFetchButtonEnabled(): void {
-  const hasRepo = !!(ghIsAuthed && currentOwner && currentRepo);
-  const branch = getCurrentBranch();
-  const path = (ghFetchPathInput?.value || '').trim();
-  if (ghFetchTokensBtn) ghFetchTokensBtn.disabled = !(hasRepo && branch && path);
-}
-
-
-
-/** Proxy a folder list request to the plugin and wait for the matching reply. */
-function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string }> {
-  return new Promise((resolve, _reject) => {
-    const req = { path: path.replace(/^\/+|\/+$/g, '') };
-    folderListWaiters.push({
-      path: req.path,
-      resolve: (v) => resolve(v),
-      reject: (v) => resolve(v) // resolve with { ok:false } to keep caller simple
-    });
-    postToPlugin({
-      type: 'GITHUB_FOLDER_LIST',
-      payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), path: req.path }
-    });
-  });
-}
-
-/** Ask the plugin to create a folder if one does not already exist. */
-function ensureFolder(folderPath: string): Promise<{ ok: true } | { ok: false; message: string; status?: number }> {
-  return new Promise((resolve) => {
-    const fp = folderPath.replace(/^\/+|\/+$/g, '');
-    folderCreateWaiters.push({
-      folderPath: fp,
-      resolve: (v) => resolve(v),
-      reject: (v) => resolve(v)
-    });
-    postToPlugin({
-      type: 'GITHUB_CREATE_FOLDER',
-      payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), folderPath: fp }
-    });
-  });
-}
-
-/** Display the folder picker overlay and load the initial directory listing. */
-function openFolderPicker(): void {
-  if (!currentOwner || !currentRepo) { log('Pick a repository first.'); return; }
-  const ref = getCurrentBranch();
-  if (!ref) { log('Pick a branch first.'); return; }
-  if (!(folderPickerOverlay && folderPickerTitleEl && folderPickerPathInput && folderPickerListEl)) {
-    log('Folder picker UI is unavailable.');
-    return;
-  }
-
-  folderPickerLastFocus = (document.activeElement instanceof HTMLElement) ? document.activeElement : null;
-
-  folderPickerOverlay.hidden = false;
-  folderPickerOverlay.classList.add('is-open');
-  folderPickerOverlay.setAttribute('aria-hidden', 'false');
-  folderPickerIsOpen = true;
-
-  updateFolderPickerTitle(ref);
-
-  const startNormalized = normalizeFolderInput(ghFolderInput?.value || '');
-  const startPath = startNormalized.payload === '/' ? '' : startNormalized.payload;
-  setFolderPickerPath(startPath, true);
-
-  window.setTimeout(() => {
-    folderPickerPathInput?.focus();
-    folderPickerPathInput?.select();
-  }, 0);
-}
-
-/** Close the folder picker overlay and restore focus. */
-function closeFolderPicker(): void {
-  if (!folderPickerOverlay) return;
-  folderPickerOverlay.classList.remove('is-open');
-  folderPickerOverlay.setAttribute('aria-hidden', 'true');
-  folderPickerOverlay.hidden = true;
-  folderPickerIsOpen = false;
-  folderPickerCurrentPath = '';
-  folderPickerRefreshNonce++;
-  if (folderPickerListEl) {
-    folderPickerListEl.replaceChildren(createFolderPickerRow('Loading…', { muted: true, disabled: true }));
-  }
-  if (folderPickerLastFocus && document.contains(folderPickerLastFocus)) {
-    folderPickerLastFocus.focus();
-  }
-  folderPickerLastFocus = null;
-}
-
-/** Canonicalize folder picker input for comparisons + plugin requests. */
-function normalizeFolderPickerPath(raw: string): string {
-  const trimmed = (raw || '').trim();
-  if (!trimmed || trimmed === '/' || trimmed === './' || trimmed === '.') return '';
-  const collapsed = trimmed.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
-  return collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
-}
-
-/** Update the folder picker path display and optionally refresh the listing. */
-function setFolderPickerPath(raw: string, refresh: boolean = true): void {
-  const normalized = normalizeFolderPickerPath(raw);
-  folderPickerCurrentPath = normalized;
-  if (folderPickerPathInput) folderPickerPathInput.value = normalized;
-  if (refresh && folderPickerIsOpen) {
-    refreshFolderPickerList();
-  }
-}
-
-/** Reload the folder picker contents, respecting in-flight refresh tokens. */
-async function refreshFolderPickerList(): Promise<void> {
-  if (!(folderPickerListEl && folderPickerIsOpen)) return;
-  const listEl = folderPickerListEl;
-  const requestId = ++folderPickerRefreshNonce;
-
-  listEl.replaceChildren(createFolderPickerRow('Loading…', { muted: true, disabled: true }));
-
-  const path = folderPickerCurrentPath;
-  const res = await listDir(path);
-  if (requestId !== folderPickerRefreshNonce) return;
-
-  if (!('ok' in res) || !res.ok) {
-    const message = 'message' in res && res.message ? res.message : 'failed to fetch';
-    listEl.replaceChildren(createFolderPickerRow(`Error: ${message}`, { muted: true, disabled: true }));
-    return;
-  }
-
-  const nodes: HTMLElement[] = [];
-  if (path) {
-    nodes.push(createFolderPickerRow('.. (up one level)', {
-      muted: true,
-      onClick: () => {
-        const parentParts = folderPickerCurrentPath.split('/').filter(Boolean);
-        parentParts.pop();
-        setFolderPickerPath(parentParts.join('/'));
-      }
-    }));
-  }
-
-  const entries = Array.isArray(res.entries) ? res.entries : [];
-  const dirs = entries.filter(e => e.type === 'dir').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  if (dirs.length === 0) {
-    nodes.push(createFolderPickerRow('(no subfolders)', { muted: true, disabled: true }));
-  } else {
-    for (const d of dirs) {
-      const name = d.name || '';
-      nodes.push(createFolderPickerRow(`${name}/`, {
-        onClick: () => {
-          const next = folderPickerCurrentPath ? `${folderPickerCurrentPath}/${name}` : name;
-          setFolderPickerPath(next);
-        }
-      }));
-    }
-  }
-
-  listEl.replaceChildren(...nodes);
-}
-
-/** Build a row inside the folder picker list with optional buttons. */
-function createFolderPickerRow(label: string, options?: {
-  onClick?: () => void;
-  muted?: boolean;
-  disabled?: boolean;
-}): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'folder-picker-row';
-  btn.textContent = label;
-  if (options?.muted) btn.classList.add('is-muted');
-  if (options?.disabled) btn.disabled = true;
-  if (options?.onClick) {
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      options.onClick?.();
-    });
-  }
-  return btn;
-}
-
-/** Update the picker headline so users know which branch they are browsing. */
-function updateFolderPickerTitle(branch: string): void {
-  if (!folderPickerTitleEl) return;
-  if (currentOwner && currentRepo) {
-    folderPickerTitleEl.textContent = `${currentOwner}/${currentRepo} @ ${branch}`;
-  } else {
-    folderPickerTitleEl.textContent = 'Select a repository first';
-  }
-}
-
-/** Trap focus within the folder picker and wire up keyboard shortcuts. */
-function handleFolderPickerKeydown(event: KeyboardEvent): void {
-  if (!folderPickerIsOpen) return;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    closeFolderPicker();
-  }
-}
 
 /* -------------------------------------------------------
  * Message pump
  * ----------------------------------------------------- */
-let restoreOwner: string | null = null;
-let restoreRepo: string | null = null;
-let restoreBranch: string | null = null;
-
 window.addEventListener('message', async (event: MessageEvent) => {
   const data: unknown = (event as unknown as { data?: unknown }).data;
   if (!data || typeof data !== 'object') return;
@@ -1176,39 +403,9 @@ window.addEventListener('message', async (event: MessageEvent) => {
   if (msg.type === 'ERROR') { log('ERROR: ' + (msg.payload?.message ?? '')); return; }
   if (msg.type === 'INFO') { log(msg.payload?.message ?? ''); return; }
 
-  // GitHub auth state from plugin
-  if (msg.type === 'GITHUB_AUTH_RESULT') {
-    const p = msg.payload || {};
-    ghIsAuthed = !!p.ok;
-    ghTokenExpiresAt = p.exp || p.tokenExpiration || null;
+  if (githubUi.handleMessage(msg)) return;
 
-    if (typeof p.remember === 'boolean') {
-      ghRememberPref = p.remember;
-      saveRememberPref(ghRememberPref);
-    } else {
-      ghRememberPref = loadRememberPref();
-    }
-
-    if (ghIsAuthed) {
-      setPatFieldObfuscated(true);
-      const who = p.login || 'unknown';
-      const name = p.name ? ` (${p.name})` : '';
-      log(`GitHub: Authenticated as ${who}${name}.`);
-    } else {
-      setPatFieldObfuscated(false);
-      const why = p.error ? `: ${p.error}` : '.';
-      log(`GitHub: Authentication failed${why}`);
-    }
-
-    updateGhStatusUi();
-    updateExportCommitEnabled(); // 🔧 make the CTA reconsider readiness
-    updateFetchButtonEnabled();
-    return;
-  }
-
-
-
-  if (msg.type === 'EXPORT_RESULT') {
+    if (msg.type === 'EXPORT_RESULT') {
     const files = Array.isArray(msg.payload?.files) ? msg.payload.files : [];
     if (files.length === 0) { log('Nothing to export.'); return; }
 
@@ -1280,290 +477,15 @@ window.addEventListener('message', async (event: MessageEvent) => {
     return;
   }
 
-  if ((msg as any).type === 'GITHUB_REPOS') {
-    const repos = ((msg as any).payload?.repos ?? []) as Array<{ full_name: string; default_branch: string; private: boolean }>;
-    populateGhRepos(repos);
-    log(`GitHub: Repository list updated (${repos.length}).`);
-    return;
-  }
-
-  // Restore selected repo/branch/folder (from plugin storage)
-  if (msg.type === 'GITHUB_RESTORE_SELECTED') {
-    const p = msg.payload || {};
-    restoreOwner = typeof p.owner === 'string' ? p.owner : null;
-    restoreRepo = typeof p.repo === 'string' ? p.repo : null;
-    restoreBranch = typeof p.branch === 'string' ? p.branch : null;
-
-    if (typeof p.folder === 'string' && ghFolderInput) {
-      const normalized = normalizeFolderInput(p.folder);
-      ghFolderInput.value = normalized.display;
-    }
-    if (typeof p.commitMessage === 'string' && ghCommitMsgInput) {
-      ghCommitMsgInput.value = p.commitMessage;
-    }
-    if (typeof p.scope === 'string') {
-      if (p.scope === 'all' && ghScopeAll) ghScopeAll.checked = true;
-      if (p.scope === 'selected' && ghScopeSelected) ghScopeSelected.checked = true;
-    }
-    if (typeof p.collection === 'string' && collectionSelect) {
-      collectionSelect.value = p.collection;
-    }
-    if (typeof p.mode === 'string' && modeSelect) {
-      modeSelect.value = p.mode;
-    }
-    if (typeof p.createPr === 'boolean' && ghCreatePrChk) {
-      ghCreatePrChk.checked = p.createPr;
-      if (ghPrOptionsEl) ghPrOptionsEl.style.display = p.createPr ? 'flex' : 'none';
-    }
-    if (typeof p.prTitle === 'string' && ghPrTitleInput) ghPrTitleInput.value = p.prTitle;
-    if (typeof p.prBody === 'string' && ghPrBodyInput) ghPrBodyInput.value = p.prBody;
-
-    desiredBranch = restoreBranch;
-    // If repos already loaded, try to select now
-    if (ghRepoSelect && restoreOwner && restoreRepo) {
-      const want = `${restoreOwner}/${restoreRepo}`;
-      let matched = false;
-      for (let i = 0; i < ghRepoSelect.options.length; i++) {
-        if (ghRepoSelect.options[i].value === want) {
-          ghRepoSelect.selectedIndex = i;
-          matched = true;
-          break;
-        }
-      }
-      if (matched) {
-        const ev = new Event('change', { bubbles: true });
-        ghRepoSelect.dispatchEvent(ev);
-      }
-    }
-    updateExportCommitEnabled();
-    updateFetchButtonEnabled();
-    return;
-  }
-
-  // Branches page arrived
-  if ((msg as any).type === 'GITHUB_BRANCHES') {
-    const pl = (msg as any).payload || {};
-    const owner = String(pl.owner || '');
-    const repo = String(pl.repo || '');
-    if (owner !== currentOwner || repo !== currentRepo) return; // stale
-
-    lastBranchesFetchedAtMs = Date.now();
-
-    loadedPages = Number(pl.page || 1);
-    hasMorePages = !!pl.hasMore;
-    isFetchingBranches = false;
-
-    if (typeof pl.defaultBranch === 'string' && !defaultBranchFromApi) {
-      defaultBranchFromApi = pl.defaultBranch;
-    }
-
-    const btn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
-    if (btn) btn.disabled = false;
-
-    const names = Array.isArray(pl.branches) ? (pl.branches as Array<{ name: string }>).map(b => b.name) : [];
-    const set = new Set(allBranches);
-    for (const n of names) if (n) set.add(n);
-    allBranches = Array.from(set).sort((a, b) => a.localeCompare(b));
-
-    applyBranchFilter();
-    setBranchDisabled(false);
-    updateFolderControlsEnabled();
-
-    const rate = pl.rate as { remaining?: number; resetEpochSec?: number } | undefined;
-    if (rate && typeof rate.remaining === 'number' && rate.remaining <= 3 && typeof rate.resetEpochSec === 'number') {
-      const t = new Date(rate.resetEpochSec * 1000).toLocaleTimeString();
-      log(`GitHub: near rate limit; resets ~${t}`);
-    }
-
-    log(`Loaded ${names.length} branches (page ${loadedPages}) for ${repo}${hasMorePages ? '…' : ''}`);
-    return;
-  }
-
-  // Branch load error
-  if ((msg as any).type === 'GITHUB_BRANCHES_ERROR') {
-    const pl = (msg as any).payload || {};
-    const owner = String(pl.owner || '');
-    const repo = String(pl.repo || '');
-    if (owner !== currentOwner || repo !== currentRepo) return; // stale
-    isFetchingBranches = false;
-    setBranchDisabled(false);
-    updateFolderControlsEnabled();
-    log(`Branch load failed (status ${pl.status}): ${pl.message || 'unknown error'}`);
-    if (pl.samlRequired) log('This org requires SSO. Open the repo in your browser and authorize SSO for your token.');
-    if (pl.rate && typeof pl.rate.resetEpochSec === 'number') {
-      const t = new Date(pl.rate.resetEpochSec * 1000).toLocaleTimeString();
-      log(`Rate limit issue; resets ~${t}`);
-    }
-    return;
-  }
-
-  if ((msg as any).type === 'GITHUB_CREATE_BRANCH_RESULT') {
-    const pl = (msg as any).payload || {};
-    if (ghCreateBranchConfirmBtn) ghCreateBranchConfirmBtn.disabled = false;
-
-    if (!pl || typeof pl.ok !== 'boolean') return;
-
-    if (pl.ok) {
-      const baseBranch = String(pl.baseBranch || '');
-      const newBranch = String(pl.newBranch || '');
-      const url = String(pl.html_url || '');
-
-      if (newBranch) {
-        const s = new Set(allBranches);
-        if (!s.has(newBranch)) {
-          s.add(newBranch);
-          allBranches = Array.from(s).sort((a, b) => a.localeCompare(b));
-        }
-        desiredBranch = newBranch;
-        applyBranchFilter();
-        if (ghBranchSelect) ghBranchSelect.value = newBranch;
-      }
-
-      updateFolderControlsEnabled();
-
-      showNewBranchRow(false);
-      if (ghNewBranchName) ghNewBranchName.value = '';
-
-      if (url) {
-        log(`Branch created: ${newBranch} (from ${baseBranch})`);
-        const a = document.createElement('a');
-        a.href = url;
-        a.textContent = 'View on GitHub';
-        a.target = '_blank';
-        const wrap = document.createElement('div');
-        wrap.appendChild(a);
-        if (logEl) {
-          logEl.appendChild(wrap);
-          (logEl as HTMLElement).scrollTop = (logEl as HTMLElement).scrollHeight;
-        }
-      } else {
-        log(`Branch created: ${newBranch} (from ${baseBranch})`);
-      }
-      return;
-    }
-
-    const status = pl.status ?? 0;
-    const message = pl.message || 'unknown error';
-    log(`Create branch failed (status ${status}): ${message}`);
-    if (pl.samlRequired) {
-      log('This org requires SSO. Open the repo in your browser and authorize SSO for your token.');
-    } else if (status === 403) {
-      if (pl.noPushPermission) {
-        log('You do not have push permission to this repository. Ask a maintainer for write access.');
-      } else {
-        log('Likely a token permission issue:');
-        log('• Classic PAT: add the "repo" scope (or "public_repo" for public repos).');
-        log('• Fine-grained PAT: grant this repository and set "Contents: Read and write".');
-      }
-    }
-    if (pl.rate && typeof pl.rate.resetEpochSec === 'number') {
-      const t = new Date(pl.rate.resetEpochSec * 1000).toLocaleTimeString();
-      log(`Rate limit issue; resets ~${t}`);
-    }
-    return;
-  }
-
-  // Folder list result (echoed by plugin)
-  if ((msg as any).type === 'GITHUB_FOLDER_LIST_RESULT') {
-    const pl = (msg as any).payload || {};
-    const path = String(pl.path || '').replace(/^\/+|\/+$/g, '');
-    const ok = !!pl.ok;
-    const entries = Array.isArray(pl.entries) ? pl.entries : [];
-    const message = String(pl.message || '');
-
-    for (let i = 0; i < folderListWaiters.length; i++) {
-      if (folderListWaiters[i].path === path) {
-        const waiter = folderListWaiters.splice(i, 1)[0];
-        if (ok) waiter.resolve({ ok: true, entries });
-        else waiter.reject({ ok: false, message: message || `HTTP ${pl.status || 0}` });
-        break;
-      }
-    }
-    return;
-  }
-
-  // Create folder result (kept for future – UI does not call it by default)
-  if ((msg as any).type === 'GITHUB_CREATE_FOLDER_RESULT') {
-    const pl = (msg as any).payload || {};
-    const fp = String(pl.folderPath || '').replace(/^\/+|\/+$/g, '');
-    const ok = !!pl.ok;
-    const message = String(pl.message || '');
-
-    for (let i = 0; i < folderCreateWaiters.length; i++) {
-      if (folderCreateWaiters[i].folderPath === fp) {
-        const waiter = folderCreateWaiters.splice(i, 1)[0];
-        if (ok) waiter.resolve({ ok: true });
-        else waiter.reject({ ok: false, message: message || `HTTP ${pl.status || 0}`, status: pl.status });
-        break;
-      }
-    }
-    return;
-  }
-
-  if (msg.type === 'GITHUB_COMMIT_RESULT') {
-    if (msg.payload.ok) {
-      const url = String(msg.payload.commitUrl || '');
-      const branch = msg.payload.branch || '';
-      log(`Commit succeeded: ${url || '(no URL)'} (${branch})`);
-      if (url && logEl) {
-        const wrap = document.createElement('div');
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.textContent = 'View commit';
-        wrap.appendChild(a);
-        logEl.appendChild(wrap);
-        (logEl as HTMLElement).scrollTop = (logEl as HTMLElement).scrollHeight;
-      }
-      if (msg.payload.createdPr) {
-        const pr = msg.payload.createdPr;
-        log(`PR prepared (#${pr.number}) from ${pr.head} → ${pr.base}`);
-      }
-    } else {
-      log(`Commit failed (${msg.payload.status || 0}): ${msg.payload.message || 'unknown error'}`);
-    }
-    return;
-  }
-
-  if (msg.type === 'GITHUB_PR_RESULT') {
-    if (msg.payload.ok) {
-      const url = msg.payload.url;
-      log(`PR created: #${msg.payload.number} (${msg.payload.head} → ${msg.payload.base})`);
-      if (url && logEl) {
-        const wrap = document.createElement('div');
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.textContent = 'View PR';
-        wrap.appendChild(a);
-        logEl.appendChild(wrap);
-        (logEl as HTMLElement).scrollTop = (logEl as HTMLElement).scrollHeight;
-      }
-    } else {
-      log(`PR creation failed (${msg.payload.status || 0}): ${msg.payload.message || 'unknown error'}`);
-    }
-    return;
-  }
-
-  if (msg.type === 'GITHUB_FETCH_TOKENS_RESULT') {
-    if (msg.payload.ok) {
-      log(`Imported tokens from ${msg.payload.path} (${msg.payload.branch})`);
-    } else {
-      log(`GitHub fetch failed (${msg.payload.status || 0}): ${msg.payload.message || 'unknown error'}`);
-    }
-    return;
-  }
-
-
 });
 
 /* -------------------------------------------------------
  * DOM wiring (runs when document exists)
  * ----------------------------------------------------- */
-document.addEventListener('DOMContentLoaded', function () {
+
+document.addEventListener('DOMContentLoaded', () => {
   if (typeof document === 'undefined') return;
 
-  // Assign elements
   logEl = document.getElementById('log');
   rawEl = document.getElementById('raw');
 
@@ -1609,381 +531,26 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // GitHub controls (robust lookups)
-  ghTokenInput = findTokenInput();
-  ghRememberChk = (document.getElementById('githubRememberChk') as HTMLInputElement | null)
-    || (document.getElementById('ghRememberChk') as HTMLInputElement | null);
-  ghConnectBtn = (document.getElementById('githubConnectBtn') as HTMLButtonElement | null)
-    || (document.getElementById('ghConnectBtn') as HTMLButtonElement | null);
-  ghVerifyBtn = (document.getElementById('githubVerifyBtn') as HTMLButtonElement | null)
-    || (document.getElementById('ghVerifyBtn') as HTMLButtonElement | null);
-  ghLogoutBtn = document.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
-  ghRepoSelect = document.getElementById('ghRepoSelect') as HTMLSelectElement | null;
+  githubUi.attach({ document, window });
 
-  // Optional Branch controls
-  ghBranchSearch = document.getElementById('ghBranchSearch') as HTMLInputElement | null;
-  ghBranchSelect = document.getElementById('ghBranchSelect') as HTMLSelectElement | null;
-  ghBranchCountEl = document.getElementById('ghBranchCount') as HTMLElement | null;
-
-  // Folder picker controls
-  ghFolderInput = document.getElementById('ghFolderInput') as HTMLInputElement | null;
-  ghPickFolderBtn = document.getElementById('ghPickFolderBtn') as HTMLButtonElement | null;
-
-  ghCommitMsgInput = document.getElementById('ghCommitMsgInput') as HTMLInputElement | null;
-  ghExportAndCommitBtn = document.getElementById('ghExportAndCommitBtn') as HTMLButtonElement | null;
-  ghCreatePrChk = document.getElementById('ghCreatePrChk') as HTMLInputElement | null;
-  ghPrOptionsEl = document.getElementById('ghPrOptions') as HTMLElement | null;
-  ghPrTitleInput = document.getElementById('ghPrTitleInput') as HTMLInputElement | null;
-  ghPrBodyInput = document.getElementById('ghPrBodyInput') as HTMLTextAreaElement | null;
-  ghFetchPathInput = document.getElementById('ghFetchPathInput') as HTMLInputElement | null;
-  ghFetchTokensBtn = document.getElementById('ghFetchTokensBtn') as HTMLButtonElement | null;
-  ghScopeSelected = document.getElementById('ghScopeSelected') as HTMLInputElement | null;
-  ghScopeAll = document.getElementById('ghScopeAll') as HTMLInputElement | null;
-
-  folderPickerOverlay = document.getElementById('folderPickerOverlay');
-  folderPickerTitleEl = document.getElementById('folderPickerTitle');
-  folderPickerPathInput = document.getElementById('folderPickerPath') as HTMLInputElement | null;
-  folderPickerUseBtn = document.getElementById('folderPickerUseBtn') as HTMLButtonElement | null;
-  folderPickerListEl = document.getElementById('folderPickerList');
-  folderPickerNewBtn = document.getElementById('folderPickerNewBtn') as HTMLButtonElement | null;
-  folderPickerCancelBtn = document.getElementById('folderPickerCancelBtn') as HTMLButtonElement | null;
-
-
-  // Load saved “remember me” preference immediately (UI-level persistence)
-  ghRememberPref = loadRememberPref();
-  if (ghRememberChk) ghRememberChk.checked = ghRememberPref;
-  if (ghRememberChk) ghRememberChk.addEventListener('change', () => {
-    ghRememberPref = !!ghRememberChk!.checked;
-    saveRememberPref(ghRememberPref);
-    updateGhStatusUi();
-  });
-
-  // Ensure status/meta/logout exist next to Connect
-  ensureGhStatusElements();
-
-  // Wire GitHub buttons
-  if (ghConnectBtn) ghConnectBtn.addEventListener('click', onGitHubConnectClick);
-  if (ghVerifyBtn) ghVerifyBtn.addEventListener('click', onGitHubVerifyClick);
-  if (ghLogoutBtn) ghLogoutBtn.addEventListener('click', onGitHubLogoutClick);
-
-  // Repo → branch load
-  if (ghRepoSelect && ghBranchSelect) {
-    let lastRepoKey = ''; // 🔧 new: de-dupe identical selections
-
-    ghRepoSelect.addEventListener('change', function () {
-      const value = ghRepoSelect!.value; // "owner/repo"
-      if (!value) return;
-      if (value === lastRepoKey) return; // 🔧 avoid duplicate loads on same value
-      lastRepoKey = value;
-
-      const parts = value.split('/');
-      currentOwner = parts[0] || '';
-      currentRepo = parts[1] || '';
-
-      updateExportCommitEnabled();
-      updateFetchButtonEnabled();
-
-      // reset branch cache freshness
-      lastBranchesFetchedAtMs = 0;
-
-      postToPlugin({ type: 'GITHUB_SELECT_REPO', payload: { owner: currentOwner, repo: currentRepo } });
-
-      desiredBranch = restoreBranch || null;
-      defaultBranchFromApi = undefined;
-      loadedPages = 0; hasMorePages = false; isFetchingBranches = false;
-      allBranches = []; filteredBranches = [];
-      renderCount = 0;
-      if (ghBranchSearch) ghBranchSearch.value = '';
-
-      setBranchDisabled(true, 'Loading branches…');
-      updateBranchCount();
-      updateFolderControlsEnabled();
-
-      if (ghFolderInput) ghFolderInput.value = '';
-
-      if (currentOwner && currentRepo) {
-        log(`GitHub: loading branches for ${currentOwner}/${currentRepo}…`);
-        isFetchingBranches = true;
-        postToPlugin({
-          type: 'GITHUB_FETCH_BRANCHES',
-          payload: { owner: currentOwner, repo: currentRepo, page: 1 }
-        });
-      }
-
-      updateExportCommitEnabled();
-    });
-  }
-
-
-
-  // Branch search and list listeners
-  if (ghBranchSearch) {
-    let t: number | undefined;
-    ghBranchSearch.addEventListener('input', () => {
-      if (t) window.clearTimeout(t);
-      t = window.setTimeout(() => {
-        applyBranchFilter();
-      }, 120);
-    });
-  }
-  if (ghBranchSelect) {
-    ghBranchSelect.addEventListener('change', onBranchChange);
-    ghBranchSelect.addEventListener('scroll', onBranchScroll);
-  }
-
-  if (ghBranchSearch) {
-    ghBranchSearch.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        revalidateBranchesIfStale(true);
-      }
-    });
-  }
-
-  ghBranchRefreshBtn = document.getElementById('ghBranchRefreshBtn') as HTMLButtonElement | null;
-  if (ghBranchRefreshBtn) {
-    ghBranchRefreshBtn.addEventListener('click', () => {
-      lastBranchesFetchedAtMs = 0;
-      revalidateBranchesIfStale(true);
-    });
-  }
-
-  // Folder picker button wiring
-  if (ghPickFolderBtn) {
-    ghPickFolderBtn.addEventListener('click', openFolderPicker);
-  }
-
-  if (folderPickerOverlay) {
-    folderPickerOverlay.addEventListener('click', (event) => {
-      if (event.target === folderPickerOverlay) closeFolderPicker();
-    });
-  }
-
-  if (folderPickerCancelBtn) {
-    folderPickerCancelBtn.addEventListener('click', () => {
-      closeFolderPicker();
-    });
-  }
-
-  if (folderPickerPathInput) {
-    folderPickerPathInput.addEventListener('keydown', (event: KeyboardEvent) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        setFolderPickerPath(folderPickerPathInput!.value);
-      }
-    });
-    folderPickerPathInput.addEventListener('blur', () => {
-      setFolderPickerPath(folderPickerPathInput!.value);
-    });
-  }
-
-  if (folderPickerUseBtn) {
-    folderPickerUseBtn.addEventListener('click', () => {
-      const selectionRaw = folderPickerCurrentPath ? `${folderPickerCurrentPath}/` : '/';
-      const normalized = normalizeFolderInput(selectionRaw);
-      if (ghFolderInput) ghFolderInput.value = normalized.display;
-      postToPlugin({
-        type: 'GITHUB_SET_FOLDER',
-        payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
-      });
-      persistGhState({ folder: normalized.payload });
-      closeFolderPicker();
-      log(`Folder selected: ${normalized.display === '/' ? '(repo root)' : normalized.display}`);
-      updateExportCommitEnabled();
-      updateFetchButtonEnabled();
-    });
-  }
-
-  if (folderPickerNewBtn) {
-    folderPickerNewBtn.addEventListener('click', () => {
-      const name = prompt('New folder name (no spaces; use "-" or "_")', 'tokens');
-      if (!name) return;
-      const trimmed = name.trim().replace(/^\/+/, '').replace(/\/+$/, '');
-      if (!trimmed || /\s/.test(trimmed) || /[~^:?*[\]\\]/.test(trimmed)) {
-        alert('Invalid folder name.');
-        return;
-      }
-      const next = folderPickerCurrentPath ? `${folderPickerCurrentPath}/${trimmed}` : trimmed;
-      const normalizedPath = normalizeFolderPickerPath(next);
-      const normalized = normalizeFolderInput(normalizedPath ? `${normalizedPath}/` : '/');
-      if (ghFolderInput) ghFolderInput.value = normalized.display;
-      postToPlugin({
-        type: 'GITHUB_SET_FOLDER',
-        payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
-      });
-      persistGhState({ folder: normalized.payload });
-      closeFolderPicker();
-      log(`Folder selected (will be created on export): ${normalized.display}`);
-      updateExportCommitEnabled();
-      updateFetchButtonEnabled();
-    });
-  }
-
-  document.addEventListener('keydown', handleFolderPickerKeydown);
-
-  if (ghCommitMsgInput) {
-    ghCommitMsgInput.addEventListener('input', () => {
-      updateExportCommitEnabled();
-      persistGhState({ commitMessage: ghCommitMsgInput!.value || '' });
-    });
-  }
-
-  // Let users type a folder directly
-  if (ghFolderInput) {
-    ghFolderInput.addEventListener('input', () => {
-      updateExportCommitEnabled();
-      updateFetchButtonEnabled();
-    });
-    ghFolderInput.addEventListener('blur', () => {
-      const normalized = normalizeFolderInput(ghFolderInput!.value);
-      ghFolderInput!.value = normalized.display;
-      postToPlugin({
-        type: 'GITHUB_SET_FOLDER',
-        payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
-      });
-      persistGhState({ folder: normalized.payload });
-      updateExportCommitEnabled();
-      updateFetchButtonEnabled();
-    });
-  }
-
-  if (ghCreatePrChk) {
-    ghCreatePrChk.addEventListener('change', () => {
-      const on = !!ghCreatePrChk!.checked;
-      if (ghPrOptionsEl) ghPrOptionsEl.style.display = on ? 'flex' : 'none';
-      const save: Partial<{ createPr: boolean; prBase: string }> = { createPr: on };
-      if (on) save.prBase = getPrBaseBranch();
-      persistGhState(save);
-      updateExportCommitEnabled();
-    });
-  }
-  if (ghPrTitleInput) {
-    ghPrTitleInput.addEventListener('input', () => {
-      persistGhState({ prTitle: ghPrTitleInput!.value });
-    });
-  }
-  if (ghPrBodyInput) {
-    ghPrBodyInput.addEventListener('input', () => {
-      persistGhState({ prBody: ghPrBodyInput!.value });
-    });
-  }
-  if (ghFetchPathInput) {
-    ghFetchPathInput.addEventListener('input', updateFetchButtonEnabled);
-  }
-  if (ghFetchTokensBtn) {
-    ghFetchTokensBtn.addEventListener('click', () => {
-      const branch = getCurrentBranch();
-      const path = (ghFetchPathInput?.value || '').trim().replace(/^\/+/, '');
-      if (!currentOwner || !currentRepo) { log('Pick a repository first.'); return; }
-      if (!branch) { log('Pick a branch first.'); return; }
-      if (!path) { log('Enter a path to fetch (e.g., tokens/tokens.json).'); return; }
-      log(`GitHub: fetching ${path} from ${currentOwner}/${currentRepo}@${branch}…`);
-      postToPlugin({
-        type: 'GITHUB_FETCH_TOKENS',
-        payload: {
-          owner: currentOwner,
-          repo: currentRepo,
-          branch,
-          path,
-          allowHexStrings: !!(allowHexChk && allowHexChk.checked)
-        }
-      });
-    });
-  }
-
-  // Scope radios influence readiness
-  if (ghScopeSelected) {
-    ghScopeSelected.addEventListener('change', () => {
-      updateExportCommitEnabled();
-      if (ghScopeSelected!.checked) persistGhState({ scope: 'selected' });
-    });
-  }
-  if (ghScopeAll) {
-    ghScopeAll.addEventListener('change', () => {
-      updateExportCommitEnabled();
-      if (ghScopeAll!.checked) persistGhState({ scope: 'all' });
-    });
-  }
-
-  // When the left pickers change, also re-evaluate readiness (if using “selected”)
-  if (collectionSelect) collectionSelect.addEventListener('change', () => {
-    updateExportCommitEnabled();
-    if (ghScopeSelected && ghScopeSelected.checked) persistGhState({ collection: collectionSelect!.value });
-  });
-  if (modeSelect) modeSelect.addEventListener('change', () => {
-    updateExportCommitEnabled();
-    if (ghScopeSelected && ghScopeSelected.checked) persistGhState({ mode: modeSelect!.value });
-  });
-
-  // Primary action
-  if (ghExportAndCommitBtn) {
-    ghExportAndCommitBtn.addEventListener('click', () => {
-      const scope = ghScopeAll && ghScopeAll.checked ? 'all' : 'selected';
-      const commitMessage = (ghCommitMsgInput?.value || 'Update tokens from Figma').trim();
-      const normalizedFolder = normalizeFolderInput(ghFolderInput?.value || '');
-
-      if (!normalizedFolder.display) {
-        log('Pick a destination folder (e.g., tokens/).');
-        if (ghFolderInput) ghFolderInput.focus();
-        updateExportCommitEnabled();
-        return;
-      }
-
-      if (ghFolderInput) ghFolderInput.value = normalizedFolder.display;
-      postToPlugin({
-        type: 'GITHUB_SET_FOLDER',
-        payload: { owner: currentOwner, repo: currentRepo, folder: normalizedFolder.payload }
-      });
-      persistGhState({ folder: normalizedFolder.payload });
-
-      const createPr = !!(ghCreatePrChk && ghCreatePrChk.checked);
-      const payload: UiToPlugin = {
-        type: 'GITHUB_EXPORT_AND_COMMIT',
-        payload: {
-          owner: currentOwner,
-          repo: currentRepo,
-          branch: getCurrentBranch(),
-          folder: normalizedFolder.payload,
-          commitMessage,
-          scope,
-          createPr
-        }
-      };
-
-      if (scope === 'selected' && collectionSelect && modeSelect) {
-        payload.payload.collection = collectionSelect.value || '';
-        payload.payload.mode = modeSelect.value || '';
-      }
-
-      if (createPr) {
-        payload.payload.prBase = getPrBaseBranch();
-        payload.payload.prTitle = (ghPrTitleInput?.value || '').trim();
-        payload.payload.prBody = ghPrBodyInput?.value || '';
-      }
-
-      log(createPr ? 'Export, Commit & PR requested…' : 'Export & Commit requested…');
-      postToPlugin(payload);
-    });
-  }
-
-
-  // Other UI events
   if (fileInput) fileInput.addEventListener('change', setDisabledStates);
 
   if (exportAllChk) {
-    exportAllChk.addEventListener('change', function () {
+    exportAllChk.addEventListener('change', () => {
       setDisabledStates();
       postToPlugin({ type: 'SAVE_PREFS', payload: { exportAll: !!exportAllChk!.checked } });
+      githubUi.onSelectionChange();
     });
   }
 
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', function () {
+    refreshBtn.addEventListener('click', () => {
       postToPlugin({ type: 'FETCH_COLLECTIONS' });
     });
   }
 
   if (importBtn && fileInput) {
-    importBtn.addEventListener('click', function () {
+    importBtn.addEventListener('click', () => {
       if (!fileInput!.files || fileInput!.files.length === 0) { log('Select a JSON file first.'); return; }
       const reader = new FileReader();
       reader.onload = function () {
@@ -1993,7 +560,7 @@ document.addEventListener('DOMContentLoaded', function () {
           if (json && typeof json === 'object' && !(json instanceof Array)) {
             postToPlugin({
               type: 'IMPORT_DTCG',
-              payload: { json: json, allowHexStrings: !!(allowHexChk && allowHexChk.checked) }
+              payload: { json, allowHexStrings: !!(allowHexChk && allowHexChk.checked) }
             });
             log('Import requested.');
           } else {
@@ -2009,7 +576,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (exportBtn) {
-    exportBtn.addEventListener('click', async function () {
+    exportBtn.addEventListener('click', async () => {
       let exportAll = false;
       if (exportAllChk) exportAll = !!exportAllChk.checked;
 
@@ -2033,33 +600,33 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (drawerToggleBtn) {
-    drawerToggleBtn.addEventListener('click', function () {
+    drawerToggleBtn.addEventListener('click', () => {
       const current = drawerToggleBtn!.getAttribute('aria-expanded') === 'true';
       setDrawerOpen(!current);
     });
   }
 
   if (collectionSelect) {
-    collectionSelect.addEventListener('change', function () {
+    collectionSelect.addEventListener('change', () => {
       onCollectionChange();
       if (collectionSelect && modeSelect) {
         postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
         requestPreviewForCurrent();
       }
+      githubUi.onSelectionChange();
     });
   }
 
   if (modeSelect) {
-    modeSelect.addEventListener('change', function () {
+    modeSelect.addEventListener('change', () => {
       if (collectionSelect && modeSelect) {
         postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
       }
       setDisabledStates();
       requestPreviewForCurrent();
-      updateExportCommitEnabled();
+      githubUi.onSelectionChange();
     });
   }
-
 
   if (copyRawBtn) copyRawBtn.addEventListener('click', () =>
     copyElText(document.getElementById('raw') as HTMLElement, 'Raw Figma Collections')
@@ -2071,56 +638,13 @@ document.addEventListener('DOMContentLoaded', function () {
     copyElText(document.getElementById('log') as HTMLElement, 'Log')
   );
 
-  // Initial UI state + announce ready
+  githubUi.onSelectionChange();
+  autoFitOnce();
+
   if (rawEl) rawEl.textContent = 'Loading variable collections…';
   setDisabledStates();
   setDrawerOpen(getSavedDrawerOpen());
   postToPlugin({ type: 'UI_READY' });
-
-  if (ghBranchSelect) setBranchDisabled(true, 'Pick a repository first…');
-  updateBranchCount();
-  autoFitOnce();
-
-  // NEW: ensure initial enabled/disabled state is correct on load
-  updateFolderControlsEnabled();
-  updateExportCommitEnabled();
-
-
-  // New-branch composer DOM
-  ghNewBranchBtn = document.getElementById('ghNewBranchBtn') as HTMLButtonElement | null;
-  ghNewBranchRow = document.getElementById('ghNewBranchRow') as HTMLElement | null;
-  ghNewBranchName = document.getElementById('ghNewBranchName') as HTMLInputElement | null;
-  ghCreateBranchConfirmBtn = document.getElementById('ghCreateBranchConfirmBtn') as HTMLButtonElement | null;
-
-  if (ghNewBranchBtn) {
-    ghNewBranchBtn.addEventListener('click', () => {
-      if (!currentOwner || !currentRepo) { log('Pick a repository first.'); return; }
-      showNewBranchRow(true);
-    });
-  }
-  if (ghCreateBranchConfirmBtn) {
-    ghCreateBranchConfirmBtn.addEventListener('click', () => {
-      if (!ghNewBranchName) return;
-      const name = ghNewBranchName.value || '';
-      const err = validateBranchName(name);
-      if (err) { log(`New branch: ${err}`); return; }
-
-      const base =
-        (ghBranchSelect && ghBranchSelect.value && !ghBranchSelect.disabled && ghBranchSelect.value !== '__more__' && ghBranchSelect.value !== '__fetch__')
-          ? ghBranchSelect.value
-          : (defaultBranchFromApi || '');
-
-      if (!base) { log('Cannot determine base branch; select a branch first.'); return; }
-
-      log(`Creating branch "${name}" from "${base}"…`);
-      postToPlugin({
-        type: 'GITHUB_CREATE_BRANCH',
-        payload: { owner: currentOwner, repo: currentRepo, baseBranch: base, newBranch: name }
-      });
-      ghCreateBranchConfirmBtn!.disabled = true;
-    });
-  }
-
 });
 
 /* -------------------------------------------------------
