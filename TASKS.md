@@ -11,3 +11,6 @@
 - Broaden color handling to accept all color spaces allowed by the Color Module and enforce their component ranges; the validator currently rejects valid spaces and silently accepts invalid fallbacks (`src/core/color.ts:18-210`, `src/adapters/dtcg-reader.ts:191-205`).
 - Enforce the six-digit CSS hex requirement when reading or generating `hex` fallbacks so invalid fallbacks are not persisted (`src/core/color.ts:182-208`, `src/adapters/dtcg-reader.ts:60-107`).
 - Remove or gate the heuristic that strips `Collection N` segments while emitting JSON paths; dropping author-provided group names can break canonical alias paths (§5.1) (`src/adapters/dtcg-writer.ts:131-188`).
+
+## Testing suite
+- Review codebase and add tests to ensure that everything is correct and we dont have regressions.
