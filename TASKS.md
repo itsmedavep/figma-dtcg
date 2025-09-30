@@ -11,3 +11,10 @@
 - Broaden color handling to accept all color spaces allowed by the Color Module and enforce their component ranges; the validator currently rejects valid spaces and silently accepts invalid fallbacks (`src/core/color.ts:18-210`, `src/adapters/dtcg-reader.ts:191-205`).
 - Enforce the six-digit CSS hex requirement when reading or generating `hex` fallbacks so invalid fallbacks are not persisted (`src/core/color.ts:182-208`, `src/adapters/dtcg-reader.ts:60-107`).
 - Remove or gate the heuristic that strips `Collection N` segments while emitting JSON paths; dropping author-provided group names can break canonical alias paths (§5.1) (`src/adapters/dtcg-writer.ts:131-188`).
+
+## Figma String/Boolean Round-trip Plan
+- Keep the exported DTCG payload strictly spec-compliant by omitting tokens whose `$type` would be unsupported.
+- Persist Figma string/boolean variables inside `$extensions.com.figma`, recording canonical path, raw value, mode metadata, and `variableType` so the plugin can rehydrate them on import.
+- During import, rebuild those variables from the extension block and merge them with the normative token graph before writing back to Figma.
+- Provide an opt-in “permissive” export that emits `$type:"string"` / `$type:"boolean"` for teams willing to trade spec compliance for a single round-trip artifact, and surface a warning when it’s used.
+- Document the dual-mode behavior and continue advocating with the Design Tokens CG for first-class string/boolean support to retire the workaround later.
