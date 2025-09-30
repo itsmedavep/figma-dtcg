@@ -1292,7 +1292,13 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
           deps.log(`PR prepared (#${pr.number}) from ${pr.head} → ${pr.base}`);
         }
       } else {
-        deps.log(`Commit failed (${msg.payload.status || 0}): ${msg.payload.message || 'unknown error'}`);
+        const status = typeof msg.payload.status === 'number' ? msg.payload.status : 0;
+        const message = msg.payload.message || 'unknown error';
+        if (status === 304) {
+          deps.log(`Commit skipped: ${message}`);
+        } else {
+          deps.log(`Commit failed (${status}): ${message}`);
+        }
       }
       return true;
     }

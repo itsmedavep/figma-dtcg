@@ -35,7 +35,7 @@ function isRGBA(v: unknown): v is { r: number; g: number; b: number; a: number }
  * We favor direct reads from figma.variables so the IR mirrors whatever is live in the document.
  */
 export async function readFigmaToIR(): Promise<TokenGraph> {
-  const profile = (figma.root.documentColorProfile as DocumentProfile);
+  const profile = figma.root.documentColorProfile as DocumentProfile;
   const variablesApi = figma.variables;
 
   const { collections, variablesById, collectionNameById } = await loadCollectionsSnapshot(variablesApi);

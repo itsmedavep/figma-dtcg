@@ -6,7 +6,14 @@
 import type { ColorValue } from './ir';
 
 // --- ADD: supported DTCG color spaces (limited to what we’ll accept) ---
-export type DocumentProfile = 'SRGB' | 'DISPLAY_P3'; // Figma document profiles
+export type DocumentProfile = 'SRGB' | 'DISPLAY_P3' | 'DOCUMENT_SRGB' | 'DOCUMENT_DISPLAY_P3'; // Figma document profiles
+export type CanonicalDocumentProfile = 'SRGB' | 'DISPLAY_P3';
+
+/** Normalize the various document profile strings Figma can return. */
+export function normalizeDocumentProfile(profile: DocumentProfile | string): CanonicalDocumentProfile {
+  const upper = String(profile).toUpperCase();
+  return upper.includes('DISPLAY_P3') ? 'DISPLAY_P3' : 'SRGB';
+}
 
 // Only accept these DTCG color spaces in this plugin:
 const SUPPORTED_DTCG_COLOR_SPACES = new Set(['srgb', 'display-p3'] as const);
@@ -59,10 +66,11 @@ export function isDtcgColorShapeValid(input: any): { ok: boolean; reason?: strin
  */
 export function isColorSpaceRepresentableInDocument(
   colorSpace: string,
-  profile: DocumentProfile
+  profile: DocumentProfile | string
 ): boolean {
   const cs = String(colorSpace).toLowerCase();
-  if (profile === 'DISPLAY_P3') return cs === 'srgb' || cs === 'display-p3';
+  const normalized = normalizeDocumentProfile(profile);
+  if (normalized === 'DISPLAY_P3') return cs === 'srgb' || cs === 'display-p3';
   return cs === 'srgb';
 }
 
@@ -203,15 +211,14 @@ export function parseHexToSrgbRGBA(hex: string): { r: number; g: number; b: numb
   return { r: clamp01(r / 255), g: clamp01(g / 255), b: clamp01(b / 255), a: clamp01(a / 255) };
 }
 
-function docProfileToSpaceKey(profile: DocumentProfile): 'srgb' | 'display-p3' {
-  if (profile === 'DISPLAY_P3') return 'display-p3';
-  return 'srgb';
+function docProfileToSpaceKey(profile: DocumentProfile | string): 'srgb' | 'display-p3' {
+  return normalizeDocumentProfile(profile) === 'DISPLAY_P3' ? 'display-p3' : 'srgb';
 }
 
 /** DTCG -> Figma RGBA in current doc profile. */
 export function dtcgToFigmaRGBA(
   value: ColorValue,
-  docProfile: DocumentProfile
+  docProfile: DocumentProfile | string
 ): { r: number; g: number; b: number; a: number } {
   var alpha = typeof value.alpha === 'number' ? value.alpha : 1;
   var dst = docProfileToSpaceKey(docProfile);
@@ -240,7 +247,7 @@ export function dtcgToFigmaRGBA(
 /** Figma -> DTCG in document-native space + sRGB hex fallback. */
 export function figmaRGBAToDtcg(
   rgba: { r: number; g: number; b: number; a: number },
-  docProfile: DocumentProfile
+  docProfile: DocumentProfile | string
 ): ColorValue {
   var src = docProfileToSpaceKey(docProfile);
   var rgb = [clamp01(rgba.r), clamp01(rgba.g), clamp01(rgba.b)];

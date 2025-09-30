@@ -9,6 +9,7 @@ import { loadCollectionsSnapshot } from '../core/figma-cache';
 
 import {
   dtcgToFigmaRGBA,
+  normalizeDocumentProfile,
   type DocumentProfile,
   isValidDtcgColorValueObject, // kept for bucketing parity
   normalizeDtcgColorValue,
@@ -78,11 +79,13 @@ function tokenHasDirectValue(t: TokenNode): boolean {
  * True if the token has a direct value that we can safely write for at least one context.
  * Colors require strict validation and profile checks; other primitives just need correct kind.
  */
-type DirectValueCheck = { ok: true } | { ok: false; reason?: string };
+type DirectValueCheck = { ok: true } | { ok: false; reason?: string; suppressWarn?: boolean };
 
-function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfile): DirectValueCheck {
+function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfile | string): DirectValueCheck {
+  const canonicalProfile = normalizeDocumentProfile(profile);
   const byCtx = t.byContext || {};
   let lastReason: string | undefined;
+  let reasonAlreadyLogged = false;
   for (const ctx in byCtx) {
     const v = (byCtx as any)[ctx];
     if (!v || v.kind === 'alias') continue;
@@ -99,8 +102,12 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfi
 
       // STRICT 2: representable in this document profile (sRGB doc: only 'srgb'; P3 doc: 'srgb' and 'display-p3')
       const cs = (v.value.colorSpace || 'srgb').toLowerCase();
-      if (!isColorSpaceRepresentableInDocument(cs, profile)) {
-        lastReason = `colorSpace “${cs}” isn’t representable in this document (${profile}).`;
+      if (!isColorSpaceRepresentableInDocument(cs, canonicalProfile)) {
+        lastReason = `colorSpace “${cs}” isn’t representable in this document (${canonicalProfile}).`;
+        if (!reasonAlreadyLogged) {
+          logWarn(`Skipped creating direct color at “${t.path.join('/')}” in ${ctx} — ${lastReason}`);
+          reasonAlreadyLogged = true;
+        }
         continue;
       }
 
@@ -111,6 +118,9 @@ function tokenHasAtLeastOneValidDirectValue(t: TokenNode, profile: DocumentProfi
   }
   if (t.type === 'number' || t.type === 'string' || t.type === 'boolean') {
     return { ok: false };
+  }
+  if (reasonAlreadyLogged) {
+    return { ok: false, suppressWarn: true };
   }
   return { ok: false, reason: lastReason || 'no valid color values in any context; not creating variable or collection.' };
 }
@@ -276,7 +286,10 @@ function indexVarKeys(
 
 export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   const profile = figma.root.documentColorProfile as DocumentProfile;
+  const canonicalProfile = normalizeDocumentProfile(profile);
   const variablesApi = figma.variables;
+
+  logInfo(`Import: document color profile ${String(profile)} (canonical ${canonicalProfile}).`);
 
   const {
     collections: existingCollections,
@@ -367,7 +380,7 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     if (!directCheck.ok) {
       if (directCheck.reason) {
         logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — ${directCheck.reason}`);
-      } else {
+      } else if (!directCheck.suppressWarn) {
         logWarn(`Skipped creating direct ${t.type} token “${t.path.join('/')}” — no valid direct values in any context; not creating variable or collection.`);
       }
       continue;
@@ -627,14 +640,14 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
 
         // STRICT: check representability in this document profile
         const cs = (val.value.colorSpace || 'srgb').toLowerCase();
-        if (!isColorSpaceRepresentableInDocument(cs, profile)) {
-          if (cs === 'display-p3' && profile === 'SRGB') {
+        if (!isColorSpaceRepresentableInDocument(cs, canonicalProfile)) {
+          if (cs === 'display-p3' && canonicalProfile === 'SRGB') {
             logWarn(
               `Skipped “${node.path.join('/')}” in ${ctx}: the token is display-p3 but this file is set to sRGB. ` +
               'Open File → File Settings → Color Space and switch to Display P3, or convert the token to sRGB.'
             );
           } else {
-            logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — colorSpace “${cs}” isn’t representable in this document (${profile}).`);
+            logWarn(`Skipped setting color for “${node.path.join('/')}” in ${ctx} — colorSpace “${cs}” isn’t representable in this document (${canonicalProfile}).`);
           }
           continue;
         }

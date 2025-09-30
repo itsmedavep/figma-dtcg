@@ -602,8 +602,77 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             content: JSON.stringify(f.json, null, 2) + '\n'
           }));
 
+          const normalizeForCompare = (text: string): string => text.replace(/\r\n/g, '\n').trimEnd();
+          const tryParseJson = (text: string): unknown | undefined => {
+            try { return JSON.parse(text); } catch { return undefined; }
+          };
+          const canonicalizeJson = (value: unknown): unknown => {
+            if (Array.isArray(value)) {
+              return value.map(item => canonicalizeJson(item));
+            }
+            if (value && typeof value === 'object') {
+              const proto = Object.getPrototypeOf(value);
+              if (proto === Object.prototype || proto === null) {
+                const record = value as Record<string, unknown>;
+                const sortedKeys = Object.keys(record).sort();
+                const canonical: Record<string, unknown> = {};
+                for (const key of sortedKeys) canonical[key] = canonicalizeJson(record[key]);
+                return canonical;
+              }
+            }
+            return value;
+          };
+          const contentsMatch = (existing: string, nextContent: string): boolean => {
+            if (existing === nextContent) return true;
+            if (normalizeForCompare(existing) === normalizeForCompare(nextContent)) return true;
+            const existingJson = tryParseJson(existing);
+            const nextJson = tryParseJson(nextContent);
+            if (existingJson !== undefined && nextJson !== undefined) {
+              return JSON.stringify(canonicalizeJson(existingJson)) === JSON.stringify(canonicalizeJson(nextJson));
+            }
+            return false;
+          };
+
+          let allFilesIdentical = commitFiles.length > 0;
+          for (const file of commitFiles) {
+            const current = await ghGetFileContents(ghToken, owner, repo, baseBranch, file.path);
+            if (!current.ok) {
+              if (current.status === 404) {
+                allFilesIdentical = false;
+                break;
+              }
+              // If we cannot read the current file (permissions, SAML, etc.), assume changes are needed.
+              allFilesIdentical = false;
+              break;
+            }
+            if (!contentsMatch(current.contentText, file.content)) {
+              allFilesIdentical = false;
+              break;
+            }
+          }
+
+          if (allFilesIdentical) {
+            const noChangeMessage = scope === 'selected'
+              ? `No token values changed for "${collection}" / "${mode}"; repository already matches the current export.`
+              : 'No token values changed; repository already matches the current export.';
+            deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 304, message: noChangeMessage } });
+            return true;
+          }
+
           const commitRes = await ghCommitFiles(ghToken, owner, repo, baseBranch, commitMessage, commitFiles);
           if (!commitRes.ok) {
+            const looksLikeFastForwardRace = commitRes.status === 422 && typeof commitRes.message === 'string'
+              && /not a fast forward/i.test(commitRes.message);
+            if (looksLikeFastForwardRace) {
+              const noChangeMessage = scope === 'selected'
+                ? `No token values changed for "${collection}" / "${mode}"; repository already matches the current export.`
+                : 'No token values changed; repository already matches the current export.';
+              deps.send({
+                type: 'GITHUB_COMMIT_RESULT',
+                payload: { ok: false, owner, repo, branch: baseBranch, status: 304, message: noChangeMessage }
+              });
+              return true;
+            }
             deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: commitRes });
             deps.send({ type: 'ERROR', payload: { message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}` } });
             return true;
@@ -666,4 +735,3 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
 
   return { handle, onUiReady };
 }
-
