@@ -579,8 +579,71 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
         const col = colByName[cName];
         if (col) {
           const found = col.modes.find(m => m.name === mName);
-          modeId = found ? found.modeId : col.addMode(mName);
-          modeIdByKey[ctx] = modeId;
+          if (found) {
+            modeId = found.modeId;
+            modeIdByKey[cName + '/' + mName] = modeId;
+            modeIdByKey[ctx] = modeId;
+          }
+          else if (col.modes.length === 1) {
+            const loneMode = col.modes[0];
+            const prevName = loneMode.name;
+            if (prevName !== mName) {
+              logWarn(`Collection “${cName}” is limited to a single mode. Renaming “${prevName}” to “${mName}”.`);
+              try {
+                col.renameMode(loneMode.modeId, mName);
+                loneMode.name = mName;
+                const keyOld = cName + '/' + prevName;
+                delete modeIdByKey[keyOld];
+                modeId = loneMode.modeId;
+                const keyNew = cName + '/' + mName;
+                modeIdByKey[keyNew] = modeId;
+                modeIdByKey[ctx] = modeId;
+                logInfo(`Renamed mode “${prevName}” → “${mName}” in collection “${cName}”.`);
+              } catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                logError(`Failed to rename mode “${prevName}” to “${mName}” in collection “${cName}”. ${errMsg}`);
+              }
+            } else {
+              modeId = loneMode.modeId;
+              modeIdByKey[cName + '/' + mName] = modeId;
+              modeIdByKey[ctx] = modeId;
+            }
+          }
+          else {
+            try {
+              modeId = col.addMode(mName);
+              modeIdByKey[cName + '/' + mName] = modeId;
+              modeIdByKey[ctx] = modeId;
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              if (message && message.includes('Limited to 1')) {
+                const loneMode = col.modes[0];
+                const prevName = loneMode?.name || 'Mode 1';
+                logWarn(`Unable to add mode “${mName}” to collection “${cName}” because only a single mode is allowed. Renaming existing mode “${prevName}”.`);
+                try {
+                  if (loneMode) {
+                    col.renameMode(loneMode.modeId, mName);
+                    loneMode.name = mName;
+                    const keyOld = cName + '/' + prevName;
+                    delete modeIdByKey[keyOld];
+                    modeId = loneMode.modeId;
+                    const keyNew = cName + '/' + mName;
+                    modeIdByKey[keyNew] = modeId;
+                    modeIdByKey[ctx] = modeId;
+                    logInfo(`Renamed mode “${prevName}” → “${mName}” in collection “${cName}”.`);
+                  }
+                  else {
+                    logError(`Unable to rename mode in collection “${cName}” because it has no modes.`);
+                  }
+                } catch (renameErr) {
+                  const renameMsg = renameErr instanceof Error ? renameErr.message : String(renameErr);
+                  logError(`Failed to rename mode “${prevName}” to “${mName}” in collection “${cName}”. ${renameMsg}`);
+                }
+              } else {
+                logError(`Error while adding mode “${mName}” to collection “${cName}”. ${message}`);
+              }
+            }
+          }
         }
       }
       if (!modeId) continue;
