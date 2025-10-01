@@ -10,7 +10,6 @@
 - Emit `$type` values that remain inside the registered spec vocabulary. Revisit the boolean round-trip hack that rewrites `$type: "string"` with stringified values; the spec (§8) treats those tokens as invalid (`src/adapters/dtcg-writer.ts:154-215`).
 - Broaden color handling to accept the Color Module’s allowed spaces and component ranges; today only `srgb`/`display-p3` pass validation, and invalid fallbacks sneak through unchecked (`src/core/color.ts:18-210`, `src/adapters/dtcg-reader.ts:191-205`).
 - Enforce the six-digit CSS hex fallback requirement from the Color Module when reading or emitting `hex` so malformed values aren’t preserved (`src/core/color.ts:182-208`, `src/adapters/dtcg-reader.ts:60-107`).
-- Remove or gate the heuristic that strips `Collection N` segments while emitting JSON paths; deleting user-authored group names can corrupt canonical alias paths (§5.1) (`src/adapters/dtcg-writer.ts:131-188`).
 
 ## Bridging Spec Gaps for Figma Variables
 - Maintain a spec-valid export path: only emit tokens whose `$type` exists in the DTCG vocabulary and whose `$value` conforms. Anything else (Figma string/boolean) must be represented out-of-band.

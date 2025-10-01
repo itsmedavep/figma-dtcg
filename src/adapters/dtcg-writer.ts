@@ -128,13 +128,8 @@ function writeTokenInto(
   let groupSegments = [collectionSeg, ...variableSegs.slice(0, -1)];
   const leaf = variableSegs.length ? variableSegs[variableSegs.length - 1] : (path[path.length - 1] ?? 'token');
 
-  // (Optional) legacy safeguard if you previously stripped "Collection 1" child:
-  if (groupSegments.length > 1) {
-    const firstChild = String(groupSegments[1]).toLowerCase();
-    if (/^collection(\s|-)?\d+/.test(firstChild)) {
-      groupSegments = [groupSegments[0], ...groupSegments.slice(2)];
-    }
-  }
+  // Preserve the exact group hierarchy; do not strip user-authored segments
+  // like "Collection 2" that participate in canonical alias paths (§5.1).
 
   // Walk/build the group objects
   let obj = root;
