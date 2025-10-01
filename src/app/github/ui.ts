@@ -9,6 +9,7 @@ type GithubUiDependencies = {
   getCollectionSelect(): HTMLSelectElement | null;
   getModeSelect(): HTMLSelectElement | null;
   getAllowHexCheckbox(): HTMLInputElement | null;
+  getImportContexts(): string[];
 };
 
 type AttachContext = {
@@ -945,10 +946,22 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         if (!path) { deps.log('Enter a path to fetch (e.g., tokens/tokens.json).'); return; }
         deps.log(`GitHub: fetching ${path} from ${currentOwner}/${currentRepo}@${branch}…`);
         const allowHex = !!pickAllowHexCheckbox()?.checked;
-        deps.postToPlugin({
+        const contexts = deps.getImportContexts();
+        const payload: UiToPlugin = {
           type: 'GITHUB_FETCH_TOKENS',
-          payload: { owner: currentOwner, repo: currentRepo, branch, path, allowHexStrings: allowHex }
-        });
+          payload: {
+            owner: currentOwner,
+            repo: currentRepo,
+            branch,
+            path,
+            allowHexStrings: allowHex,
+            ...(contexts.length > 0 ? { contexts } : {})
+          }
+        };
+        deps.postToPlugin(payload);
+        if (contexts.length > 0) {
+          deps.log(`GitHub: importing ${contexts.length} selected mode(s) based on current scope.`);
+        }
       });
     }
 

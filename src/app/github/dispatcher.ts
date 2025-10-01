@@ -421,9 +421,13 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
 
         try {
           const json = JSON.parse(res.contentText || '{}');
-          await deps.importDtcg(json, { allowHexStrings: allowHex });
+          const contexts = Array.isArray(msg.payload.contexts)
+            ? msg.payload.contexts.map(c => String(c))
+            : [];
+          const summary = await deps.importDtcg(json, { allowHexStrings: allowHex, contexts });
           deps.send({ type: 'GITHUB_FETCH_TOKENS_RESULT', payload: { ok: true, owner, repo, branch, path, json } });
           deps.send({ type: 'INFO', payload: { message: `Imported tokens from ${owner}/${repo}@${branch}:${path}` } });
+          deps.send({ type: 'IMPORT_SUMMARY', payload: { summary, timestamp: Date.now(), source: 'github' } });
 
           const snap = await deps.snapshotCollectionsForUi();
           const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);

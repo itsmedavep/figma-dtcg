@@ -13,10 +13,37 @@ import type { TokenGraph, TokenNode, ValueOrAlias } from './ir';
 export interface ExportOpts { format: 'single' | 'perMode' }
 export interface ExportResult { files: Array<{ name: string; json: unknown }> }
 
+export interface ImportSummary {
+  /** Total tokens parsed from the incoming file. */
+  totalTokens: number;
+  /** Tokens that remained after applying the selected contexts. */
+  importedTokens: number;
+  /** Every context discovered in the incoming file (Collection/Mode). */
+  availableContexts: string[];
+  /** Contexts actually written to the document after filtering. */
+  appliedContexts: string[];
+  /** Contexts that were intentionally skipped because they weren't selected. */
+  skippedContexts: Array<{ context: string; reason: string }>;
+  /** Contexts requested by the UI that did not exist in the incoming file. */
+  missingRequestedContexts: string[];
+  /** Raw contexts requested by the UI (before intersecting with available contexts). */
+  selectionRequested: string[];
+  /** True when the requested selection had no overlap and we fell back to all contexts. */
+  selectionFallbackToAll?: boolean;
+  /** Tokens that lost one or more contexts during filtering. */
+  tokensWithRemovedContexts: Array<{
+    path: string;
+    removedContexts: string[];
+    keptContexts: string[];
+    reason: 'partial' | 'removed';
+  }>;
+}
+
 // ---------- helpers ----------
 
 export interface ImportOpts {
   allowHexStrings?: boolean;
+  contexts?: string[];
 }
 
 
@@ -66,9 +93,166 @@ function cloneTokenWithSingleContext(t: TokenNode, ctx: string): TokenNode | nul
   };
 }
 
+function collectContextsFromGraph(graph: TokenGraph): string[] {
+  var seen: string[] = [];
+  var i = 0;
+  for (i = 0; i < graph.tokens.length; i++) {
+    var t = graph.tokens[i];
+    var ks = keysOf(t.byContext);
+    var j = 0;
+    for (j = 0; j < ks.length; j++) {
+      var ctx = ks[j];
+      var already = false;
+      var k = 0;
+      for (k = 0; k < seen.length; k++) if (seen[k] === ctx) { already = true; break; }
+      if (!already) seen.push(ctx);
+    }
+  }
+  return seen;
+}
+
+function sanitizeContexts(list: string[] | undefined): string[] {
+  if (!list) return [];
+  var out: string[] = [];
+  for (var i = 0; i < list.length; i++) {
+    var raw = list[i];
+    if (typeof raw !== 'string') continue;
+    var trimmed = raw.trim();
+    if (!trimmed) continue;
+    var exists = false;
+    for (var j = 0; j < out.length; j++) if (out[j] === trimmed) { exists = true; break; }
+    if (!exists) out.push(trimmed);
+  }
+  return out;
+}
+
+function filterGraphByContexts(graph: TokenGraph, requested: string[]): { graph: TokenGraph; summary: ImportSummary } {
+  var available = collectContextsFromGraph(graph);
+  var requestedList = sanitizeContexts(requested);
+
+  var availableSet: { [k: string]: true } = {};
+  for (var ai = 0; ai < available.length; ai++) availableSet[available[ai]] = true;
+
+  var appliedSet: { [k: string]: true } = {};
+  var missingRequested: string[] = [];
+  var fallbackToAll = false;
+
+  if (requestedList.length > 0) {
+    for (var ri = 0; ri < requestedList.length; ri++) {
+      var ctx = requestedList[ri];
+      if (availableSet[ctx]) appliedSet[ctx] = true;
+      else missingRequested.push(ctx);
+    }
+    if (Object.keys(appliedSet).length === 0 && available.length > 0) {
+      fallbackToAll = true;
+      for (var ai2 = 0; ai2 < available.length; ai2++) appliedSet[available[ai2]] = true;
+    }
+  } else {
+    for (var ai3 = 0; ai3 < available.length; ai3++) appliedSet[available[ai3]] = true;
+  }
+
+  var appliedList: string[] = [];
+  for (var ctxKey in appliedSet) if (Object.prototype.hasOwnProperty.call(appliedSet, ctxKey)) appliedList.push(ctxKey);
+  appliedList.sort();
+
+  var skippedList: Array<{ context: string; reason: string }> = [];
+  for (var si = 0; si < available.length; si++) {
+    var ctxAvailable = available[si];
+    if (!appliedSet[ctxAvailable]) {
+      skippedList.push({ context: ctxAvailable, reason: 'Excluded by partial import selection' });
+    }
+  }
+  skippedList.sort(function (a, b) {
+    if (a.context === b.context) return 0;
+    return a.context < b.context ? -1 : 1;
+  });
+
+  var filteredTokens: TokenNode[] = [];
+  var removedTokens: Array<{ path: string; removedContexts: string[]; keptContexts: string[]; reason: 'partial' | 'removed' }> = [];
+
+  for (var ti = 0; ti < graph.tokens.length; ti++) {
+    var tok = graph.tokens[ti];
+    var ctxs = keysOf(tok.byContext);
+    if (ctxs.length === 0) {
+      // Nothing to filter; keep token as-is (clone for safety).
+      var cloneEmpty: TokenNode = {
+        path: tok.path.slice(),
+        type: tok.type,
+        byContext: {}
+      };
+      if (typeof tok.description !== 'undefined') cloneEmpty.description = tok.description;
+      if (typeof tok.extensions !== 'undefined') cloneEmpty.extensions = tok.extensions;
+      filteredTokens.push(cloneEmpty);
+      continue;
+    }
+
+    var kept: string[] = [];
+    var removed: string[] = [];
+    var newCtx: { [k: string]: ValueOrAlias } = {};
+
+    for (var ci = 0; ci < ctxs.length; ci++) {
+      var ctx = ctxs[ci];
+      if (appliedSet[ctx]) {
+        kept.push(ctx);
+        newCtx[ctx] = tok.byContext[ctx];
+      } else {
+        removed.push(ctx);
+      }
+    }
+
+    if (kept.length === 0) {
+      removedTokens.push({
+        path: tok.path.join('/'),
+        removedContexts: removed.slice(),
+        keptContexts: [],
+        reason: 'removed'
+      });
+      continue;
+    }
+
+    if (removed.length > 0) {
+      removedTokens.push({
+        path: tok.path.join('/'),
+        removedContexts: removed.slice(),
+        keptContexts: kept.slice(),
+        reason: 'partial'
+      });
+    }
+
+    var clone: TokenNode = {
+      path: tok.path.slice(),
+      type: tok.type,
+      byContext: newCtx
+    };
+    if (typeof tok.description !== 'undefined') clone.description = tok.description;
+    if (typeof tok.extensions !== 'undefined') clone.extensions = tok.extensions;
+    filteredTokens.push(clone);
+  }
+
+  removedTokens.sort(function (a, b) {
+    if (a.path === b.path) return 0;
+    return a.path < b.path ? -1 : 1;
+  });
+
+  return {
+    graph: { tokens: filteredTokens },
+    summary: {
+      totalTokens: graph.tokens.length,
+      importedTokens: filteredTokens.length,
+      availableContexts: available.slice().sort(),
+      appliedContexts: appliedList,
+      skippedContexts: skippedList,
+      missingRequestedContexts: missingRequested,
+      selectionRequested: requestedList,
+      selectionFallbackToAll: fallbackToAll ? true : undefined,
+      tokensWithRemovedContexts: removedTokens
+    }
+  };
+}
+
 // ---------- API ----------
 
-export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<void> {
+export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<ImportSummary> {
   // Build desired graph from DTCG, then write directly to Figma.
   // We previously shipped an unused "plan" module that tried to diff the desired
   // graph against the live document. Nothing in the plugin ever called it, and
@@ -77,7 +261,9 @@ export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<
   // happy-path write keeps the observable behavior identical to the versions
   // that shipped before the cleanup.
   const desired = normalize(readDtcgToIR(json, { allowHexStrings: !!opts.allowHexStrings }));
-  await writeIRToFigma(desired);
+  const filtered = filterGraphByContexts(desired, opts.contexts || []);
+  await writeIRToFigma(filtered.graph);
+  return filtered.summary;
 }
 
 

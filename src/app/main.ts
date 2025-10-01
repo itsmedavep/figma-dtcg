@@ -74,8 +74,25 @@ async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
 
 async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'IMPORT_DTCG'>).payload;
-  await importDtcg(payload.json, { allowHexStrings: !!payload.allowHexStrings });
-  send({ type: 'INFO', payload: { message: 'Import completed.' } });
+  const contexts = Array.isArray(payload.contexts) ? payload.contexts.map(c => String(c)) : [];
+  const summary = await importDtcg(payload.json, {
+    allowHexStrings: !!payload.allowHexStrings,
+    contexts
+  });
+
+  const skippedCount = summary.skippedContexts.length;
+  if (skippedCount > 0) {
+    send({
+      type: 'INFO',
+      payload: {
+        message: `Import completed. Applied ${summary.appliedContexts.length} context(s); skipped ${skippedCount}.`
+      }
+    });
+  } else {
+    send({ type: 'INFO', payload: { message: 'Import completed.' } });
+  }
+
+  send({ type: 'IMPORT_SUMMARY', payload: { summary, timestamp: Date.now(), source: 'local' } });
 
   const snap = await snapshotCollectionsForUi();
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);

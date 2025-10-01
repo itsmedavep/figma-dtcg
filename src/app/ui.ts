@@ -3,7 +3,7 @@
 // - Mirrors plugin state via postMessage so the UI can function offline
 // - Provides guarded DOM helpers to survive partial renders or optional features
 
-import type { PluginToUi, UiToPlugin } from './messages';
+import type { PluginToUi, UiToPlugin, ImportSummary } from './messages';
 import { createGithubUi } from './github/ui';
 
 /* -------------------------------------------------------
@@ -35,10 +35,41 @@ let copyLogBtn: HTMLButtonElement | null = null;
 
 let allowHexChk: HTMLInputElement | null = null;
 
+let importScopeOverlay: HTMLElement | null = null;
+let importScopeBody: HTMLElement | null = null;
+let importScopeConfirmBtn: HTMLButtonElement | null = null;
+let importScopeCancelBtn: HTMLButtonElement | null = null;
+let importScopeRememberChk: HTMLInputElement | null = null;
+let importScopeMissingEl: HTMLElement | null = null;
+
+let importScopeSummaryEl: HTMLElement | null = null;
+let importScopeSummaryTextEl: HTMLElement | null = null;
+let importScopeClearBtn: HTMLButtonElement | null = null;
+
+let importSkipLogListEl: HTMLElement | null = null;
+let importSkipLogEmptyEl: HTMLElement | null = null;
+
 
 /* -------------------------------------------------------
  * Shared helpers
  * ----------------------------------------------------- */
+
+const IMPORT_PREF_KEY = 'dtcg.importPreference.v1';
+const IMPORT_LOG_KEY = 'dtcg.importLog.v1';
+
+type ImportContextOption = { context: string; collection: string; mode: string };
+type ImportPreference = { contexts: string[]; updatedAt: number };
+type ImportLogEntry = { timestamp: number; source?: 'local' | 'github'; summary: ImportSummary };
+type ImportScopeModalState = {
+  options: ImportContextOption[];
+  inputs: HTMLInputElement[];
+  onConfirm: (selected: string[], remember: boolean) => void;
+};
+
+let importPreference: ImportPreference | null = null;
+let importLogEntries: ImportLogEntry[] = [];
+let importScopeModalState: ImportScopeModalState | null = null;
+let lastImportSelection: string[] = [];
 
 function prettyExportName(original: string | undefined | null): string {
   const name = (original && typeof original === 'string') ? original : 'tokens.json';
@@ -131,6 +162,459 @@ function copyElText(el: HTMLElement | null, label: string): void {
   } catch {
     log(`Could not copy ${label}.`);
   }
+}
+
+/* -------------------------------------------------------
+ * Partial import helpers
+ * ----------------------------------------------------- */
+
+function normalizeContextList(list: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const raw = String(list[i] ?? '').trim();
+    if (!raw) continue;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    out.push(raw);
+  }
+  out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return out;
+}
+
+function contextsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function saveImportPreference(): void {
+  if (!importPreference || importPreference.contexts.length === 0) {
+    try { window.localStorage?.removeItem(IMPORT_PREF_KEY); } catch { /* ignore */ }
+    return;
+  }
+  try { window.localStorage?.setItem(IMPORT_PREF_KEY, JSON.stringify(importPreference)); } catch { /* ignore */ }
+}
+
+function loadImportPreference(): void {
+  importPreference = null;
+  try {
+    const raw = window.localStorage?.getItem(IMPORT_PREF_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return;
+    const ctxs = Array.isArray((parsed as any).contexts) ? normalizeContextList((parsed as any).contexts as string[]) : [];
+    const ts = typeof (parsed as any).updatedAt === 'number' ? Number((parsed as any).updatedAt) : Date.now();
+    if (ctxs.length > 0) importPreference = { contexts: ctxs, updatedAt: ts };
+  } catch { importPreference = null; }
+}
+
+function setImportPreference(contexts: string[]): void {
+  const normalized = normalizeContextList(contexts);
+  if (normalized.length === 0) {
+    clearImportPreference(false);
+    return;
+  }
+  const same = importPreference && contextsEqual(importPreference.contexts, normalized);
+  importPreference = { contexts: normalized, updatedAt: Date.now() };
+  saveImportPreference();
+  renderImportPreferenceSummary();
+  if (!same) log('Remembered import selection for future imports.');
+}
+
+function clearImportPreference(logChange: boolean): void {
+  if (!importPreference) return;
+  importPreference = null;
+  try { window.localStorage?.removeItem(IMPORT_PREF_KEY); } catch { /* ignore */ }
+  renderImportPreferenceSummary();
+  if (logChange) log('Cleared remembered import selection. Next import will prompt for modes.');
+}
+
+function formatContextList(contexts: string[]): string {
+  const normalized = normalizeContextList(contexts);
+  if (normalized.length === 0) return 'All contexts';
+  const grouped = new Map<string, string[]>();
+  for (let i = 0; i < normalized.length; i++) {
+    const ctx = normalized[i];
+    const slash = ctx.indexOf('/');
+    const collection = slash >= 0 ? ctx.slice(0, slash) : ctx;
+    const mode = slash >= 0 ? ctx.slice(slash + 1) : 'Mode 1';
+    const coll = collection ? collection : 'Tokens';
+    const modes = grouped.get(coll) || [];
+    if (!grouped.has(coll)) grouped.set(coll, modes);
+    if (!modes.includes(mode)) modes.push(mode);
+  }
+  const parts: string[] = [];
+  const collections = Array.from(grouped.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  for (let i = 0; i < collections.length; i++) {
+    const coll = collections[i];
+    const modes = grouped.get(coll) || [];
+    modes.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    parts.push(`${coll} (${modes.join(', ')})`);
+  }
+  return parts.join('; ');
+}
+
+function renderImportPreferenceSummary(): void {
+  if (!importScopeSummaryEl || !importScopeSummaryTextEl) return;
+  const hasPref = !!importPreference && importPreference.contexts.length > 0;
+  if (importScopeClearBtn) importScopeClearBtn.disabled = !hasPref;
+  if (!hasPref) {
+    importScopeSummaryEl.hidden = true;
+    return;
+  }
+  importScopeSummaryEl.hidden = false;
+  const when = new Date(importPreference!.updatedAt).toLocaleString();
+  importScopeSummaryTextEl.textContent = `Remembered import scope (${when}): ${formatContextList(importPreference!.contexts)}.`;
+}
+
+function saveImportLog(): void {
+  try { window.localStorage?.setItem(IMPORT_LOG_KEY, JSON.stringify(importLogEntries)); } catch { /* ignore */ }
+}
+
+function loadImportLog(): void {
+  importLogEntries = [];
+  try {
+    const raw = window.localStorage?.getItem(IMPORT_LOG_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    for (let i = 0; i < parsed.length; i++) {
+      const entry = parsed[i];
+      if (!entry || typeof entry !== 'object') continue;
+      const timestamp = typeof (entry as any).timestamp === 'number' ? Number((entry as any).timestamp) : null;
+      const summary = (entry as any).summary as ImportSummary | undefined;
+      const source = (entry as any).source === 'github' ? 'github' : (entry as any).source === 'local' ? 'local' : undefined;
+      if (!timestamp || !summary || typeof summary !== 'object') continue;
+      if (!Array.isArray(summary.appliedContexts) || !Array.isArray(summary.availableContexts)) continue;
+      if (!Array.isArray(summary.tokensWithRemovedContexts)) {
+        (summary as any).tokensWithRemovedContexts = [];
+      }
+      if (!Array.isArray(summary.skippedContexts)) {
+        (summary as any).skippedContexts = [];
+      }
+      if (!Array.isArray(summary.missingRequestedContexts)) {
+        (summary as any).missingRequestedContexts = [];
+      }
+      importLogEntries.push({ timestamp, summary, source });
+    }
+    importLogEntries.sort((a, b) => a.timestamp - b.timestamp);
+  } catch { importLogEntries = []; }
+}
+
+function renderImportLog(): void {
+  if (!(importSkipLogListEl && importSkipLogEmptyEl)) return;
+  importSkipLogListEl.innerHTML = '';
+  if (!importLogEntries || importLogEntries.length === 0) {
+    importSkipLogEmptyEl.hidden = false;
+    return;
+  }
+  importSkipLogEmptyEl.hidden = true;
+
+  for (let idx = importLogEntries.length - 1; idx >= 0; idx--) {
+    const entry = importLogEntries[idx];
+    const container = document.createElement('div');
+    container.className = 'import-skip-log-entry';
+
+    const header = document.createElement('div');
+    header.className = 'import-skip-log-entry-header';
+    const label = entry.source === 'github' ? 'GitHub import' : 'Manual import';
+    header.textContent = `${label} • ${new Date(entry.timestamp).toLocaleString()}`;
+    container.appendChild(header);
+
+    const stats = document.createElement('div');
+    stats.className = 'import-skip-log-entry-stats';
+    stats.textContent = `Imported ${entry.summary.importedTokens} of ${entry.summary.totalTokens} tokens.`;
+    container.appendChild(stats);
+
+    const contextsLine = document.createElement('div');
+    contextsLine.className = 'import-skip-log-entry-contexts';
+    contextsLine.textContent = 'Applied: ' + formatContextList(entry.summary.appliedContexts);
+    container.appendChild(contextsLine);
+
+    if (entry.summary.skippedContexts.length > 0) {
+      const skippedLine = document.createElement('div');
+      skippedLine.className = 'import-skip-log-entry-contexts';
+      skippedLine.textContent = 'Skipped modes: ' + formatContextList(entry.summary.skippedContexts.map(s => s.context));
+      container.appendChild(skippedLine);
+    }
+
+    if (entry.summary.missingRequestedContexts.length > 0) {
+      const missingLine = document.createElement('div');
+      missingLine.className = 'import-skip-log-entry-note';
+      missingLine.textContent = 'Not found in file: ' + formatContextList(entry.summary.missingRequestedContexts);
+      container.appendChild(missingLine);
+    }
+
+    if (entry.summary.selectionFallbackToAll) {
+      const fallbackLine = document.createElement('div');
+      fallbackLine.className = 'import-skip-log-entry-note';
+      fallbackLine.textContent = 'Requested modes were missing; imported all contexts instead.';
+      container.appendChild(fallbackLine);
+    }
+
+    if (entry.summary.tokensWithRemovedContexts.length > 0) {
+      const tokenList = document.createElement('ul');
+      tokenList.className = 'import-skip-log-token-list';
+      const maxTokens = Math.min(entry.summary.tokensWithRemovedContexts.length, 10);
+      for (let t = 0; t < maxTokens; t++) {
+        const tok = entry.summary.tokensWithRemovedContexts[t];
+        const li = document.createElement('li');
+        const removedLabel = tok.removedContexts.length > 0 ? formatContextList(tok.removedContexts) : 'none';
+        const keptLabel = tok.keptContexts.length > 0 ? formatContextList(tok.keptContexts) : '';
+        li.textContent = `${tok.path} — skipped ${removedLabel}${keptLabel ? '; kept ' + keptLabel : ''}`;
+        tokenList.appendChild(li);
+      }
+      if (entry.summary.tokensWithRemovedContexts.length > maxTokens) {
+        const more = document.createElement('li');
+        more.textContent = `…and ${entry.summary.tokensWithRemovedContexts.length - maxTokens} more token(s).`;
+        tokenList.appendChild(more);
+      }
+      container.appendChild(tokenList);
+    }
+
+    if (entry.summary.skippedContexts.length > 0 && importPreference && importPreference.contexts.length > 0) {
+      const tip = document.createElement('div');
+      tip.className = 'import-skip-log-entry-note';
+      tip.textContent = 'Tip: Clear the remembered import selection to restore skipped modes.';
+      container.appendChild(tip);
+    }
+
+    importSkipLogListEl.appendChild(container);
+  }
+}
+
+function addImportLogEntry(entry: ImportLogEntry): void {
+  importLogEntries.push(entry);
+  if (importLogEntries.length > 10) {
+    importLogEntries = importLogEntries.slice(importLogEntries.length - 10);
+  }
+  saveImportLog();
+  renderImportLog();
+}
+
+function collectContextsFromJson(root: unknown): ImportContextOption[] {
+  const grouped = new Map<string, Set<string>>();
+
+  function visit(node: unknown, path: string[]): void {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) visit(node[i], path);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+
+    const obj = node as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(obj, '$value')) {
+      const rawCollection = path[0] ? String(path[0]).trim() : 'Tokens';
+      let mode = 'Mode 1';
+      try {
+        const ext = obj['$extensions'];
+        if (ext && typeof ext === 'object') {
+          const cf = (ext as any)['com.figma'];
+          if (cf && typeof cf === 'object' && typeof (cf as any).modeName === 'string') {
+            const candidate = String((cf as any).modeName).trim();
+            if (candidate) mode = candidate;
+          }
+        }
+      } catch { /* ignore */ }
+      const collection = rawCollection ? rawCollection : 'Tokens';
+      const set = grouped.get(collection) || new Set<string>();
+      if (!grouped.has(collection)) grouped.set(collection, set);
+      set.add(mode);
+      return;
+    }
+
+    for (const key in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+      if (key.startsWith('$')) continue;
+      visit((obj as any)[key], path.concat(String(key)));
+    }
+  }
+
+  visit(root, []);
+
+  const options: ImportContextOption[] = [];
+  const collections = Array.from(grouped.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  for (let i = 0; i < collections.length; i++) {
+    const collection = collections[i];
+    const modes = Array.from(grouped.get(collection) || []).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    for (let j = 0; j < modes.length; j++) {
+      const mode = modes[j];
+      options.push({ context: `${collection}/${mode}`, collection, mode });
+    }
+  }
+  return options;
+}
+
+function updateImportScopeConfirmState(): void {
+  if (!importScopeModalState) return;
+  const selected = importScopeModalState.inputs.some(input => input.checked);
+  if (importScopeConfirmBtn) {
+    importScopeConfirmBtn.disabled = !selected;
+    importScopeConfirmBtn.textContent = 'Import selected mode';
+  }
+}
+
+let importScopeKeyListenerAttached = false;
+
+function handleImportScopeKeydown(ev: KeyboardEvent): void {
+  if (ev.key === 'Escape') {
+    ev.preventDefault();
+    closeImportScopeModal();
+  }
+}
+
+function openImportScopeModal(opts: {
+  options: ImportContextOption[];
+  initialSelection: string[];
+  rememberInitially: boolean;
+  missingPreferred: string[];
+  onConfirm: (selected: string[], remember: boolean) => void;
+}): void {
+  if (!importScopeOverlay || !importScopeBody || !importScopeConfirmBtn || !importScopeCancelBtn) {
+    opts.onConfirm(opts.initialSelection, opts.rememberInitially);
+    return;
+  }
+
+  importScopeBody.innerHTML = '';
+  importScopeModalState = { options: opts.options, inputs: [], onConfirm: opts.onConfirm };
+
+  const availableContexts = new Set(opts.options.map(o => o.context));
+  const preferredInitial = opts.initialSelection.find(ctx => availableContexts.has(ctx));
+  const initialContext = preferredInitial || (opts.options.length > 0 ? opts.options[0].context : null);
+
+  const grouped = new Map<string, ImportContextOption[]>();
+  for (let i = 0; i < opts.options.length; i++) {
+    const option = opts.options[i];
+    const list = grouped.get(option.collection) || [];
+    if (!grouped.has(option.collection)) grouped.set(option.collection, list);
+    list.push(option);
+  }
+
+  const collections = Array.from(grouped.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  for (let i = 0; i < collections.length; i++) {
+    const collection = collections[i];
+    const groupEl = document.createElement('div');
+    groupEl.className = 'import-scope-group';
+    const heading = document.createElement('h3');
+    heading.textContent = collection;
+    groupEl.appendChild(heading);
+
+    const modes = (grouped.get(collection) || []).sort((a, b) => (a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0));
+    for (let j = 0; j < modes.length; j++) {
+      const opt = modes[j];
+      const label = document.createElement('label');
+      label.className = 'import-scope-mode';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'importScopeMode';
+      radio.value = opt.context;
+      radio.checked = initialContext === opt.context;
+      radio.addEventListener('change', updateImportScopeConfirmState);
+      importScopeModalState.inputs.push(radio);
+
+      const span = document.createElement('span');
+      span.textContent = opt.mode;
+
+      label.appendChild(radio);
+      label.appendChild(span);
+      groupEl.appendChild(label);
+    }
+
+    importScopeBody.appendChild(groupEl);
+  }
+
+  if (importScopeRememberChk) importScopeRememberChk.checked = opts.rememberInitially;
+  if (importScopeMissingEl) {
+    if (opts.missingPreferred.length > 0) {
+      importScopeMissingEl.hidden = false;
+      importScopeMissingEl.textContent = 'Previously remembered modes not present in this file: ' + formatContextList(opts.missingPreferred);
+    } else {
+      importScopeMissingEl.hidden = true;
+      importScopeMissingEl.textContent = '';
+    }
+  }
+
+  updateImportScopeConfirmState();
+
+  importScopeOverlay.hidden = false;
+  importScopeOverlay.classList.add('is-open');
+  importScopeOverlay.setAttribute('aria-hidden', 'false');
+  if (!importScopeKeyListenerAttached) {
+    window.addEventListener('keydown', handleImportScopeKeydown, true);
+    importScopeKeyListenerAttached = true;
+  }
+  if (importScopeConfirmBtn) importScopeConfirmBtn.focus();
+}
+
+function closeImportScopeModal(): void {
+  if (!importScopeOverlay) return;
+  importScopeOverlay.classList.remove('is-open');
+  importScopeOverlay.hidden = true;
+  importScopeOverlay.setAttribute('aria-hidden', 'true');
+  if (importScopeKeyListenerAttached) {
+    window.removeEventListener('keydown', handleImportScopeKeydown, true);
+    importScopeKeyListenerAttached = false;
+  }
+  importScopeModalState = null;
+}
+
+function performImport(json: unknown, allowHex: boolean, contexts: string[]): void {
+  const normalized = normalizeContextList(contexts);
+  const payload: UiToPlugin = normalized.length > 0
+    ? { type: 'IMPORT_DTCG', payload: { json, allowHexStrings: allowHex, contexts: normalized } }
+    : { type: 'IMPORT_DTCG', payload: { json, allowHexStrings: allowHex } };
+  postToPlugin(payload);
+  lastImportSelection = normalized.slice();
+  const label = normalized.length > 0 ? formatContextList(normalized) : 'all contexts';
+  log(`Import requested (${label}).`);
+}
+
+function startImportFlow(json: unknown, allowHex: boolean): void {
+  const options = collectContextsFromJson(json);
+  const availableSet = new Set(options.map(opt => opt.context));
+  const missingPreferred: string[] = [];
+  let rememberInitially = false;
+  let initialSelection: string[] = [];
+
+  if (importPreference && importPreference.contexts.length > 0) {
+    for (let i = 0; i < importPreference.contexts.length; i++) {
+      const ctx = importPreference.contexts[i];
+      if (availableSet.has(ctx)) {
+        initialSelection.push(ctx);
+      } else {
+        missingPreferred.push(ctx);
+      }
+    }
+    if (initialSelection.length > 0) rememberInitially = true;
+  }
+
+  if (initialSelection.length === 0 && options.length > 0) {
+    initialSelection = options.map(opt => opt.context);
+  }
+
+  if (options.length <= 1) {
+    performImport(json, allowHex, options.length === 1 ? initialSelection : []);
+    return;
+  }
+
+  openImportScopeModal({
+    options,
+    initialSelection,
+    rememberInitially,
+    missingPreferred,
+    onConfirm: (selected, remember) => {
+      if (remember) setImportPreference(selected);
+      else if (importPreference) clearImportPreference(true);
+      performImport(json, allowHex, selected);
+    }
+  });
+}
+
+function getPreferredImportContexts(): string[] {
+  if (importPreference && importPreference.contexts.length > 0) return importPreference.contexts.slice();
+  if (lastImportSelection.length > 0) return lastImportSelection.slice();
+  return [];
 }
 
 function postResize(width: number, height: number): void {
@@ -249,7 +733,8 @@ const githubUi = createGithubUi({
   getLogElement: () => logEl,
   getCollectionSelect: () => collectionSelect,
   getModeSelect: () => modeSelect,
-  getAllowHexCheckbox: () => allowHexChk
+  getAllowHexCheckbox: () => allowHexChk,
+  getImportContexts: () => getPreferredImportContexts()
 });
 
 /** Remove every option from a select without replacing the node. */
@@ -403,6 +888,18 @@ window.addEventListener('message', async (event: MessageEvent) => {
   if (msg.type === 'ERROR') { log('ERROR: ' + (msg.payload?.message ?? '')); return; }
   if (msg.type === 'INFO') { log(msg.payload?.message ?? ''); return; }
 
+  if (msg.type === 'IMPORT_SUMMARY') {
+    const summary = msg.payload.summary;
+    if (summary && Array.isArray(summary.appliedContexts)) {
+      lastImportSelection = summary.appliedContexts.slice();
+    } else {
+      lastImportSelection = [];
+    }
+    addImportLogEntry({ timestamp: msg.payload.timestamp, source: msg.payload.source, summary });
+    renderImportPreferenceSummary();
+    return;
+  }
+
   if (githubUi.handleMessage(msg)) return;
 
     if (msg.type === 'EXPORT_RESULT') {
@@ -512,6 +1009,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
   allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
 
+  importScopeOverlay = document.getElementById('importScopeOverlay');
+  importScopeBody = document.getElementById('importScopeBody');
+  importScopeConfirmBtn = document.getElementById('importScopeConfirmBtn') as HTMLButtonElement | null;
+  importScopeCancelBtn = document.getElementById('importScopeCancelBtn') as HTMLButtonElement | null;
+  importScopeRememberChk = document.getElementById('importScopeRememberChk') as HTMLInputElement | null;
+  importScopeMissingEl = document.getElementById('importScopeMissingNotice');
+
+  importScopeSummaryEl = document.getElementById('importScopeSummary');
+  importScopeSummaryTextEl = document.getElementById('importScopeSummaryText');
+  importScopeClearBtn = document.getElementById('importScopeClearBtn') as HTMLButtonElement | null;
+
+  importSkipLogListEl = document.getElementById('importSkipLogList');
+  importSkipLogEmptyEl = document.getElementById('importSkipLogEmpty');
+
+  loadImportPreference();
+  loadImportLog();
+  renderImportPreferenceSummary();
+  renderImportLog();
+
+  if (importScopeClearBtn) {
+    importScopeClearBtn.addEventListener('click', () => clearImportPreference(true));
+  }
+
+  if (importScopeConfirmBtn) {
+    importScopeConfirmBtn.addEventListener('click', () => {
+      if (!importScopeModalState) { closeImportScopeModal(); return; }
+      const state = importScopeModalState;
+      const selected = state.inputs.find(input => input.checked);
+      if (!selected) return;
+      const remember = importScopeRememberChk ? !!importScopeRememberChk.checked : false;
+      closeImportScopeModal();
+      state.onConfirm([selected.value], remember);
+    });
+  }
+
+  if (importScopeCancelBtn) {
+    importScopeCancelBtn.addEventListener('click', () => closeImportScopeModal());
+  }
+
+  if (importScopeOverlay) {
+    importScopeOverlay.addEventListener('click', (ev) => {
+      if (ev.target === importScopeOverlay) closeImportScopeModal();
+    });
+  }
+
   if (resizeHandleEl) {
     resizeHandleEl.addEventListener('pointerdown', (event: PointerEvent) => {
       if (event.button !== 0 && event.pointerType === 'mouse') return;
@@ -557,15 +1099,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           const text = String(reader.result);
           const json = JSON.parse(text);
-          if (json && typeof json === 'object' && !(json instanceof Array)) {
-            postToPlugin({
-              type: 'IMPORT_DTCG',
-              payload: { json, allowHexStrings: !!(allowHexChk && allowHexChk.checked) }
-            });
-            log('Import requested.');
-          } else {
+          if (!json || typeof json !== 'object' || (json instanceof Array)) {
             log('Invalid JSON structure for tokens (expected an object).');
+            return;
           }
+          const allowHex = !!(allowHexChk && allowHexChk.checked);
+          startImportFlow(json, allowHex);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           log('Failed to parse JSON: ' + msg);
