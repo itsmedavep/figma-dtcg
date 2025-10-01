@@ -3,6 +3,9 @@
 // - Keeps cross-thread communication type-safe
 // - Documents payload shapes for GitHub workflows and token sync
 
+import type { ImportSummary } from '../core/pipeline';
+export type { ImportSummary } from '../core/pipeline';
+
 // UI -> Plugin
 export interface GithubRepoTarget {
   owner: string;
@@ -23,7 +26,7 @@ export interface GithubFolderPayload extends GithubRepoTarget {
 export type UiToPlugin =
   | { type: 'UI_READY' }
   | { type: 'FETCH_COLLECTIONS' }
-  | { type: 'IMPORT_DTCG'; payload: { json: unknown; allowHexStrings?: boolean } }
+  | { type: 'IMPORT_DTCG'; payload: { json: unknown; allowHexStrings?: boolean; contexts?: string[] } }
   | {
       type: 'EXPORT_DTCG';
       payload: { exportAll: boolean; collection?: string; mode?: string };
@@ -78,7 +81,12 @@ export type UiToPlugin =
     }
   | {
       type: 'GITHUB_FETCH_TOKENS';
-      payload: GithubRepoTarget & { branch: string; path: string; allowHexStrings?: boolean };
+      payload: GithubRepoTarget & {
+        branch: string;
+        path: string;
+        allowHexStrings?: boolean;
+        contexts?: string[];
+      };
     }
   | {
       type: 'GITHUB_SAVE_STATE';
@@ -110,6 +118,10 @@ export type GithubFolderEntry =
 export type PluginToUi =
   | { type: 'ERROR'; payload: { message: string } }
   | { type: 'INFO'; payload: { message: string } }
+  | {
+      type: 'IMPORT_SUMMARY';
+      payload: { summary: ImportSummary; timestamp: number; source?: 'local' | 'github' };
+    }
   | {
       type: 'COLLECTIONS_DATA';
       payload: {

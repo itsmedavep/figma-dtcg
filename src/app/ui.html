@@ -190,6 +190,78 @@
       font-size: 12px;
     }
 
+    .import-scope-summary {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: .5rem;
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+    }
+
+    .import-skip-log {
+      margin-top: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .import-skip-log-list {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .import-skip-log-entry {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: .5rem;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+    }
+
+    .import-skip-log-entry-header {
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+
+    .import-skip-log-entry-note {
+      color: var(--ink-muted);
+      font-size: 11px;
+    }
+
+    .import-skip-log-token-list {
+      margin: 0;
+      padding-left: 1.1rem;
+    }
+
+    .import-skip-log-token-list li {
+      margin-bottom: .2rem;
+    }
+
+    button.link-button {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--accent);
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    button.link-button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      text-decoration: none;
+    }
+
     pre {
       margin: 0;
       padding: .5rem;
@@ -410,6 +482,65 @@
       border-radius: 10px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, .12);
       padding: 12px;
+    }
+
+    .import-scope-modal {
+      width: min(420px, 92vw);
+    }
+
+    .import-scope-body {
+      max-height: 240px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .import-scope-group {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: .5rem;
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+    }
+
+    .import-scope-group h3 {
+      margin: 0 0 .25rem 0;
+      font-size: 13px;
+    }
+
+    .import-scope-mode {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: 12px;
+    }
+
+    .import-scope-footer {
+      display: flex;
+      gap: .5rem;
+      justify-content: flex-end;
+    }
+
+    .import-scope-remember {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      font-size: 12px;
+    }
+
+    .import-scope-remember label {
+      display: flex;
+      align-items: center;
+      gap: .35rem;
+    }
+
+    .import-scope-missing {
+      font-size: 11px;
+      color: var(--ink-muted);
+      margin: 0;
     }
 
     .folder-picker-header {
@@ -634,6 +765,15 @@
                     colors</label>
                 </div>
               </div>
+              <div id="importScopeSummary" class="import-scope-summary" hidden>
+                <div id="importScopeSummaryText" class="muted"></div>
+                <button id="importScopeClearBtn" class="link-button" type="button">Clear remembered selection</button>
+              </div>
+              <div class="import-skip-log">
+                <div class="eyebrow">Import summaries</div>
+                <div id="importSkipLogEmpty" class="muted">No partial import history yet.</div>
+                <div id="importSkipLogList" class="import-skip-log-list"></div>
+              </div>
             </div>
           </div>
 
@@ -835,6 +975,24 @@
 
       <div class="drawer-body">
         <div id="log"></div>
+      </div>
+    </div>
+
+    <div id="importScopeOverlay" class="modal-overlay" hidden aria-hidden="true">
+      <div class="folder-picker-modal import-scope-modal" role="dialog" aria-modal="true"
+        aria-labelledby="importScopeTitle">
+        <h2 id="importScopeTitle" class="folder-picker-title">Select a mode to import</h2>
+        <p class="muted" style="margin:0;">Choose which collection and mode to bring into this file.</p>
+        <p id="importScopeMissingNotice" class="import-scope-missing" hidden></p>
+        <div id="importScopeBody" class="import-scope-body"></div>
+        <div class="import-scope-remember">
+          <label><input type="checkbox" id="importScopeRememberChk" /> Remember my choice for next time</label>
+          <span class="muted">You can clear this later from the import panel.</span>
+        </div>
+        <div class="import-scope-footer">
+          <button id="importScopeConfirmBtn" class="css-button-neumorphic" type="button">Import selected mode</button>
+          <button id="importScopeCancelBtn" class="css-button-neumorphic" type="button">Cancel</button>
+        </div>
       </div>
     </div>
 
