@@ -63,7 +63,9 @@ type ImportPreference = { contexts: string[]; updatedAt: number };
 type ImportLogEntry = { timestamp: number; source?: 'local' | 'github'; summary: ImportSummary };
 type ImportScopeModalState = {
   options: ImportContextOption[];
+  collections: string[];
   inputs: HTMLInputElement[];
+  inputsByCollection: Map<string, HTMLInputElement[]>;
   onConfirm: (selected: string[], remember: boolean) => void;
 };
 
@@ -461,10 +463,20 @@ function collectContextsFromJson(root: unknown): ImportContextOption[] {
 
 function updateImportScopeConfirmState(): void {
   if (!importScopeModalState) return;
-  const selected = importScopeModalState.inputs.some(input => input.checked);
+  const state = importScopeModalState;
+  let allCollectionsSelected = true;
+  for (let i = 0; i < state.collections.length; i++) {
+    const collection = state.collections[i];
+    const inputs = state.inputsByCollection.get(collection) || [];
+    if (!inputs.some(input => input.checked)) {
+      allCollectionsSelected = false;
+      break;
+    }
+  }
   if (importScopeConfirmBtn) {
-    importScopeConfirmBtn.disabled = !selected;
-    importScopeConfirmBtn.textContent = 'Import selected mode';
+    importScopeConfirmBtn.disabled = !allCollectionsSelected;
+    const label = state.collections.length > 1 ? 'Import selected modes' : 'Import selected mode';
+    importScopeConfirmBtn.textContent = label;
   }
 }
 
@@ -490,11 +502,6 @@ function openImportScopeModal(opts: {
   }
 
   importScopeBody.innerHTML = '';
-  importScopeModalState = { options: opts.options, inputs: [], onConfirm: opts.onConfirm };
-
-  const availableContexts = new Set(opts.options.map(o => o.context));
-  const preferredInitial = opts.initialSelection.find(ctx => availableContexts.has(ctx));
-  const initialContext = preferredInitial || (opts.options.length > 0 ? opts.options[0].context : null);
 
   const grouped = new Map<string, ImportContextOption[]>();
   for (let i = 0; i < opts.options.length; i++) {
@@ -505,6 +512,21 @@ function openImportScopeModal(opts: {
   }
 
   const collections = Array.from(grouped.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  importScopeModalState = {
+    options: opts.options,
+    collections,
+    inputs: [],
+    inputsByCollection: new Map(),
+    onConfirm: opts.onConfirm
+  };
+
+  const initialSelectionsByCollection = new Map<string, string>();
+  for (let i = 0; i < opts.initialSelection.length; i++) {
+    const ctx = opts.initialSelection[i];
+    const match = opts.options.find(opt => opt.context === ctx);
+    if (match) initialSelectionsByCollection.set(match.collection, match.context);
+  }
+
   for (let i = 0; i < collections.length; i++) {
     const collection = collections[i];
     const groupEl = document.createElement('div');
@@ -514,17 +536,24 @@ function openImportScopeModal(opts: {
     groupEl.appendChild(heading);
 
     const modes = (grouped.get(collection) || []).sort((a, b) => (a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0));
+    const defaultContext = initialSelectionsByCollection.get(collection) || modes[0]?.context || null;
+    const radioName = `importScopeMode_${i}`;
     for (let j = 0; j < modes.length; j++) {
       const opt = modes[j];
       const label = document.createElement('label');
       label.className = 'import-scope-mode';
       const radio = document.createElement('input');
       radio.type = 'radio';
-      radio.name = 'importScopeMode';
+      radio.name = radioName;
       radio.value = opt.context;
-      radio.checked = initialContext === opt.context;
+      radio.checked = defaultContext === opt.context;
       radio.addEventListener('change', updateImportScopeConfirmState);
       importScopeModalState.inputs.push(radio);
+      const list = importScopeModalState.inputsByCollection.get(collection) || [];
+      if (!importScopeModalState.inputsByCollection.has(collection)) {
+        importScopeModalState.inputsByCollection.set(collection, list);
+      }
+      list.push(radio);
 
       const span = document.createElement('span');
       span.textContent = opt.mode;
@@ -585,29 +614,59 @@ function performImport(json: unknown, allowHex: boolean, contexts: string[]): vo
 
 function startImportFlow(json: unknown, allowHex: boolean): void {
   const options = collectContextsFromJson(json);
+  if (options.length === 0) {
+    performImport(json, allowHex, []);
+    return;
+  }
+
+  const grouped = new Map<string, ImportContextOption[]>();
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i];
+    const list = grouped.get(option.collection) || [];
+    if (!grouped.has(option.collection)) grouped.set(option.collection, list);
+    list.push(option);
+  }
+
   const availableSet = new Set(options.map(opt => opt.context));
   const missingPreferred: string[] = [];
   let rememberInitially = false;
-  let initialSelection: string[] = [];
+  const initialSelectionsByCollection = new Map<string, string>();
 
   if (importPreference && importPreference.contexts.length > 0) {
     for (let i = 0; i < importPreference.contexts.length; i++) {
       const ctx = importPreference.contexts[i];
       if (availableSet.has(ctx)) {
-        initialSelection.push(ctx);
+        const match = options.find(opt => opt.context === ctx);
+        if (match) {
+          initialSelectionsByCollection.set(match.collection, match.context);
+          rememberInitially = true;
+        }
       } else {
         missingPreferred.push(ctx);
       }
     }
-    if (initialSelection.length > 0) rememberInitially = true;
   }
 
-  if (initialSelection.length === 0 && options.length > 0) {
-    initialSelection = options.map(opt => opt.context);
+  const collections = Array.from(grouped.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  for (let i = 0; i < collections.length; i++) {
+    const collection = collections[i];
+    if (!initialSelectionsByCollection.has(collection)) {
+      const modes = (grouped.get(collection) || []).sort((a, b) => (a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0));
+      if (modes.length > 0) initialSelectionsByCollection.set(collection, modes[0].context);
+    }
   }
 
-  if (options.length <= 1) {
-    performImport(json, allowHex, options.length === 1 ? initialSelection : []);
+  const initialSelection = collections
+    .map(collection => initialSelectionsByCollection.get(collection))
+    .filter((ctx): ctx is string => typeof ctx === 'string');
+
+  const requiresChoice = collections.some(collection => {
+    const list = grouped.get(collection) || [];
+    return list.length > 1;
+  });
+
+  if (!requiresChoice) {
+    performImport(json, allowHex, initialSelection);
     return;
   }
 
@@ -1053,11 +1112,17 @@ document.addEventListener('DOMContentLoaded', () => {
     importScopeConfirmBtn.addEventListener('click', () => {
       if (!importScopeModalState) { closeImportScopeModal(); return; }
       const state = importScopeModalState;
-      const selected = state.inputs.find(input => input.checked);
-      if (!selected) return;
+      const selections: string[] = [];
+      for (let i = 0; i < state.collections.length; i++) {
+        const collection = state.collections[i];
+        const inputs = state.inputsByCollection.get(collection) || [];
+        const selected = inputs.find(input => input.checked);
+        if (!selected) return;
+        selections.push(selected.value);
+      }
       const remember = importScopeRememberChk ? !!importScopeRememberChk.checked : false;
       closeImportScopeModal();
-      state.onConfirm([selected.value], remember);
+      state.onConfirm(selections, remember);
     });
   }
 
