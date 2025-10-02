@@ -5,6 +5,7 @@
 
 import { type TokenGraph, type TokenNode, type ValueOrAlias } from '../core/ir';
 import { slugSegment } from '../core/normalize';
+import { serializeTypographyValue } from '../core/typography';
 
 // ---------- tiny utils (lookup-only; never used for emission) ----------
 /** Join path segments with '.' for alias lookups. */
@@ -206,6 +207,11 @@ function writeTokenInto(
       case 'boolean': {
         // DTCG: write as string "true"/"false"
         tokenObj['$value'] = chosen.value ? 'true' : 'false';
+        break;
+      }
+
+      case 'typography': {
+        tokenObj['$value'] = serializeTypographyValue(chosen.value);
         break;
       }
     }

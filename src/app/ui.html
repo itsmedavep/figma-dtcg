@@ -718,6 +718,7 @@
       flex: 1 1 auto;
       min-width: 0;
     }
+
     #ghTokenInput.gh-mask {
       -webkit-text-security: disc;
     }
@@ -797,6 +798,12 @@
                   <div class="muted">Select a collection and mode, or check “Export all”.</div>
                   <button id="exportBtn" class="css-button-neumorphic">Export</button>
                 </div>
+                <div style="border-top:1px solid var(--border); padding-top:12px; margin-top:8px;">
+                  <div class="muted" style="margin-bottom:8px;">Typography tokens are exported separately.</div>
+                  <button id="exportTypographyBtn" class="css-button-neumorphic">Export typography.json</button>
+                  <div class="muted" style="margin-top:6px;">Saves all local text styles as DTCG typography tokens.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -809,7 +816,8 @@
               <!-- Auth row -->
               <div class="stack gh-section gh-auth">
                 <label>Personal Access Token (PAT)</label>
-                <input id="ghTokenInput" type="password" placeholder="GitHub personal access token" autocomplete="off" />
+                <input id="ghTokenInput" type="password" placeholder="GitHub personal access token"
+                  autocomplete="off" />
                 <div class="muted gh-remember">
                   <span>Store on this device?</span>
                   <label class="gh-remember-toggle">
@@ -839,9 +847,11 @@
                   <input id="ghBranchSearch" type="text" placeholder="Search branches… (press Enter to refresh)" />
                   <div id="ghBranchCount" class="muted gh-branch-count"></div>
                 </div>
-                <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh" type="button">Refresh</button>
+                <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh"
+                  type="button">Refresh</button>
                 <select id="ghBranchSelect" disabled></select>
-                <button id="ghNewBranchBtn" class="css-button-neumorphic gh-new-branch-btn" disabled type="button">Create new…</button>
+                <button id="ghNewBranchBtn" class="css-button-neumorphic gh-new-branch-btn" disabled
+                  type="button">Create new…</button>
                 <div id="ghNewBranchRow" class="gh-new-branch-row" style="display:none;">
                   <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
                   <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic" type="button">Create</button>
@@ -892,6 +902,10 @@
                       <input type="radio" name="ghScope" id="ghScopeAll" />
                       All collections &amp; modes
                     </label>
+                    <label style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="radio" name="ghScope" id="ghScopeTypography" />
+                      Typography (text styles)
+                    </label>
 
 
                   </div>
@@ -901,7 +915,8 @@
               <!-- Actions -->
               <div class="row">
                 <div class="row" style="gap:.5rem;">
-                  <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit / PR</button>
+                  <button id="ghExportAndCommitBtn" class="css-button-neumorphic" disabled>Export &amp; Commit /
+                    PR</button>
                 </div>
               </div>
 

@@ -19,6 +19,7 @@ let modeSelect: HTMLSelectElement | null = null;
 let fileInput: HTMLInputElement | null = null;
 let importBtn: HTMLButtonElement | null = null;
 let exportBtn: HTMLButtonElement | null = null;
+let exportTypographyBtn: HTMLButtonElement | null = null;
 let exportPickers: HTMLElement | null = null;
 
 let refreshBtn: HTMLButtonElement | null = null;
@@ -296,6 +297,9 @@ function loadImportLog(): void {
       if (!Array.isArray(summary.missingRequestedContexts)) {
         (summary as any).missingRequestedContexts = [];
       }
+      if (typeof summary.createdStyles !== 'number' || !isFinite(summary.createdStyles)) {
+        (summary as any).createdStyles = 0;
+      }
       importLogEntries.push({ timestamp, summary, source });
     }
     importLogEntries.sort((a, b) => a.timestamp - b.timestamp);
@@ -324,7 +328,16 @@ function renderImportLog(): void {
 
     const stats = document.createElement('div');
     stats.className = 'import-skip-log-entry-stats';
-    stats.textContent = `Imported ${entry.summary.importedTokens} of ${entry.summary.totalTokens} tokens.`;
+    const tokensText = `Imported ${entry.summary.importedTokens} of ${entry.summary.totalTokens} tokens.`;
+    const stylesCreated = typeof entry.summary.createdStyles === 'number'
+      ? entry.summary.createdStyles
+      : undefined;
+    if (typeof stylesCreated === 'number') {
+      const stylesLabel = stylesCreated === 1 ? 'style' : 'styles';
+      stats.textContent = `${tokensText} ${stylesCreated} ${stylesLabel} created.`;
+    } else {
+      stats.textContent = tokensText;
+    }
     container.appendChild(stats);
 
     const contextsLine = document.createElement('div');
@@ -761,6 +774,9 @@ function setDisabledStates(): void {
     }
   }
 
+  if (exportTypographyBtn) {
+    exportTypographyBtn.disabled = false;
+  }
 }
 
 /** Render the collections/modes dropdowns from plugin-provided data. */
@@ -993,6 +1009,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fileInput = document.getElementById('file') as HTMLInputElement | null;
   importBtn = document.getElementById('importBtn') as HTMLButtonElement | null;
   exportBtn = document.getElementById('exportBtn') as HTMLButtonElement | null;
+  exportTypographyBtn = document.getElementById('exportTypographyBtn') as HTMLButtonElement | null;
   exportPickers = document.getElementById('exportPickers');
 
   refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement | null;
@@ -1135,6 +1152,14 @@ document.addEventListener('DOMContentLoaded', () => {
       postToPlugin({ type: 'EXPORT_DTCG', payload });
       if (exportAll) log('Export all requested.');
       else log(`Export requested for "${payload.collection || ''}" / "${payload.mode || ''}".`);
+    });
+  }
+
+  if (exportTypographyBtn) {
+    exportTypographyBtn.addEventListener('click', async () => {
+      await beginPendingSave('typography.json');
+      postToPlugin({ type: 'EXPORT_TYPOGRAPHY' });
+      log('Typography export requested.');
     });
   }
 

@@ -9,6 +9,7 @@ import {
   type PrimitiveType,
   type ValueOrAlias,
 } from '../core/ir';
+import { parseTypographyValue } from '../core/typography';
 
 // ---------- color parsing (strict) ----------
 import { hexToDtcgColor, isDtcgColorShapeValid } from '../core/color';
@@ -156,7 +157,7 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
     let groupType: PrimitiveType | null = inheritedType;
     if (hasKey(obj, '$type') && typeof (obj as any).$type === 'string') {
       const t = String((obj as any).$type);
-      if (t === 'color' || t === 'number' || t === 'string' || t === 'boolean') {
+      if (t === 'color' || t === 'number' || t === 'string' || t === 'boolean' || t === 'typography') {
         groupType = t as PrimitiveType;
       }
     }
@@ -256,6 +257,27 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
             effectiveType = 'boolean';
           }
         }
+      }
+
+      if (!valObj && declaredType === 'typography') {
+        const parsedTypography = parseTypographyValue(rawVal);
+        if (!parsedTypography) {
+          logWarn(`Skipped token “${path.join('/')}” — expected a valid typography object.`);
+          return;
+        }
+
+        const { irPath, ctx } = computePathAndCtx(path, obj);
+        const byCtx: { [k: string]: ValueOrAlias } = {};
+        byCtx[ctx] = { kind: 'typography', value: parsedTypography };
+
+        registerToken({
+          path: irPath,
+          type: 'typography',
+          byContext: byCtx,
+          ...(desc ? { description: desc } : {}),
+          ...(hasKey(obj, '$extensions') ? { extensions: (obj as any)['$extensions'] as Record<string, unknown> } : {})
+        });
+        return;
       }
 
       if (!valObj) {

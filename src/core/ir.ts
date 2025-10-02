@@ -3,8 +3,10 @@
 // - Defines the minimal shape needed to round-trip DTCG and Figma
 // - Keeps primitive helpers colocated with the structural types
 
+import type { TypographyValue } from './typography';
+
 /** Primitive kinds supported by both Figma variables and DTCG. */
-export type PrimitiveType = 'color' | 'number' | 'string' | 'boolean';
+export type PrimitiveType = 'color' | 'number' | 'string' | 'boolean' | 'typography';
 
 /** Normalized color payload aligning with DTCG's schema. */
 export interface ColorValue {
@@ -19,7 +21,8 @@ export type ValueOrAlias =
   | { kind: 'color'; value: ColorValue }
   | { kind: 'number'; value: number }
   | { kind: 'string'; value: string }
-  | { kind: 'boolean'; value: boolean };
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'typography'; value: TypographyValue };
 
 /** Single token entry with canonical path + per-context values. */
 export interface TokenNode {

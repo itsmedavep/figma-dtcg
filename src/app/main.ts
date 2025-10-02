@@ -142,6 +142,15 @@ async function handleExportDtcg(msg: UiToPlugin): Promise<void> {
   send({ type: 'EXPORT_RESULT', payload: { files: filesToSend } });
 }
 
+async function handleExportTypography(_msg: UiToPlugin): Promise<void> {
+  const result = await exportDtcg({ format: 'typography' });
+  send({ type: 'EXPORT_RESULT', payload: { files: result.files } });
+  if (result.files.length > 0) {
+    const first = result.files[0];
+    send({ type: 'W3C_PREVIEW', payload: { name: first.name, json: first.json } });
+  }
+}
+
 async function handleSaveLast(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'SAVE_LAST'>).payload;
   if (typeof payload.collection === 'string' && typeof payload.mode === 'string') {
@@ -191,6 +200,7 @@ const coreHandlers = new Map<UiToPlugin['type'], Handler>([
   ['FETCH_COLLECTIONS', handleFetchCollections],
   ['IMPORT_DTCG', handleImportDtcg],
   ['EXPORT_DTCG', handleExportDtcg],
+  ['EXPORT_TYPOGRAPHY', handleExportTypography],
   ['SAVE_LAST', handleSaveLast],
   ['SAVE_PREFS', handleSavePrefs],
   ['UI_RESIZE', handleUiResize],

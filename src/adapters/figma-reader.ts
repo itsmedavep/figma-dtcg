@@ -6,6 +6,7 @@
 import { figmaRGBAToDtcg, type DocumentProfile } from '../core/color';
 import { canonicalPath } from '../core/normalize';
 import { loadCollectionsSnapshot } from '../core/figma-cache';
+import { typographyValueFromTextStyle } from '../core/typography';
 import { ctxKey, type TokenGraph, type TokenNode, type PrimitiveType, type ValueOrAlias } from '../core/ir';
 
 /** Translate Figma's resolved type into the primitive kinds our IR expects. */
@@ -122,6 +123,47 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
       };
 
       tokens.push(token);
+    }
+  }
+
+  if (typeof figma.getLocalTextStyles === 'function') {
+    const textStyles = figma.getLocalTextStyles();
+    const defaultCollection = 'typography';
+    const defaultMode = 'Mode 1';
+    for (const style of textStyles) {
+      const value = typographyValueFromTextStyle(style);
+      const path = canonicalPath(defaultCollection, style.name);
+      const ctx = ctxKey(defaultCollection, defaultMode);
+      const byContext: { [ctx: string]: ValueOrAlias } = {};
+      byContext[ctx] = { kind: 'typography', value };
+
+      const perContext: {
+        [ctx: string]: {
+          styleID: string;
+          styleName: string;
+        };
+      } = {};
+      perContext[ctx] = {
+        styleID: style.id,
+        styleName: style.name,
+      };
+
+      const extensions: Record<string, unknown> = {
+        'com.figma': {
+          styleType: 'TEXT',
+          styleID: style.id,
+          styleName: style.name,
+          perContext,
+        }
+      };
+
+      tokens.push({
+        path,
+        type: 'typography',
+        byContext,
+        ...(style.description && style.description.length > 0 ? { description: style.description } : {}),
+        extensions,
+      });
     }
   }
 

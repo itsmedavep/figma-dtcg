@@ -17,6 +17,11 @@ import {
   isDtcgColorShapeValid,
   isColorSpaceRepresentableInDocument
 } from '../core/color';
+import { applyTypographyValueToTextStyle, typographyFontNameFromValue, type TypographyValue } from '../core/typography';
+
+export interface WriteResult {
+  createdTextStyles: number;
+}
 
 // ---------- logging to UI (no toasts) ----------
 /** Post a quiet log line to the UI without risking plugin runtime errors. */
@@ -260,6 +265,24 @@ function namesMatchExtensions(t: TokenNode): { ok: boolean; reason?: string } {
   return { ok: true };
 }
 
+function typographyNamesMatchExtensions(t: TokenNode, styleName: string): { ok: boolean; reason?: string } {
+  const ext = t.extensions && typeof t.extensions === 'object'
+    ? (t.extensions as any)['com.figma']
+    : undefined;
+
+  if (!ext || typeof ext !== 'object') return { ok: true };
+
+  const expected = typeof (ext as any).styleName === 'string' ? (ext as any).styleName : undefined;
+  if (expected && expected !== styleName) {
+    return {
+      ok: false,
+      reason: `Skipping “${t.path.join('/')}” — $extensions.com.figma.styleName (“${expected}”) doesn’t match JSON key (“${styleName}”).`
+    };
+  }
+
+  return { ok: true };
+}
+
 // --- Key indexing helpers: index display + slug for BOTH collection and variable segments
 function dot(segs: string[]): string { return segs.join('.'); }
 
@@ -284,7 +307,7 @@ function indexVarKeys(
   map[dot([colSlug, ...varSlug])] = varId;
 }
 
-export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
+export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
   const profile = figma.root.documentColorProfile as DocumentProfile;
   const canonicalProfile = normalizeDocumentProfile(profile);
   const variablesApi = figma.variables;
@@ -324,8 +347,13 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
   // ---- buckets for Pass 1a (direct values) and 1b (alias-only)
   const directTokens: TokenNode[] = [];
   const aliasOnlyTokens: TokenNode[] = [];
+  const typographyTokens: TokenNode[] = [];
 
   for (const t of graph.tokens) {
+    if (t.type === 'typography') {
+      typographyTokens.push(t);
+      continue;
+    }
     const hasDirect = tokenHasDirectValue(t);
     const hasAlias = tokenHasAlias(t);
 
@@ -355,6 +383,134 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       collectionNameById.set(col.id, name);
     }
     return col;
+  }
+
+  let createdTextStyles = 0;
+
+  async function importTypographyTokens(tokens: TokenNode[]): Promise<void> {
+    if (tokens.length === 0) return;
+
+    const canReadStyles = typeof figma.getLocalTextStyles === 'function';
+    const canCreateStyles = typeof figma.createTextStyle === 'function';
+    if (!canReadStyles || !canCreateStyles) {
+      logWarn('Typography tokens present but text style APIs are unavailable in this version of Figma. Skipping typography import.');
+      return;
+    }
+
+    const stylesById = new Map<string, TextStyle>();
+    const stylesByName = new Map<string, TextStyle>();
+    const localStyles = figma.getLocalTextStyles();
+    for (const style of localStyles) {
+      stylesById.set(style.id, style);
+      stylesByName.set(style.name, style);
+    }
+
+    const loadedFonts = new Set<string>();
+
+    for (const token of tokens) {
+      const styleSegments = token.path.slice(1);
+      const styleName = styleSegments.join('/');
+      if (!styleName) {
+        logWarn(`Skipped typography token “${token.path.join('/')}” — requires a style name after the collection.`);
+        continue;
+      }
+
+      const nameCheck = typographyNamesMatchExtensions(token, styleName);
+      if (!nameCheck.ok) {
+        logWarn(nameCheck.reason!);
+        continue;
+      }
+
+      const ctxKeys = forEachKey(token.byContext);
+      let typographyValue: TypographyValue | null = null;
+      let typographyContexts = 0;
+      for (const ctx of ctxKeys) {
+        const val = token.byContext[ctx];
+        if (!val) continue;
+        if (val.kind === 'typography') {
+          typographyContexts++;
+          if (!typographyValue) typographyValue = val.value;
+        } else if (val.kind === 'alias') {
+          logWarn(`Skipped typography alias at “${token.path.join('/')}” in ${ctx} — text styles do not support aliases.`);
+        } else {
+          logWarn(`Skipped unsupported value for “${token.path.join('/')}” in ${ctx} — expected a typography $value.`);
+        }
+      }
+
+      if (!typographyValue) {
+        logWarn(`Skipped typography token “${token.path.join('/')}” — needs a typography $value.`);
+        continue;
+      }
+      if (typographyContexts > 1) {
+        logWarn(`Typography token “${token.path.join('/')}” has multiple contexts. Using the first typography value.`);
+      }
+
+      const ext = token.extensions && typeof token.extensions === 'object'
+        ? (token.extensions as any)['com.figma']
+        : undefined;
+      const extStyleId = ext && typeof ext === 'object' && typeof (ext as any).styleID === 'string'
+        ? String((ext as any).styleID)
+        : undefined;
+
+      let style: TextStyle | null = null;
+      let createdStyle = false;
+      if (extStyleId) {
+        style = stylesById.get(extStyleId) || null;
+      }
+      if (!style) {
+        style = stylesByName.get(styleName) || null;
+      }
+      if (!style) {
+        style = figma.createTextStyle();
+        createdStyle = true;
+      }
+
+      const prevName = style.name;
+      if (style.name !== styleName) {
+        style.name = styleName;
+      }
+      stylesById.set(style.id, style);
+      if (prevName && stylesByName.get(prevName) === style) {
+        stylesByName.delete(prevName);
+      }
+      stylesByName.set(styleName, style);
+
+      if (createdStyle) {
+        createdTextStyles++;
+      }
+
+      if (typeof token.description === 'string' && token.description.trim().length > 0 && style.description !== token.description) {
+        try { style.description = token.description; } catch { /* ignore */ }
+      }
+
+      const { fontName, usedFallback } = typographyFontNameFromValue(typographyValue);
+      let appliedFont: FontName | null = null;
+      if (fontName) {
+        const key = fontName.family + ':::' + fontName.style;
+        if (!loadedFonts.has(key)) {
+          try {
+            await figma.loadFontAsync(fontName);
+            loadedFonts.add(key);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logWarn(`Failed to load font “${fontName.family} ${fontName.style}” for text style “${styleName}”. ${msg}`);
+          }
+        }
+        if (loadedFonts.has(key)) {
+          appliedFont = fontName;
+          if (usedFallback) {
+            logInfo(`Typography token “${token.path.join('/')}” is missing a font style. Defaulted to “${fontName.style}”.`);
+          }
+        }
+      } else {
+        logWarn(`Skipped setting font for text style “${styleName}” — typography token is missing fontFamily.`);
+      }
+
+      const warnings = applyTypographyValueToTextStyle(style, typographyValue, { fontName: appliedFont });
+      for (const warning of warnings) {
+        logWarn(`Text style “${styleName}”: ${warning}`);
+      }
+    }
   }
 
   // ---- Pass 1a: create direct-value variables, collect ids
@@ -524,6 +680,8 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
     pending.length = 0;
     Array.prototype.push.apply(pending, nextRound);
   }
+
+  await importTypographyTokens(typographyTokens);
 
   // ---- Build mode id lookup (collectionName/modeName → modeId)
   const modeIdByKey: { [key: string]: string } = {};
@@ -752,4 +910,5 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<void> {
       delete colByName[name];
     }
   }
+  return { createdTextStyles };
 }

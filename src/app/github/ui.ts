@@ -60,6 +60,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghFetchTokensBtn: HTMLButtonElement | null = null;
   let ghScopeSelected: HTMLInputElement | null = null;
   let ghScopeAll: HTMLInputElement | null = null;
+  let ghScopeTypography: HTMLInputElement | null = null;
 
   let ghAuthStatusEl: HTMLElement | null = null;
   let ghTokenMetaEl: HTMLElement | null = null;
@@ -637,10 +638,11 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     const br = getCurrentBranch();
     const commitMsg = (ghCommitMsgInput?.value || '').trim();
     const scopeAll = !!(ghScopeAll && ghScopeAll.checked);
+    const scopeTypography = !!(ghScopeTypography && ghScopeTypography.checked);
     const folderRaw = ghFolderInput ? ghFolderInput.value.trim() : '';
     const hasFolder = normalizeFolderInput(folderRaw).display.length > 0;
 
-    const hasSelection = scopeAll
+    const hasSelection = (scopeAll || scopeTypography)
       ? true
       : !!(collectionSelect && collectionSelect.value && modeSelect && modeSelect.value);
 
@@ -707,6 +709,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     ghFetchTokensBtn = doc.getElementById('ghFetchTokensBtn') as HTMLButtonElement | null;
     ghScopeSelected = doc.getElementById('ghScopeSelected') as HTMLInputElement | null;
     ghScopeAll = doc.getElementById('ghScopeAll') as HTMLInputElement | null;
+    ghScopeTypography = doc.getElementById('ghScopeTypography') as HTMLInputElement | null;
 
     folderPickerOverlay = doc.getElementById('folderPickerOverlay');
     folderPickerTitleEl = doc.getElementById('folderPickerTitle');
@@ -912,6 +915,14 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       });
     }
 
+    if (ghScopeTypography) {
+      ghScopeTypography.addEventListener('change', () => {
+        if (ghScopeTypography!.checked) persistGhState({ scope: 'typography' });
+        if (ghPrOptionsEl) ghPrOptionsEl.style.display = ghCreatePrChk?.checked ? 'flex' : 'none';
+        updateExportCommitEnabled();
+      });
+    }
+
     if (ghCreatePrChk) {
       ghCreatePrChk.addEventListener('change', () => {
         const on = !!ghCreatePrChk!.checked;
@@ -970,7 +981,9 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         const collectionSelect = pickCollectionSelect();
         const modeSelect = pickModeSelect();
 
-        const scope: GithubScope = ghScopeAll && ghScopeAll.checked ? 'all' : 'selected';
+        const scope: GithubScope = ghScopeAll && ghScopeAll.checked
+          ? 'all'
+          : (ghScopeTypography && ghScopeTypography.checked ? 'typography' : 'selected');
         const commitMessage = (ghCommitMsgInput?.value || 'Update tokens from Figma').trim();
         const normalizedFolder = normalizeFolderInput(ghFolderInput?.value || '');
 
@@ -1115,6 +1128,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       if (typeof p.scope === 'string') {
         if (p.scope === 'all' && ghScopeAll) ghScopeAll.checked = true;
         if (p.scope === 'selected' && ghScopeSelected) ghScopeSelected.checked = true;
+        if (p.scope === 'typography' && ghScopeTypography) ghScopeTypography.checked = true;
       }
       if (typeof p.createPr === 'boolean' && ghCreatePrChk) {
         ghCreatePrChk.checked = p.createPr;

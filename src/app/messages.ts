@@ -13,7 +13,7 @@ export interface GithubRepoTarget {
 }
 
 /** Scope for export/commit actions coming from the UI. */
-export type GithubScope = 'all' | 'selected';
+export type GithubScope = 'all' | 'selected' | 'typography';
 
 export interface GithubBranchPayload extends GithubRepoTarget {
   branch: string;
@@ -31,6 +31,7 @@ export type UiToPlugin =
       type: 'EXPORT_DTCG';
       payload: { exportAll: boolean; collection?: string; mode?: string };
     }
+  | { type: 'EXPORT_TYPOGRAPHY' }
   | { type: 'SAVE_LAST'; payload: { collection: string; mode: string } }
   | {
       type: 'SAVE_PREFS';
