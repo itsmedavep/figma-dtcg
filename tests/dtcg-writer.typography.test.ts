@@ -22,9 +22,9 @@ const graph: TokenGraph = {
           value: {
             fontFamily: 'Inter',
             fontWeight: 'Regular',
-            fontSize: { value: 16, unit: 'pixel' },
+            fontSize: { value: 16, unit: 'px' },
             lineHeight: 'auto',
-            letterSpacing: { value: 0, unit: 'pixel' },
+            letterSpacing: { value: 0, unit: 'px' },
           },
         },
       },
@@ -42,9 +42,9 @@ const expected = {
         $value: {
           fontFamily: 'Inter',
           fontWeight: 'Regular',
-          fontSize: { value: 16, unit: 'pixel' },
+          fontSize: { value: 16, unit: 'px' },
           lineHeight: 'auto',
-          letterSpacing: { value: 0, unit: 'pixel' },
+          letterSpacing: { value: 0, unit: 'px' },
         },
       },
     },

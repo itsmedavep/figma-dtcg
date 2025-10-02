@@ -8,6 +8,13 @@ export interface DimensionValue {
   unit: DimensionUnit;
 }
 
+type SerializedDimensionUnit = 'px' | 'percent';
+
+interface SerializedDimensionValue {
+  value: number;
+  unit: SerializedDimensionUnit;
+}
+
 export type LineHeightValue = DimensionValue | 'auto';
 
 export interface TypographyValue {
@@ -166,9 +173,10 @@ export function parseTypographyValue(raw: unknown): TypographyValue | null {
   return recognized ? value : null;
 }
 
-function cloneDimension(dim: DimensionValue | undefined): DimensionValue | undefined {
+function serializeDimension(dim: DimensionValue | undefined): SerializedDimensionValue | undefined {
   if (!dim) return undefined;
-  return { value: dim.value, unit: dim.unit };
+  const unit: SerializedDimensionUnit = dim.unit === 'pixel' ? 'px' : 'percent';
+  return { value: dim.value, unit };
 }
 
 export function serializeTypographyValue(value: TypographyValue): Record<string, unknown> {
@@ -178,17 +186,17 @@ export function serializeTypographyValue(value: TypographyValue): Record<string,
   if (typeof value.fontStyle === 'string') out.fontStyle = value.fontStyle;
   if (typeof value.fontWeight === 'string') out.fontWeight = value.fontWeight;
   if (typeof value.fontVariant === 'string') out.fontVariant = value.fontVariant;
-  if (value.fontSize) out.fontSize = cloneDimension(value.fontSize);
+  if (value.fontSize) out.fontSize = serializeDimension(value.fontSize);
 
   if (value.lineHeight) {
     out.lineHeight = value.lineHeight === 'auto'
       ? 'auto'
-      : cloneDimension(value.lineHeight);
+      : serializeDimension(value.lineHeight);
   }
 
-  if (value.letterSpacing) out.letterSpacing = cloneDimension(value.letterSpacing);
-  if (value.paragraphSpacing) out.paragraphSpacing = cloneDimension(value.paragraphSpacing);
-  if (value.paragraphIndent) out.paragraphIndent = cloneDimension(value.paragraphIndent);
+  if (value.letterSpacing) out.letterSpacing = serializeDimension(value.letterSpacing);
+  if (value.paragraphSpacing) out.paragraphSpacing = serializeDimension(value.paragraphSpacing);
+  if (value.paragraphIndent) out.paragraphIndent = serializeDimension(value.paragraphIndent);
 
   if (typeof value.textCase === 'string') out.textCase = value.textCase;
   if (typeof value.textDecoration === 'string') out.textDecoration = value.textDecoration;

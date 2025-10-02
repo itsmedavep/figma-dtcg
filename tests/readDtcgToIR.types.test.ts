@@ -129,9 +129,9 @@ const typographyRoot = {
         $value: {
           fontFamily: 'Inter',
           fontWeight: 'Regular',
-          fontSize: { value: 16, unit: 'pixel' },
-          lineHeight: { value: 24, unit: 'pixel' },
-          letterSpacing: { value: 0, unit: 'pixel' },
+          fontSize: { value: 16, unit: 'px' },
+          lineHeight: { value: 24, unit: 'px' },
+          letterSpacing: { value: 0, unit: 'px' },
           textCase: 'none',
           textDecoration: 'none'
         }
