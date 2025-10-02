@@ -131,7 +131,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
     const defaultCollection = 'typography';
     const defaultMode = 'Mode 1';
     for (const style of textStyles) {
-      const value = typographyValueFromTextStyle(style);
+      const { value, figma: typographyFigma } = typographyValueFromTextStyle(style);
       const path = canonicalPath(defaultCollection, style.name);
       const ctx = ctxKey(defaultCollection, defaultMode);
       const byContext: { [ctx: string]: ValueOrAlias } = {};
@@ -153,6 +153,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
           styleType: 'TEXT',
           styleID: style.id,
           styleName: style.name,
+          typography: typographyFigma,
           perContext,
         }
       };

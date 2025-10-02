@@ -17,7 +17,12 @@ import {
   isDtcgColorShapeValid,
   isColorSpaceRepresentableInDocument
 } from '../core/color';
-import { applyTypographyValueToTextStyle, typographyFontNameFromValue, type TypographyValue } from '../core/typography';
+import {
+  applyTypographyValueToTextStyle,
+  typographyFontNameFromValue,
+  type TypographyFigmaExtension,
+  type TypographyValue,
+} from '../core/typography';
 
 export interface WriteResult {
   createdTextStyles: number;
@@ -451,6 +456,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
       const extStyleId = ext && typeof ext === 'object' && typeof (ext as any).styleID === 'string'
         ? String((ext as any).styleID)
         : undefined;
+      const typographyExt = ext && typeof ext === 'object'
+        ? (ext as any).typography as TypographyFigmaExtension | undefined
+        : undefined;
 
       let style: TextStyle | null = null;
       let createdStyle = false;
@@ -516,7 +524,10 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
         createdTextStyles++;
       }
 
-      const warnings = applyTypographyValueToTextStyle(style, typographyValue, { fontName: appliedFont });
+      const warnings = applyTypographyValueToTextStyle(style, typographyValue, {
+        fontName: appliedFont,
+        figma: typographyExt ?? null,
+      });
       for (const warning of warnings) {
         logWarn(`Text style “${styleName}”: ${warning}`);
       }

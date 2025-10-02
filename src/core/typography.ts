@@ -17,6 +17,38 @@ interface SerializedDimensionValue {
 
 export type LineHeightValue = DimensionValue | 'auto';
 
+export type FigmaDimensionUnit = 'PIXELS' | 'PERCENT';
+
+export interface FigmaDimensionValue {
+  value: number;
+  unit: FigmaDimensionUnit;
+}
+
+export type FigmaLineHeightValue =
+  | { unit: 'AUTO' }
+  | { unit: FigmaDimensionUnit; value: number };
+
+export interface TypographyFigmaExtension {
+  fontStyle?: string;
+  fontVariant?: string;
+  letterSpacing?: FigmaDimensionValue;
+  lineHeight?: FigmaLineHeightValue;
+  paragraphSpacing?: number;
+  paragraphIndent?: number;
+  listSpacing?: number;
+  hangingPunctuation?: boolean;
+  hangingList?: boolean;
+  leadingTrim?: unknown;
+  textCase?: string;
+  textDecoration?: string;
+  textAlignHorizontal?: string;
+  textAlignVertical?: string;
+  textAutoResize?: string;
+  fills?: unknown;
+  strokes?: unknown;
+  [key: string]: unknown;
+}
+
 export interface TypographyValue {
   fontFamily?: string;
   fontStyle?: string;
@@ -32,6 +64,11 @@ export interface TypographyValue {
   textAlignVertical?: string;
   fontVariant?: string;
   [key: string]: unknown;
+}
+
+export interface TypographyFromTextStyleResult {
+  value: TypographyValue;
+  figma: TypographyFigmaExtension;
 }
 
 const KNOWN_KEYS: { [k: string]: true } = {
@@ -111,7 +148,12 @@ export function parseTypographyValue(raw: unknown): TypographyValue | null {
   }
 
   const rawLineHeight = obj.lineHeight;
-  if (typeof rawLineHeight === 'string') {
+  if (typeof rawLineHeight === 'number') {
+    if (isFiniteNumber(rawLineHeight)) {
+      value.lineHeight = { value: rawLineHeight * 100, unit: 'percent' };
+      recognized = true;
+    }
+  } else if (typeof rawLineHeight === 'string') {
     if (rawLineHeight.trim().toLowerCase() === 'auto') {
       value.lineHeight = 'auto';
       recognized = true;
@@ -173,41 +215,59 @@ export function parseTypographyValue(raw: unknown): TypographyValue | null {
   return recognized ? value : null;
 }
 
-function serializeDimension(dim: DimensionValue | undefined): SerializedDimensionValue | undefined {
-  if (!dim) return undefined;
-  const unit: SerializedDimensionUnit = dim.unit === 'pixel' ? 'px' : 'percent';
-  return { value: dim.value, unit };
+function normalizeLetterSpacingForSerialization(
+  letterSpacing: DimensionValue | undefined,
+  fontSizePx: number | undefined
+): SerializedDimensionValue | undefined {
+  if (!letterSpacing) return undefined;
+  if (letterSpacing.unit === 'pixel') {
+    return { value: letterSpacing.value, unit: 'px' };
+  }
+  if (letterSpacing.unit === 'percent' && typeof fontSizePx === 'number') {
+    return { value: (letterSpacing.value / 100) * fontSizePx, unit: 'px' };
+  }
+  return undefined;
+}
+
+function normalizeLineHeightForSerialization(
+  lineHeight: LineHeightValue | undefined,
+  fontSizePx: number | undefined
+): number | 'auto' | undefined {
+  if (!lineHeight) return undefined;
+  if (lineHeight === 'auto') return 'auto';
+  if (lineHeight.unit === 'percent') {
+    return lineHeight.value / 100;
+  }
+  if (lineHeight.unit === 'pixel' && typeof fontSizePx === 'number' && fontSizePx !== 0) {
+    return lineHeight.value / fontSizePx;
+  }
+  return undefined;
 }
 
 export function serializeTypographyValue(value: TypographyValue): Record<string, unknown> {
   const out: Record<string, unknown> = {};
 
   if (typeof value.fontFamily === 'string') out.fontFamily = value.fontFamily;
-  if (typeof value.fontStyle === 'string') out.fontStyle = value.fontStyle;
   if (typeof value.fontWeight === 'string') out.fontWeight = value.fontWeight;
-  if (typeof value.fontVariant === 'string') out.fontVariant = value.fontVariant;
-  if (value.fontSize) out.fontSize = serializeDimension(value.fontSize);
 
-  if (value.lineHeight) {
-    out.lineHeight = value.lineHeight === 'auto'
-      ? 'auto'
-      : serializeDimension(value.lineHeight);
+  const fontSizePx = ((): number | undefined => {
+    if (!value.fontSize) return undefined;
+    if (value.fontSize.unit === 'pixel') {
+      const serialized: SerializedDimensionValue = { value: value.fontSize.value, unit: 'px' };
+      out.fontSize = serialized;
+      return value.fontSize.value;
+    }
+    return undefined;
+  })();
+
+  const normalizedLetterSpacing = normalizeLetterSpacingForSerialization(value.letterSpacing, fontSizePx);
+  if (normalizedLetterSpacing) {
+    out.letterSpacing = normalizedLetterSpacing;
   }
 
-  if (value.letterSpacing) out.letterSpacing = serializeDimension(value.letterSpacing);
-  if (value.paragraphSpacing) out.paragraphSpacing = serializeDimension(value.paragraphSpacing);
-  if (value.paragraphIndent) out.paragraphIndent = serializeDimension(value.paragraphIndent);
-
-  if (typeof value.textCase === 'string') out.textCase = value.textCase;
-  if (typeof value.textDecoration === 'string') out.textDecoration = value.textDecoration;
-  if (typeof value.textAlignHorizontal === 'string') out.textAlignHorizontal = value.textAlignHorizontal;
-  if (typeof value.textAlignVertical === 'string') out.textAlignVertical = value.textAlignVertical;
-
-  for (const key of Object.keys(value)) {
-    if (KNOWN_KEYS[key]) continue;
-    const v = (value as Record<string, unknown>)[key];
-    if (typeof v === 'undefined') continue;
-    out[key] = v;
+  const normalizedLineHeight = normalizeLineHeightForSerialization(value.lineHeight, fontSizePx);
+  if (typeof normalizedLineHeight !== 'undefined') {
+    out.lineHeight = normalizedLineHeight;
   }
 
   return out;
@@ -253,8 +313,17 @@ function inferFontStyle(style: string | undefined): string | undefined {
   return 'normal';
 }
 
-export function typographyValueFromTextStyle(style: TextStyle): TypographyValue {
+export function typographyValueFromTextStyle(style: TextStyle): TypographyFromTextStyleResult {
   const value: TypographyValue = {};
+  const figma: TypographyFigmaExtension = {};
+
+  const assignFigma = <K extends keyof TypographyFigmaExtension>(
+    key: K,
+    val: TypographyFigmaExtension[K]
+  ): void => {
+    if (typeof val === 'undefined') return;
+    figma[key] = val;
+  };
 
   const fontName = style.fontName as { family?: string; style?: string } | undefined;
   if (fontName && typeof fontName.family === 'string') {
@@ -264,6 +333,8 @@ export function typographyValueFromTextStyle(style: TextStyle): TypographyValue 
     value.fontWeight = fontName.style;
     value.fontVariant = fontName.style;
     value.fontStyle = inferFontStyle(fontName.style);
+    assignFigma('fontVariant', fontName.style);
+    assignFigma('fontStyle', fontName.style);
   }
 
   if (isFiniteNumber(style.fontSize)) {
@@ -275,10 +346,13 @@ export function typographyValueFromTextStyle(style: TextStyle): TypographyValue 
     const unit = lineHeight.unit;
     if (unit === 'AUTO') {
       value.lineHeight = 'auto';
+      assignFigma('lineHeight', { unit: 'AUTO' });
     } else if (unit === 'PIXELS' && isFiniteNumber(lineHeight.value)) {
       value.lineHeight = { value: lineHeight.value, unit: 'pixel' };
+      assignFigma('lineHeight', { unit: 'PIXELS', value: lineHeight.value });
     } else if (unit === 'PERCENT' && isFiniteNumber(lineHeight.value)) {
       value.lineHeight = { value: lineHeight.value, unit: 'percent' };
+      assignFigma('lineHeight', { unit: 'PERCENT', value: lineHeight.value });
     }
   }
 
@@ -286,36 +360,69 @@ export function typographyValueFromTextStyle(style: TextStyle): TypographyValue 
   if (letterSpacing && typeof letterSpacing.unit === 'string' && isFiniteNumber(letterSpacing.value)) {
     if (letterSpacing.unit === 'PIXELS') {
       value.letterSpacing = { value: letterSpacing.value, unit: 'pixel' };
+      assignFigma('letterSpacing', { unit: 'PIXELS', value: letterSpacing.value });
     } else if (letterSpacing.unit === 'PERCENT') {
       value.letterSpacing = { value: letterSpacing.value, unit: 'percent' };
+      assignFigma('letterSpacing', { unit: 'PERCENT', value: letterSpacing.value });
     }
   }
 
   const paragraphSpacing = cloneDimensionIfFinite(style.paragraphSpacing);
-  if (paragraphSpacing) value.paragraphSpacing = paragraphSpacing;
+  if (paragraphSpacing) {
+    value.paragraphSpacing = paragraphSpacing;
+    assignFigma('paragraphSpacing', paragraphSpacing.value);
+  }
 
   const paragraphIndent = cloneDimensionIfFinite(style.paragraphIndent);
-  if (paragraphIndent) value.paragraphIndent = paragraphIndent;
+  if (paragraphIndent) {
+    value.paragraphIndent = paragraphIndent;
+    assignFigma('paragraphIndent', paragraphIndent.value);
+  }
 
   const textCase = (style as { textCase?: string }).textCase;
   if (textCase && typeof textCase === 'string') {
     value.textCase = TEXT_CASE_MAP[textCase] || textCase.toLowerCase();
+    assignFigma('textCase', textCase);
   }
 
   const textDecoration = (style as { textDecoration?: string }).textDecoration;
   if (textDecoration && typeof textDecoration === 'string') {
     value.textDecoration = TEXT_DECORATION_MAP[textDecoration] || textDecoration.toLowerCase();
+    assignFigma('textDecoration', textDecoration);
   }
 
   const textAlignHorizontal = (style as { textAlignHorizontal?: string }).textAlignHorizontal;
   if (textAlignHorizontal && typeof textAlignHorizontal === 'string') {
     value.textAlignHorizontal = TEXT_ALIGN_HORIZONTAL_MAP[textAlignHorizontal] || textAlignHorizontal.toLowerCase();
+    assignFigma('textAlignHorizontal', textAlignHorizontal);
   }
 
   const textAlignVertical = (style as { textAlignVertical?: string }).textAlignVertical;
   if (textAlignVertical && typeof textAlignVertical === 'string') {
     value.textAlignVertical = TEXT_ALIGN_VERTICAL_MAP[textAlignVertical] || textAlignVertical.toLowerCase();
+    assignFigma('textAlignVertical', textAlignVertical);
   }
+
+  const leadingTrim = (style as { leadingTrim?: unknown }).leadingTrim;
+  if (typeof leadingTrim !== 'undefined') assignFigma('leadingTrim', leadingTrim);
+
+  const listSpacing = (style as { listSpacing?: number }).listSpacing;
+  if (isFiniteNumber(listSpacing)) assignFigma('listSpacing', listSpacing);
+
+  const hangingPunctuation = (style as { hangingPunctuation?: boolean }).hangingPunctuation;
+  if (typeof hangingPunctuation === 'boolean') assignFigma('hangingPunctuation', hangingPunctuation);
+
+  const hangingList = (style as { hangingList?: boolean }).hangingList;
+  if (typeof hangingList === 'boolean') assignFigma('hangingList', hangingList);
+
+  const textAutoResize = (style as { textAutoResize?: string }).textAutoResize;
+  if (typeof textAutoResize === 'string') assignFigma('textAutoResize', textAutoResize);
+
+  const fills = (style as { fills?: unknown }).fills;
+  if (typeof fills !== 'undefined') assignFigma('fills', fills);
+
+  const strokes = (style as { strokes?: unknown }).strokes;
+  if (typeof strokes !== 'undefined') assignFigma('strokes', strokes);
 
   // Drop undefined entries to keep payload compact.
   const cleaned: TypographyValue = {};
@@ -325,7 +432,7 @@ export function typographyValueFromTextStyle(style: TextStyle): TypographyValue 
     cleaned[key] = v;
   }
 
-  return cleaned;
+  return { value: cleaned, figma };
 }
 
 function normalizeFontVariantName(style: string | undefined): string | null {
@@ -442,13 +549,15 @@ function mapTextAlignVerticalToFigma(raw: string | undefined): FigmaTextAlignVer
 export function applyTypographyValueToTextStyle(
   style: TextStyle,
   value: TypographyValue,
-  opts?: { fontName?: FontName | null }
+  opts?: { fontName?: FontName | null; figma?: TypographyFigmaExtension | null }
 ): string[] {
   const warnings: string[] = [];
 
   if (opts && opts.fontName) {
     style.fontName = opts.fontName;
   }
+
+  const figmaExt = opts && opts.figma ? opts.figma : null;
 
   if (value.fontSize) {
     if (value.fontSize.unit === 'pixel') {
@@ -458,8 +567,21 @@ export function applyTypographyValueToTextStyle(
     }
   }
 
+  const extLineHeight = figmaExt?.lineHeight;
   style.lineHeight = { unit: 'AUTO' };
-  if (value.lineHeight) {
+  if (extLineHeight) {
+    if (extLineHeight.unit === 'AUTO') {
+      style.lineHeight = { unit: 'AUTO' };
+    } else if (
+      (extLineHeight.unit === 'PIXELS' || extLineHeight.unit === 'PERCENT') &&
+      isFiniteNumber(extLineHeight.value)
+    ) {
+      style.lineHeight = { unit: extLineHeight.unit, value: extLineHeight.value } as {
+        unit: 'PIXELS' | 'PERCENT';
+        value: number;
+      };
+    }
+  } else if (value.lineHeight) {
     if (value.lineHeight === 'auto') {
       style.lineHeight = { unit: 'AUTO' };
     } else if (value.lineHeight.unit === 'pixel') {
@@ -471,8 +593,16 @@ export function applyTypographyValueToTextStyle(
     }
   }
 
+  const extLetterSpacing = figmaExt?.letterSpacing;
   style.letterSpacing = { unit: 'PERCENT', value: 0 };
-  if (value.letterSpacing) {
+  if (extLetterSpacing) {
+    if (
+      (extLetterSpacing.unit === 'PIXELS' || extLetterSpacing.unit === 'PERCENT') &&
+      isFiniteNumber(extLetterSpacing.value)
+    ) {
+      style.letterSpacing = { unit: extLetterSpacing.unit, value: extLetterSpacing.value };
+    }
+  } else if (value.letterSpacing) {
     if (value.letterSpacing.unit === 'pixel') {
       style.letterSpacing = { unit: 'PIXELS', value: value.letterSpacing.value };
     } else if (value.letterSpacing.unit === 'percent') {
@@ -483,7 +613,9 @@ export function applyTypographyValueToTextStyle(
   }
 
   style.paragraphSpacing = 0;
-  if (value.paragraphSpacing) {
+  if (figmaExt && isFiniteNumber(figmaExt.paragraphSpacing)) {
+    style.paragraphSpacing = figmaExt.paragraphSpacing;
+  } else if (value.paragraphSpacing) {
     if (value.paragraphSpacing.unit === 'pixel') {
       style.paragraphSpacing = value.paragraphSpacing.value;
     } else {
@@ -492,7 +624,9 @@ export function applyTypographyValueToTextStyle(
   }
 
   style.paragraphIndent = 0;
-  if (value.paragraphIndent) {
+  if (figmaExt && isFiniteNumber(figmaExt.paragraphIndent)) {
+    style.paragraphIndent = figmaExt.paragraphIndent;
+  } else if (value.paragraphIndent) {
     if (value.paragraphIndent.unit === 'pixel') {
       style.paragraphIndent = value.paragraphIndent.value;
     } else {
@@ -500,49 +634,103 @@ export function applyTypographyValueToTextStyle(
     }
   }
 
-  const textCase = mapTextCaseToFigma(value.textCase);
-  if (textCase) {
-    style.textCase = textCase;
+  if (figmaExt && typeof figmaExt.textCase === 'string') {
+    try { style.textCase = figmaExt.textCase as TextCase; } catch { /* ignore */ }
   } else {
-    if (value.textCase) warnings.push(`textCase “${value.textCase}” is not recognized. Using default.`);
-    style.textCase = 'ORIGINAL';
+    const textCase = mapTextCaseToFigma(value.textCase);
+    if (textCase) {
+      style.textCase = textCase;
+    } else {
+      if (value.textCase) warnings.push(`textCase “${value.textCase}” is not recognized. Using default.`);
+      style.textCase = 'ORIGINAL';
+    }
   }
 
-  const textDecoration = mapTextDecorationToFigma(value.textDecoration);
-  if (textDecoration) {
-    style.textDecoration = textDecoration;
+  if (figmaExt && typeof figmaExt.textDecoration === 'string') {
+    try { style.textDecoration = figmaExt.textDecoration as TextDecoration; } catch { /* ignore */ }
   } else {
-    if (value.textDecoration) warnings.push(`textDecoration “${value.textDecoration}” is not recognized. Using default.`);
-    style.textDecoration = 'NONE';
+    const textDecoration = mapTextDecorationToFigma(value.textDecoration);
+    if (textDecoration) {
+      style.textDecoration = textDecoration;
+    } else {
+      if (value.textDecoration) warnings.push(`textDecoration “${value.textDecoration}” is not recognized. Using default.`);
+      style.textDecoration = 'NONE';
+    }
   }
 
   const anyStyle = style as any;
   const supportsTextAlignHorizontal = typeof anyStyle.textAlignHorizontal !== 'undefined';
-  const textAlignHorizontal = mapTextAlignHorizontalToFigma(value.textAlignHorizontal);
-  if (textAlignHorizontal) {
+  const extTextAlignHorizontal = figmaExt && typeof figmaExt.textAlignHorizontal === 'string'
+    ? (figmaExt.textAlignHorizontal as FigmaTextAlignHorizontal)
+    : null;
+  if (extTextAlignHorizontal) {
     if (supportsTextAlignHorizontal) {
-      try { anyStyle.textAlignHorizontal = textAlignHorizontal; } catch { /* ignore */ }
+      try { anyStyle.textAlignHorizontal = extTextAlignHorizontal; } catch { /* ignore */ }
     } else {
       warnings.push('textAlignHorizontal is not supported for text styles in this version of Figma.');
     }
-  } else if (value.textAlignHorizontal) {
-    warnings.push(`textAlignHorizontal “${value.textAlignHorizontal}” is not recognized. Using default.`);
-  } else if (supportsTextAlignHorizontal) {
-    try { anyStyle.textAlignHorizontal = 'LEFT'; } catch { /* ignore */ }
+  } else {
+    const textAlignHorizontal = mapTextAlignHorizontalToFigma(value.textAlignHorizontal);
+    if (textAlignHorizontal) {
+      if (supportsTextAlignHorizontal) {
+        try { anyStyle.textAlignHorizontal = textAlignHorizontal; } catch { /* ignore */ }
+      } else {
+        warnings.push('textAlignHorizontal is not supported for text styles in this version of Figma.');
+      }
+    } else if (value.textAlignHorizontal) {
+      warnings.push(`textAlignHorizontal “${value.textAlignHorizontal}” is not recognized. Using default.`);
+    } else if (supportsTextAlignHorizontal) {
+      try { anyStyle.textAlignHorizontal = 'LEFT'; } catch { /* ignore */ }
+    }
   }
 
   const supportsTextAlignVertical = typeof anyStyle.textAlignVertical !== 'undefined';
-  const textAlignVertical = mapTextAlignVerticalToFigma(value.textAlignVertical);
-  if (textAlignVertical) {
+  const extTextAlignVertical = figmaExt && typeof figmaExt.textAlignVertical === 'string'
+    ? (figmaExt.textAlignVertical as FigmaTextAlignVertical)
+    : null;
+  if (extTextAlignVertical) {
     if (supportsTextAlignVertical) {
-      try { anyStyle.textAlignVertical = textAlignVertical; } catch { /* ignore */ }
+      try { anyStyle.textAlignVertical = extTextAlignVertical; } catch { /* ignore */ }
     } else {
       warnings.push('textAlignVertical is not supported for text styles in this version of Figma.');
     }
-  } else if (value.textAlignVertical) {
-    warnings.push(`textAlignVertical “${value.textAlignVertical}” is not recognized. Using default.`);
-  } else if (supportsTextAlignVertical) {
-    try { anyStyle.textAlignVertical = 'TOP'; } catch { /* ignore */ }
+  } else {
+    const textAlignVertical = mapTextAlignVerticalToFigma(value.textAlignVertical);
+    if (textAlignVertical) {
+      if (supportsTextAlignVertical) {
+        try { anyStyle.textAlignVertical = textAlignVertical; } catch { /* ignore */ }
+      } else {
+        warnings.push('textAlignVertical is not supported for text styles in this version of Figma.');
+      }
+    } else if (value.textAlignVertical) {
+      warnings.push(`textAlignVertical “${value.textAlignVertical}” is not recognized. Using default.`);
+    } else if (supportsTextAlignVertical) {
+      try { anyStyle.textAlignVertical = 'TOP'; } catch { /* ignore */ }
+    }
+  }
+
+  if (figmaExt) {
+    if (isFiniteNumber(figmaExt.listSpacing) && typeof anyStyle.listSpacing !== 'undefined') {
+      try { anyStyle.listSpacing = figmaExt.listSpacing; } catch { /* ignore */ }
+    }
+    if (typeof figmaExt.hangingPunctuation === 'boolean' && typeof anyStyle.hangingPunctuation !== 'undefined') {
+      try { anyStyle.hangingPunctuation = figmaExt.hangingPunctuation; } catch { /* ignore */ }
+    }
+    if (typeof figmaExt.hangingList === 'boolean' && typeof anyStyle.hangingList !== 'undefined') {
+      try { anyStyle.hangingList = figmaExt.hangingList; } catch { /* ignore */ }
+    }
+    if (typeof figmaExt.leadingTrim !== 'undefined' && typeof anyStyle.leadingTrim !== 'undefined') {
+      try { anyStyle.leadingTrim = figmaExt.leadingTrim; } catch { /* ignore */ }
+    }
+    if (typeof figmaExt.textAutoResize === 'string' && typeof anyStyle.textAutoResize !== 'undefined') {
+      try { anyStyle.textAutoResize = figmaExt.textAutoResize; } catch { /* ignore */ }
+    }
+    if (typeof figmaExt.fills !== 'undefined' && typeof anyStyle.fills !== 'undefined') {
+      try { anyStyle.fills = figmaExt.fills; } catch { /* ignore */ }
+    }
+    if (typeof figmaExt.strokes !== 'undefined' && typeof anyStyle.strokes !== 'undefined') {
+      try { anyStyle.strokes = figmaExt.strokes; } catch { /* ignore */ }
+    }
   }
 
   return warnings;
