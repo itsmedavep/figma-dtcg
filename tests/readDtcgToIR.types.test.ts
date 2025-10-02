@@ -130,7 +130,7 @@ const typographyRoot = {
           fontFamily: 'Inter',
           fontWeight: 'Regular',
           fontSize: { value: 16, unit: 'px' },
-          lineHeight: { value: 24, unit: 'px' },
+          lineHeight: 1.5,
           letterSpacing: { value: 0, unit: 'px' },
           textCase: 'none',
           textDecoration: 'none'

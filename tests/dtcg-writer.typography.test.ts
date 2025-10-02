@@ -53,4 +53,46 @@ const expected = {
 
 assertDeepEqual(result, expected, 'serialize should emit typography payloads');
 
-console.log('dtcg-writer typography serialization test passed');
+const percentGraph: TokenGraph = {
+  tokens: [
+    {
+      path: ['typography', 'Display', 'Tight'],
+      type: 'typography',
+      byContext: {
+        'typography/Mode 1': {
+          kind: 'typography',
+          value: {
+            fontFamily: 'Inter',
+            fontWeight: 'Bold',
+            fontSize: { value: 20, unit: 'pixel' },
+            letterSpacing: { value: -5, unit: 'percent' },
+            lineHeight: { value: 150, unit: 'percent' },
+          },
+        },
+      },
+    },
+  ],
+};
+
+const percentResult = serialize(percentGraph).json;
+
+const percentExpected = {
+  typography: {
+    Display: {
+      Tight: {
+        $type: 'typography',
+        $value: {
+          fontFamily: 'Inter',
+          fontWeight: 'Bold',
+          fontSize: { value: 20, unit: 'px' },
+          letterSpacing: { value: -1, unit: 'px' },
+          lineHeight: 1.5,
+        },
+      },
+    },
+  },
+};
+
+assertDeepEqual(percentResult, percentExpected, 'serialize should normalize percentage letter-spacing and line-height');
+
+console.log('dtcg-writer typography serialization tests passed');
