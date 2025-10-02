@@ -10,7 +10,7 @@ import { readFigmaToIR } from '../adapters/figma-reader';
 import { writeIRToFigma } from '../adapters/figma-writer';
 import type { TokenGraph, TokenNode, ValueOrAlias } from './ir';
 
-export interface ExportOpts { format: 'single' | 'perMode' }
+export interface ExportOpts { format: 'single' | 'perMode' | 'typography' }
 export interface ExportResult { files: Array<{ name: string; json: unknown }> }
 
 export interface ImportSummary {
@@ -18,6 +18,8 @@ export interface ImportSummary {
   totalTokens: number;
   /** Tokens that remained after applying the selected contexts. */
   importedTokens: number;
+  /** Total number of Figma styles created while applying the import. */
+  createdStyles: number;
   /** Every context discovered in the incoming file (Collection/Mode). */
   availableContexts: string[];
   /** Contexts actually written to the document after filtering. */
@@ -239,6 +241,7 @@ function filterGraphByContexts(graph: TokenGraph, requested: string[]): { graph:
     summary: {
       totalTokens: graph.tokens.length,
       importedTokens: filteredTokens.length,
+      createdStyles: 0,
       availableContexts: available.slice().sort(),
       appliedContexts: appliedList,
       skippedContexts: skippedList,
@@ -262,7 +265,8 @@ export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<
   // that shipped before the cleanup.
   const desired = normalize(readDtcgToIR(json, { allowHexStrings: !!opts.allowHexStrings }));
   const filtered = filterGraphByContexts(desired, opts.contexts || []);
-  await writeIRToFigma(filtered.graph);
+  const writeResult = await writeIRToFigma(filtered.graph);
+  filtered.summary.createdStyles = writeResult.createdTextStyles;
   return filtered.summary;
 }
 
@@ -270,6 +274,36 @@ export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<
 export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
   var current = await readFigmaToIR();
   var graph = normalize(current);
+
+  if (opts.format === 'typography') {
+    var typographyTokens: TokenNode[] = [];
+    for (var ti = 0; ti < graph.tokens.length; ti++) {
+      var tok = graph.tokens[ti];
+      if (tok.type === 'typography') {
+        var cloneTypo: TokenNode = {
+          path: tok.path.slice(),
+          type: tok.type,
+          byContext: {} as { [ctx: string]: ValueOrAlias }
+        };
+        var ctxKeys = keysOf(tok.byContext);
+        for (var ci = 0; ci < ctxKeys.length; ci++) {
+          var ctx = ctxKeys[ci];
+          cloneTypo.byContext[ctx] = tok.byContext[ctx];
+        }
+        if (typeof tok.description !== 'undefined') cloneTypo.description = tok.description;
+        if (typeof tok.extensions !== 'undefined') cloneTypo.extensions = tok.extensions;
+        typographyTokens.push(cloneTypo);
+      }
+    }
+
+    var typographyGraph: TokenGraph = { tokens: typographyTokens };
+    var typographySerialized = serialize(typographyGraph);
+    var typographyJson = typographySerialized.json;
+    if (!typographyTokens.length) {
+      typographyJson = {};
+    }
+    return { files: [{ name: 'typography.json', json: typographyJson }] };
+  }
 
   if (opts.format === 'single') {
     // One file with whatever contexts exist; writer will emit the first available per token.

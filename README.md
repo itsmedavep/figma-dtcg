@@ -47,6 +47,7 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 - Color normalization supports hex, RGB, and other DTCG-compliant formats. Enable the **Allow hex strings** toggle to keep raw hex values when downstream tooling requires them.
 - Partial imports surface validation warnings yet still populate the intermediate graph so you can iterate in Figma before running a full sync.
 - Exports normalize token paths and ordering to keep version-control diffs minimal when committing back to source control.
+- Typography exports live outside variable collections. Use the **Export typography.json** action to save every local text style as DTCG typography tokens, even when the document has no variables.
 
 ## Token Support & Limitations
 - `$type` values for color, number, string, and boolean are fully supported for round-tripping between Figma and DTCG.

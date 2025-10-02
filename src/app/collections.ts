@@ -75,6 +75,19 @@ export async function snapshotCollectionsForUi(): Promise<{
     rawLines.push('Create one in the Variables panel, then press Refresh.');
   }
 
+  if (typeof figma.getLocalTextStyles === 'function') {
+    const textStyles = figma.getLocalTextStyles();
+    rawLines.push('');
+    rawLines.push('Text styles: ' + String(textStyles.length));
+    for (let si = 0; si < textStyles.length; si++) {
+      const style = textStyles[si];
+      rawLines.push('  - ' + style.name);
+    }
+    if (textStyles.length === 0) {
+      rawLines.push('  (No local text styles found.)');
+    }
+  }
+
   return { collections: out, rawText: rawLines.join('\n') };
 }
 

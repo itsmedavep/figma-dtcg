@@ -120,4 +120,33 @@ assertCondition(
 );
 console.warn = originalWarn3;
 
+// Typography tokens should import with structured values.
+const typographyRoot = {
+  typography: {
+    Body: {
+      Regular: {
+        $type: 'typography',
+        $value: {
+          fontFamily: 'Inter',
+          fontWeight: 'Regular',
+          fontSize: { value: 16, unit: 'pixel' },
+          lineHeight: { value: 24, unit: 'pixel' },
+          letterSpacing: { value: 0, unit: 'pixel' },
+          textCase: 'none',
+          textDecoration: 'none'
+        }
+      }
+    }
+  }
+};
+
+const typographyResult = readDtcgToIR(typographyRoot);
+assertEqual(typographyResult.tokens.length, 1, 'Typography token should import');
+const typographyToken = typographyResult.tokens[0];
+assertEqual(typographyToken.type, 'typography', 'Typography token retains type');
+const ctxVal = typographyToken.byContext['typography/Mode 1'];
+assertCondition(!!ctxVal, 'Typography context should exist');
+assertEqual((ctxVal as any).kind, 'typography', 'Typography context stores structured value');
+assertEqual((ctxVal as any).value.fontFamily, 'Inter', 'Typography value preserves font family');
+
 console.log('readDtcgToIR primitive type and alias resolution tests passed');

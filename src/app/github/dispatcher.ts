@@ -248,7 +248,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           else deps.send({ type: 'ERROR', payload: { message: folderResult.message } });
         }
         if (typeof msg.payload.commitMessage === 'string') update.commitMessage = msg.payload.commitMessage;
-        if (msg.payload.scope === 'all' || msg.payload.scope === 'selected') update.scope = msg.payload.scope;
+        if (msg.payload.scope === 'all' || msg.payload.scope === 'selected' || msg.payload.scope === 'typography') {
+          update.scope = msg.payload.scope;
+        }
         if (typeof msg.payload.collection === 'string') update.collection = msg.payload.collection;
         if (typeof msg.payload.mode === 'string') update.mode = msg.payload.mode;
         if (typeof msg.payload.createPr === 'boolean') update.createPr = msg.payload.createPr;
@@ -444,7 +446,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
       }
 
       case 'GITHUB_EXPORT_FILES': {
-        const scope: GithubScope = msg.payload.scope === 'all' ? 'all' : 'selected';
+        const scope: GithubScope = msg.payload.scope === 'all'
+          ? 'all'
+          : (msg.payload.scope === 'typography' ? 'typography' : 'selected');
         const collection = String(msg.payload.collection || '');
         const mode = String(msg.payload.mode || '');
 
@@ -452,6 +456,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           if (scope === 'all') {
             const all = await deps.exportDtcg({ format: 'single' });
             deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: all.files } });
+          } else if (scope === 'typography') {
+            const typo = await deps.exportDtcg({ format: 'typography' });
+            deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: typo.files } });
           } else {
             if (!collection || !mode) {
               deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: [] } });
@@ -491,7 +498,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const baseBranch = String(msg.payload.branch || '');
         const folderRaw = typeof msg.payload.folder === 'string' ? msg.payload.folder : '';
         const commitMessage = (String(msg.payload.commitMessage || '') || 'Update tokens from Figma').trim();
-        const scope: GithubScope = msg.payload.scope === 'all' ? 'all' : 'selected';
+        const scope: GithubScope = msg.payload.scope === 'all'
+          ? 'all'
+          : (msg.payload.scope === 'typography' ? 'typography' : 'selected');
         const collection = String(msg.payload.collection || '');
         const mode = String(msg.payload.mode || '');
         const createPr = !!msg.payload.createPr;
@@ -548,6 +557,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           if (scope === 'all') {
             const all = await deps.exportDtcg({ format: 'single' });
             for (const f of all.files) files.push({ name: f.name, json: f.json });
+          } else if (scope === 'typography') {
+            const typo = await deps.exportDtcg({ format: 'typography' });
+            for (const f of typo.files) files.push({ name: f.name, json: f.json });
           } else {
             if (!collection || !mode) {
               deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Pick a collection and a mode.' } });
@@ -582,7 +594,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           const exportLooksEmpty = files.length === 0 || files.every(f => isPlainEmptyObject(f.json));
 
           if (exportLooksEmpty) {
-            if (scope === 'selected') {
+            if (scope === 'typography') {
+              deps.send({ type: 'INFO', payload: { message: 'GitHub export warning: typography.json is empty (no local text styles).' } });
+            } else if (scope === 'selected') {
               const diag = await deps.analyzeSelectionState(collection, mode);
               const tail = diag.ok
                 ? `Found ${diag.variableCount} variable(s) in "${collection}", but ${diag.variablesWithValues ?? 0} with a value in "${mode}".`
@@ -591,7 +605,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             } else {
               deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 412, message: 'Export produced an empty tokens file. Ensure this file contains local Variables with values.' } });
             }
-            return true;
+            if (scope !== 'typography') return true;
           }
 
           const prettyExportName = (original: string | undefined | null): string => {
