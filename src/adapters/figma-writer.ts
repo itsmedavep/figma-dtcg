@@ -464,6 +464,39 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
         style = figma.createTextStyle();
         createdStyle = true;
       }
+      const { fontName, usedFallback } = typographyFontNameFromValue(typographyValue);
+      let appliedFont: FontName | null = null;
+      let skipToken = false;
+      const tokenPath = token.path.join('/');
+      if (fontName) {
+        const key = fontName.family + ':::' + fontName.style;
+        if (!loadedFonts.has(key)) {
+          try {
+            await figma.loadFontAsync(fontName);
+            loadedFonts.add(key);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logWarn(`Skipped typography token “${tokenPath}” — failed to load font “${fontName.family} ${fontName.style}”. ${msg}`);
+            skipToken = true;
+          }
+        }
+        if (!skipToken && loadedFonts.has(key)) {
+          appliedFont = fontName;
+          if (usedFallback) {
+            logInfo(`Typography token “${token.path.join('/')}” is missing a font style. Defaulted to “${fontName.style}”.`);
+          }
+        }
+      } else {
+        logWarn(`Skipped typography token “${tokenPath}” — typography token is missing fontFamily.`);
+        skipToken = true;
+      }
+
+      if (skipToken || !appliedFont) {
+        if (createdStyle) {
+          try { style.remove(); } catch { /* ignore */ }
+        }
+        continue;
+      }
 
       const prevName = style.name;
       if (style.name !== styleName) {
@@ -475,35 +508,12 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
       }
       stylesByName.set(styleName, style);
 
-      if (createdStyle) {
-        createdTextStyles++;
-      }
-
       if (typeof token.description === 'string' && token.description.trim().length > 0 && style.description !== token.description) {
         try { style.description = token.description; } catch { /* ignore */ }
       }
 
-      const { fontName, usedFallback } = typographyFontNameFromValue(typographyValue);
-      let appliedFont: FontName | null = null;
-      if (fontName) {
-        const key = fontName.family + ':::' + fontName.style;
-        if (!loadedFonts.has(key)) {
-          try {
-            await figma.loadFontAsync(fontName);
-            loadedFonts.add(key);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            logWarn(`Failed to load font “${fontName.family} ${fontName.style}” for text style “${styleName}”. ${msg}`);
-          }
-        }
-        if (loadedFonts.has(key)) {
-          appliedFont = fontName;
-          if (usedFallback) {
-            logInfo(`Typography token “${token.path.join('/')}” is missing a font style. Defaulted to “${fontName.style}”.`);
-          }
-        }
-      } else {
-        logWarn(`Skipped setting font for text style “${styleName}” — typography token is missing fontFamily.`);
+      if (createdStyle) {
+        createdTextStyles++;
       }
 
       const warnings = applyTypographyValueToTextStyle(style, typographyValue, { fontName: appliedFont });
