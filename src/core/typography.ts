@@ -118,6 +118,7 @@ function parsePixelDimension(raw: unknown): DimensionValue | null {
   return null;
 }
 
+// Parse a JSON-friendly payload into the normalized typography value shape expected by the pipeline.
 export function parseTypographyValue(raw: unknown): TypographyValue | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
@@ -244,6 +245,7 @@ function normalizeLineHeightForSerialization(
   return undefined;
 }
 
+// Convert a normalized typography value into a DTCG-compliant fragment for export.
 export function serializeTypographyValue(value: TypographyValue): Record<string, unknown> {
   const out: Record<string, unknown> = {};
 
@@ -313,6 +315,7 @@ function inferFontStyle(style: string | undefined): string | undefined {
   return 'normal';
 }
 
+// Read a Figma text style and produce the token value plus the Figma-specific extension metadata.
 export function typographyValueFromTextStyle(style: TextStyle): TypographyFromTextStyleResult {
   const value: TypographyValue = {};
   const figma: TypographyFigmaExtension = {};
@@ -546,6 +549,7 @@ function mapTextAlignVerticalToFigma(raw: string | undefined): FigmaTextAlignVer
   return TEXT_ALIGN_VERTICAL_REVERSE_MAP[key] || null;
 }
 
+// Apply a typography token to a Figma text style, returning warnings when values require manual follow-up.
 export function applyTypographyValueToTextStyle(
   style: TextStyle,
   value: TypographyValue,

@@ -255,6 +255,7 @@ function filterGraphByContexts(graph: TokenGraph, requested: string[]): { graph:
 
 // ---------- API ----------
 
+// Read a DTCG payload, normalize it, and write the resulting graph into the current document.
 export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<ImportSummary> {
   // Build desired graph from DTCG, then write directly to Figma.
   // We previously shipped an unused "plan" module that tried to diff the desired
@@ -271,6 +272,7 @@ export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<
 }
 
 
+// Pull the latest graph from Figma and emit files in the format requested by the UI (single/per-mode/typography).
 export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
   var current = await readFigmaToIR();
   var graph = normalize(current);
