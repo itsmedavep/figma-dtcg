@@ -33,9 +33,9 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 
 ## Loading the Plugin in Figma
 1. **Build first.** Ensure `npm run build` (or the `watch` task) has produced the `dist/main.js` and `dist/ui.html` files that the bundled `manifest.json` references.
-2. **Add as a development plugin.** In the Figma desktop app, open **Resources → Plugins → Development → Import plugin from manifest…** and select this repository’s `manifest.json`.
+2. **Add as a development plugin.** In the Figma desktop app, right click in an open area of the doc then go to **Right click in document → Plugins → Development → Import plugin from manifest…** and select this repository’s `manifest.json`.
 3. **Keep the folder synced.** Leave the manifest pointing at this working directory so every rebuild is immediately reflected when you relaunch the plugin.
-4. **Share with testers.** Testers can repeat the same import-from-manifest flow against a local clone or zipped copy of the repository. After importing, they can run the plugin from **Resources → Plugins → Development**, even without Node.js installed.
+4. **Share with testers.** Testers can repeat the same import-from-manifest flow against a local clone or zipped copy of the repository. After importing, they can run the plugin from **Right click in document → Plugins → Development**, even without Node.js installed.
 5. **Network permissions.** The manifest enables GitHub network access; review the allowed domains if your organization applies additional sandbox restrictions.
 
 ## Typography Style Functionality
