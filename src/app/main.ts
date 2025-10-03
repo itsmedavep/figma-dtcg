@@ -44,6 +44,7 @@ const github = createGithubDispatcher({
 type MessageOfType<T extends UiToPlugin['type']> = Extract<UiToPlugin, { type: T }>;
 type Handler = (msg: UiToPlugin) => Promise<void> | void;
 
+// Prime the UI with cached state and fresh collections so the iframe can render immediately.
 async function handleUiReady(_msg: UiToPlugin): Promise<void> {
   const snap = await snapshotCollectionsForUi();
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
@@ -59,6 +60,7 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
   await github.onUiReady();
 }
 
+// Refresh the collection snapshot on demand, mirroring the bootstrap payload.
 async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
   const snapshot = await snapshotCollectionsForUi();
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
@@ -72,6 +74,7 @@ async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snapshot.rawText } });
 }
 
+// Apply an uploaded DTCG payload to the document and broadcast the resulting summary back to the UI.
 async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'IMPORT_DTCG'>).payload;
   const contexts = Array.isArray(payload.contexts) ? payload.contexts.map(c => String(c)) : [];
@@ -105,6 +108,7 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
 }
 
+// Export tokens either per mode or as a single bundle, matching the UI's requested scope.
 async function handleExportDtcg(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'EXPORT_DTCG'>).payload;
   const exportAll = !!payload.exportAll;
@@ -142,6 +146,7 @@ async function handleExportDtcg(msg: UiToPlugin): Promise<void> {
   send({ type: 'EXPORT_RESULT', payload: { files: filesToSend } });
 }
 
+// Convert local text styles into typography tokens and surface the preview payload to the UI.
 async function handleExportTypography(_msg: UiToPlugin): Promise<void> {
   const result = await exportDtcg({ format: 'typography' });
   send({ type: 'EXPORT_RESULT', payload: { files: result.files } });
@@ -151,6 +156,7 @@ async function handleExportTypography(_msg: UiToPlugin): Promise<void> {
   }
 }
 
+// Persist the last selected collection/mode pair so the UI can restore the user's focus.
 async function handleSaveLast(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'SAVE_LAST'>).payload;
   if (typeof payload.collection === 'string' && typeof payload.mode === 'string') {
@@ -158,11 +164,13 @@ async function handleSaveLast(msg: UiToPlugin): Promise<void> {
   }
 }
 
+// Store persistent export preferences (currently the "export all" toggle).
 async function handleSavePrefs(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'SAVE_PREFS'>).payload;
   await figma.clientStorage.setAsync('exportAllPref', !!payload.exportAll);
 }
 
+// Remember the iframe size so subsequent launches reopen with the user's preferred bounds.
 async function handleUiResize(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'UI_RESIZE'>).payload;
   const w = Math.max(720, Math.min(1600, Math.floor(payload.width)));
@@ -171,6 +179,7 @@ async function handleUiResize(msg: UiToPlugin): Promise<void> {
   try { await figma.clientStorage.setAsync('uiSize', { width: w, height: h }); } catch { }
 }
 
+// Respond to preview requests by exporting the closest match and pushing it to the W3C preview pane.
 async function handlePreviewRequest(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'PREVIEW_REQUEST'>).payload;
   const collectionName = payload.collection ? String(payload.collection) : '';

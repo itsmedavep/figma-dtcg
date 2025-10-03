@@ -26,14 +26,22 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 
 ## Quickstart
 1. **Install prerequisites.** Use a recent Node.js LTS release (v18+) so esbuild and the TypeScript configuration behave consistently.
-2. **Install dependencies.** Run `npm install` to fetch plugin, build, and test dependencies.
-3. **Build the plugin.** Execute `npm run build` for a one-off compile or `npm run watch` to continuously rebuild during development.
-4. **Check types.** Run `npm run typecheck` before loading the plugin to confirm the core project is type-safe.
+2. **Review the Figma Plugin Quickstart.** The official guide at <https://developers.figma.com/docs/plugins/plugin-quickstart-guide/> outlines the broader environment setup and how Figma expects development plugins to be structured.
+3. **Install dependencies.** Run `npm install` to fetch plugin, build, and test dependencies.
+4. **Build the plugin.** Execute `npm run build` for a one-off compile or `npm run watch` to continuously rebuild during development. While `npm run watch` is active you can keep the Figma desktop app pointed at the same folder and see updates after each rebuild.
+5. **Check types.** Run `npm run typecheck` before loading the plugin to confirm the core project is type-safe.
 
 ## Loading the Plugin in Figma
-- Builds emit `dist/main.js` and `dist/ui.html`, which are referenced by the bundled `manifest.json`.
-- Register the repository directory as a development plugin in Figma so the manifest continues to point at the compiled `dist/` artifacts.
-- The manifest enables GitHub network access; review the allowed domains if your organization applies additional sandbox restrictions.
+1. **Build first.** Ensure `npm run build` (or the `watch` task) has produced the `dist/main.js` and `dist/ui.html` files that the bundled `manifest.json` references.
+2. **Add as a development plugin.** In the Figma desktop app, open **Resources → Plugins → Development → Import plugin from manifest…** and select this repository’s `manifest.json`.
+3. **Keep the folder synced.** Leave the manifest pointing at this working directory so every rebuild is immediately reflected when you relaunch the plugin.
+4. **Share with testers.** Testers can repeat the same import-from-manifest flow against a local clone or zipped copy of the repository. After importing, they can run the plugin from **Resources → Plugins → Development**, even without Node.js installed.
+5. **Network permissions.** The manifest enables GitHub network access; review the allowed domains if your organization applies additional sandbox restrictions.
+
+## Typography Style Functionality
+- **Export typography tokens.** Use the **Export typography.json** action to capture every local text style, even when no variables exist. The export leverages `src/core/typography.ts` to normalize units, retain `$extensions`, and emit a DTCG-compliant payload.
+- **Preview typography data.** When the plugin exports typography tokens it also streams the first file back to the UI so reviewers can inspect the generated JSON without leaving Figma.
+- **Round-trip support.** Imported typography tokens map back onto Figma text styles, honoring preserved metadata and surfacing warnings whenever unsupported units need manual intervention.
 
 ## GitHub Integration Guide
 - Generate a personal access token (PAT) with `repo` scope so the plugin can list repositories, enumerate branches, and write commits or pull requests.
@@ -47,7 +55,6 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 - Color normalization supports hex, RGB, and other DTCG-compliant formats. Enable the **Allow hex strings** toggle to keep raw hex values when downstream tooling requires them.
 - Partial imports surface validation warnings yet still populate the intermediate graph so you can iterate in Figma before running a full sync.
 - Exports normalize token paths and ordering to keep version-control diffs minimal when committing back to source control.
-- Typography exports live outside variable collections. Use the **Export typography.json** action to save every local text style as DTCG typography tokens, even when the document has no variables.
 
 ## Token Support & Limitations
 - `$type` values for color, number, string, and boolean are fully supported for round-tripping between Figma and DTCG.
