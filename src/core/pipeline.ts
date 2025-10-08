@@ -350,10 +350,47 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
     var out = serialize(filtered);
 
-    // ctx format is "Collection/Mode"
-    var slash = ctx.indexOf('/');
-    var collection = slash >= 0 ? ctx.substring(0, slash) : ctx;
-    var mode = slash >= 0 ? ctx.substring(slash + 1) : 'default';
+    // Try to recover the original collection/mode names from per-context metadata so
+    // we don't lose slashes or other punctuation that appears in the collection name.
+    var collection = ctx;
+    var mode = 'default';
+
+    var haveCollection = false;
+    var haveMode = false;
+    for (ii = 0; ii < filtered.tokens.length && (!haveCollection || !haveMode); ii++) {
+      var tok = filtered.tokens[ii];
+      if (!tok || !tok.extensions) continue;
+
+      var figmaExt = (tok.extensions as { [k: string]: unknown })['com.figma'] as
+        | { perContext?: { [ctx: string]: { collectionName?: string; modeName?: string } } }
+        | undefined;
+      if (!figmaExt || typeof figmaExt !== 'object') continue;
+
+      var perCtx = figmaExt.perContext;
+      if (!perCtx || typeof perCtx !== 'object') continue;
+
+      var ctxMeta = perCtx[ctx];
+      if (!ctxMeta || typeof ctxMeta !== 'object') continue;
+
+      var ctxCollection = (ctxMeta as { collectionName?: unknown }).collectionName;
+      var ctxMode = (ctxMeta as { modeName?: unknown }).modeName;
+
+      if (typeof ctxCollection === 'string' && !haveCollection) {
+        collection = ctxCollection;
+        haveCollection = true;
+      }
+      if (typeof ctxMode === 'string' && !haveMode) {
+        mode = ctxMode;
+        haveMode = true;
+      }
+    }
+
+    if (!haveCollection || !haveMode) {
+      // ctx format falls back to "Collection/Mode"
+      var slash = ctx.lastIndexOf('/');
+      collection = slash >= 0 ? ctx.substring(0, slash) : ctx;
+      mode = slash >= 0 ? ctx.substring(slash + 1) : 'default';
+    }
 
     var fname = sanitizeForFile(collection) + '_mode=' + sanitizeForFile(mode) + '.tokens.json';
     files.push({ name: fname, json: out.json });

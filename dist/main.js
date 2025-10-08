@@ -2569,9 +2569,35 @@
       }
       if (filtered.tokens.length === 0) continue;
       var out = serialize(filtered);
-      var slash = ctx.indexOf("/");
-      var collection = slash >= 0 ? ctx.substring(0, slash) : ctx;
-      var mode = slash >= 0 ? ctx.substring(slash + 1) : "default";
+      var collection = ctx;
+      var mode = "default";
+      var haveCollection = false;
+      var haveMode = false;
+      for (ii = 0; ii < filtered.tokens.length && (!haveCollection || !haveMode); ii++) {
+        var tok = filtered.tokens[ii];
+        if (!tok || !tok.extensions) continue;
+        var figmaExt = tok.extensions["com.figma"];
+        if (!figmaExt || typeof figmaExt !== "object") continue;
+        var perCtx = figmaExt.perContext;
+        if (!perCtx || typeof perCtx !== "object") continue;
+        var ctxMeta = perCtx[ctx];
+        if (!ctxMeta || typeof ctxMeta !== "object") continue;
+        var ctxCollection = ctxMeta.collectionName;
+        var ctxMode = ctxMeta.modeName;
+        if (typeof ctxCollection === "string" && !haveCollection) {
+          collection = ctxCollection;
+          haveCollection = true;
+        }
+        if (typeof ctxMode === "string" && !haveMode) {
+          mode = ctxMode;
+          haveMode = true;
+        }
+      }
+      if (!haveCollection || !haveMode) {
+        var slash = ctx.lastIndexOf("/");
+        collection = slash >= 0 ? ctx.substring(0, slash) : ctx;
+        mode = slash >= 0 ? ctx.substring(slash + 1) : "default";
+      }
       var fname = sanitizeForFile(collection) + "_mode=" + sanitizeForFile(mode) + ".tokens.json";
       files.push({ name: fname, json: out.json });
     }
