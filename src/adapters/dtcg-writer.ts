@@ -6,6 +6,7 @@
 import { type TokenGraph, type TokenNode, type ValueOrAlias } from '../core/ir';
 import { slugSegment } from '../core/normalize';
 import { serializeTypographyValue } from '../core/typography';
+import { colorValueToHexString } from '../core/color';
 
 // ---------- tiny utils (lookup-only; never used for emission) ----------
 /** Join path segments with '.' for alias lookups. */
@@ -86,18 +87,18 @@ function buildDisplayNameIndex(graph: TokenGraph): Map<string, DisplayNames> {
 }
 
 export interface SerializeResult { json: unknown; }
-export interface ExportOpts { /* reserved */ }
+export interface SerializeOptions { styleDictionary?: boolean; flatTokens?: boolean; }
 
 /**
  * Walk the token graph and emit grouped DTCG JSON.
  * Keeps all grouping logic deterministic so repeated exports diff cleanly.
  */
-export function serialize(graph: TokenGraph, _opts?: ExportOpts): SerializeResult {
+export function serialize(graph: TokenGraph, opts?: SerializeOptions): SerializeResult {
   const root: { [k: string]: unknown } = {};
   const displayIndex = buildDisplayNameIndex(graph);
 
   for (const t of graph.tokens) {
-    writeTokenInto(root, t, displayIndex);
+    writeTokenInto(root, t, displayIndex, opts);
   }
 
   return { json: root };
@@ -109,7 +110,8 @@ export function serialize(graph: TokenGraph, _opts?: ExportOpts): SerializeResul
 function writeTokenInto(
   root: { [k: string]: unknown },
   t: TokenNode,
-  displayIndex: Map<string, DisplayNames>
+  displayIndex: Map<string, DisplayNames>,
+  opts?: SerializeOptions
 ): void {
   // DTCG has no modes; pick one context just to serialize value/ids
   const ctxKeys = keysOf(t.byContext);
@@ -126,8 +128,13 @@ function writeTokenInto(
   const variableSegs = path.slice(1); // ["group1","baseVar"] etc.
 
   // Groups are the collection + parent segments; the JSON leaf key is ALWAYS the last segment.
-  let groupSegments = [collectionSeg, ...variableSegs.slice(0, -1)];
-  const leaf = variableSegs.length ? variableSegs[variableSegs.length - 1] : (path[path.length - 1] ?? 'token');
+  const useFlat = !!(opts && opts.flatTokens);
+  const groupSegments = useFlat
+    ? variableSegs.slice(0, -1)
+    : [collectionSeg, ...variableSegs.slice(0, -1)];
+  const leaf = variableSegs.length
+    ? variableSegs[variableSegs.length - 1]
+    : (path[path.length - 1] ?? 'token');
 
   // Preserve the exact group hierarchy; do not strip user-authored segments
   // like "Collection 2" that participate in canonical alias paths (§5.1).
@@ -188,13 +195,17 @@ function writeTokenInto(
 
       case 'color': {
         const cv = chosen.value;
-        const out: { [k: string]: unknown } = {
-          colorSpace: cv.colorSpace,
-          components: [cv.components[0], cv.components[1], cv.components[2]],
-        };
-        if (typeof cv.alpha === 'number') out['alpha'] = cv.alpha;
-        if (typeof cv.hex === 'string') out['hex'] = cv.hex;
-        tokenObj['$value'] = out;
+        if (opts && opts.styleDictionary) {
+          tokenObj['$value'] = colorValueToHexString(cv);
+        } else {
+          const out: { [k: string]: unknown } = {
+            colorSpace: cv.colorSpace,
+            components: [cv.components[0], cv.components[1], cv.components[2]],
+          };
+          if (typeof cv.alpha === 'number') out['alpha'] = cv.alpha;
+          if (typeof cv.hex === 'string') out['hex'] = cv.hex;
+          tokenObj['$value'] = out;
+        }
         break;
       }
 

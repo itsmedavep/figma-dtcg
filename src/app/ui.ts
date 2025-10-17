@@ -35,6 +35,8 @@ let copyW3cBtn: HTMLButtonElement | null = null;
 let copyLogBtn: HTMLButtonElement | null = null;
 
 let allowHexChk: HTMLInputElement | null = null;
+let styleDictionaryChk: HTMLInputElement | null = null;
+let flatTokensChk: HTMLInputElement | null = null;
 
 let importScopeOverlay: HTMLElement | null = null;
 let importScopeBody: HTMLElement | null = null;
@@ -806,6 +808,8 @@ const githubUi = createGithubUi({
   getCollectionSelect: () => collectionSelect,
   getModeSelect: () => modeSelect,
   getAllowHexCheckbox: () => allowHexChk,
+  getStyleDictionaryCheckbox: () => styleDictionaryChk,
+  getFlatTokensCheckbox: () => flatTokensChk,
   getImportContexts: () => getPreferredImportContexts()
 });
 
@@ -936,7 +940,12 @@ function requestPreviewForCurrent(): void {
     if (w3cPreviewEl) w3cPreviewEl.textContent = '{ /* select a collection & mode to preview */ }';
     return;
   }
-  postToPlugin({ type: 'PREVIEW_REQUEST', payload: { collection, mode } });
+  const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
+  const flatTokens = !!(flatTokensChk && flatTokensChk.checked);
+  postToPlugin({
+    type: 'PREVIEW_REQUEST',
+    payload: { collection, mode, styleDictionary, flatTokens }
+  });
 }
 
 /* -------------------------------------------------------
@@ -1037,6 +1046,12 @@ window.addEventListener('message', async (event: MessageEvent) => {
   if (msg.type === 'COLLECTIONS_DATA') {
     populateCollections({ collections: msg.payload.collections });
     if (exportAllChk) exportAllChk.checked = !!msg.payload.exportAllPref;
+    if (styleDictionaryChk && typeof msg.payload.styleDictionaryPref === 'boolean') {
+      styleDictionaryChk.checked = !!msg.payload.styleDictionaryPref;
+    }
+    if (flatTokensChk && typeof msg.payload.flatTokensPref === 'boolean') {
+      flatTokensChk.checked = !!msg.payload.flatTokensPref;
+    }
     const last = (msg.payload as any).last as { collection: string; mode: string } | null;
     applyLastSelection(last);
     setDisabledStates();
@@ -1084,6 +1099,8 @@ document.addEventListener('DOMContentLoaded', () => {
   copyLogBtn = document.getElementById('copyLogBtn') as HTMLButtonElement | null;
 
   allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
+  styleDictionaryChk = document.getElementById('styleDictionaryChk') as HTMLInputElement | null;
+  flatTokensChk = document.getElementById('flatTokensChk') as HTMLInputElement | null;
 
   importScopeOverlay = document.getElementById('importScopeOverlay');
   importScopeBody = document.getElementById('importScopeBody');
@@ -1167,6 +1184,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (styleDictionaryChk) {
+    styleDictionaryChk.addEventListener('change', () => {
+      postToPlugin({ type: 'SAVE_PREFS', payload: { styleDictionary: !!styleDictionaryChk!.checked } });
+      requestPreviewForCurrent();
+      githubUi.onSelectionChange();
+    });
+  }
+
+  if (flatTokensChk) {
+    flatTokensChk.addEventListener('change', () => {
+      postToPlugin({ type: 'SAVE_PREFS', payload: { flatTokens: !!flatTokensChk!.checked } });
+      requestPreviewForCurrent();
+      githubUi.onSelectionChange();
+    });
+  }
+
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       postToPlugin({ type: 'FETCH_COLLECTIONS' });
@@ -1201,7 +1234,16 @@ document.addEventListener('DOMContentLoaded', () => {
       let exportAll = false;
       if (exportAllChk) exportAll = !!exportAllChk.checked;
 
-      const payload: { exportAll: boolean; collection?: string; mode?: string } = { exportAll };
+      const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
+      const flatTokens = !!(flatTokensChk && flatTokensChk.checked);
+
+      const payload: {
+        exportAll: boolean;
+        collection?: string;
+        mode?: string;
+        styleDictionary?: boolean;
+        flatTokens?: boolean;
+      } = { exportAll, styleDictionary, flatTokens };
       if (!exportAll && collectionSelect && modeSelect) {
         payload.collection = collectionSelect.value;
         payload.mode = modeSelect.value;

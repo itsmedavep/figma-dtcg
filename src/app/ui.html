@@ -820,6 +820,16 @@
                   <label><input type="checkbox" id="exportAllChk" /> Export all collections &amp; modes into a single
                     file</label>
                   <div class="muted">Select a collection and mode, or check “Export all”.</div>
+                  <div class="stack" style="gap:6px; margin:8px 0;">
+                    <label class="muted" style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="checkbox" id="styleDictionaryChk" />
+                      <span>Style Dictionary JSON (emit #RRGGBB color values)</span>
+                    </label>
+                    <label class="muted" style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="checkbox" id="flatTokensChk" />
+                      <span>Flatten collections (omit top-level collection groups)</span>
+                    </label>
+                  </div>
                   <button id="exportBtn" class="css-button-neumorphic">Export</button>
                 </div>
                 <div style="border-top:1px solid var(--border); padding-top:12px; margin-top:8px;">

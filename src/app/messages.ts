@@ -29,16 +29,30 @@ export type UiToPlugin =
   | { type: 'IMPORT_DTCG'; payload: { json: unknown; allowHexStrings?: boolean; contexts?: string[] } }
   | {
       type: 'EXPORT_DTCG';
-      payload: { exportAll: boolean; collection?: string; mode?: string };
+      payload: {
+        exportAll: boolean;
+        collection?: string;
+        mode?: string;
+        styleDictionary?: boolean;
+        flatTokens?: boolean;
+      };
     }
   | { type: 'EXPORT_TYPOGRAPHY' }
   | { type: 'SAVE_LAST'; payload: { collection: string; mode: string } }
   | {
       type: 'SAVE_PREFS';
-      payload: { exportAll?: boolean; drawerOpen?: boolean };
+      payload: {
+        exportAll?: boolean;
+        drawerOpen?: boolean;
+        styleDictionary?: boolean;
+        flatTokens?: boolean;
+      };
     }
   | { type: 'UI_RESIZE'; payload: { width: number; height: number } }
-  | { type: 'PREVIEW_REQUEST'; payload: { collection: string; mode: string } }
+  | {
+      type: 'PREVIEW_REQUEST';
+      payload: { collection: string; mode: string; styleDictionary?: boolean; flatTokens?: boolean };
+    }
   // GitHub integration (UI → plugin)
   | { type: 'GITHUB_SET_TOKEN'; payload: { token: string; remember: boolean } }
   | { type: 'GITHUB_FORGET_TOKEN' }
@@ -70,6 +84,8 @@ export type UiToPlugin =
         scope: GithubScope;
         collection?: string;
         mode?: string;
+        styleDictionary?: boolean;
+        flatTokens?: boolean;
         createPr?: boolean;
         prBase?: string;
         prTitle?: string;
@@ -78,7 +94,13 @@ export type UiToPlugin =
     }
   | {
       type: 'GITHUB_EXPORT_FILES';
-      payload: { scope: GithubScope; collection?: string; mode?: string };
+      payload: {
+        scope: GithubScope;
+        collection?: string;
+        mode?: string;
+        styleDictionary?: boolean;
+        flatTokens?: boolean;
+      };
     }
   | {
       type: 'GITHUB_FETCH_TOKENS';
@@ -100,6 +122,8 @@ export type UiToPlugin =
         scope: GithubScope;
         collection: string;
         mode: string;
+        styleDictionary: boolean;
+        flatTokens: boolean;
         createPr: boolean;
         prBase: string;
         prTitle: string;
@@ -134,6 +158,8 @@ export type PluginToUi =
         }>;
         last: { collection: string; mode: string } | null;
         exportAllPref: boolean;
+        styleDictionaryPref?: boolean;
+        flatTokensPref?: boolean;
         drawerOpenPref?: boolean;
       };
     }
@@ -170,6 +196,8 @@ export type PluginToUi =
         scope?: GithubScope;
         collection?: string;
         mode?: string;
+        styleDictionary?: boolean;
+        flatTokens?: boolean;
         createPr?: boolean;
         prBase?: string;
         prTitle?: string;

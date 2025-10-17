@@ -26,6 +26,8 @@ type GhSelected = {
   scope?: GithubScope;
   collection?: string;
   mode?: string;
+  styleDictionary?: boolean;
+  flatTokens?: boolean;
   createPr?: boolean;
   prBase?: string;
   prTitle?: string;
@@ -253,6 +255,8 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         }
         if (typeof msg.payload.collection === 'string') update.collection = msg.payload.collection;
         if (typeof msg.payload.mode === 'string') update.mode = msg.payload.mode;
+        if (typeof msg.payload.styleDictionary === 'boolean') update.styleDictionary = msg.payload.styleDictionary;
+        if (typeof msg.payload.flatTokens === 'boolean') update.flatTokens = msg.payload.flatTokens;
         if (typeof msg.payload.createPr === 'boolean') update.createPr = msg.payload.createPr;
         if (typeof msg.payload.prBase === 'string') update.prBase = msg.payload.prBase;
         if (typeof msg.payload.prTitle === 'string') update.prTitle = msg.payload.prTitle;
@@ -451,10 +455,12 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           : (msg.payload.scope === 'typography' ? 'typography' : 'selected');
         const collection = String(msg.payload.collection || '');
         const mode = String(msg.payload.mode || '');
+        const styleDictionary = !!msg.payload.styleDictionary;
+        const flatTokens = !!msg.payload.flatTokens;
 
         try {
           if (scope === 'all') {
-            const all = await deps.exportDtcg({ format: 'single' });
+            const all = await deps.exportDtcg({ format: 'single', styleDictionary, flatTokens });
             deps.send({ type: 'GITHUB_EXPORT_FILES_RESULT', payload: { files: all.files } });
           } else if (scope === 'typography') {
             const typo = await deps.exportDtcg({ format: 'typography' });
@@ -465,7 +471,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
               deps.send({ type: 'ERROR', payload: { message: 'GitHub: choose collection and mode before exporting.' } });
               return true;
             }
-            const per = await deps.exportDtcg({ format: 'perMode' });
+            const per = await deps.exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
             const prettyExact = `${collection} - ${mode}.json`;
             const prettyLoose = `${collection} - ${mode}`;
             const legacy1 = `${collection}_mode=${mode}`;
@@ -503,6 +509,8 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           : (msg.payload.scope === 'typography' ? 'typography' : 'selected');
         const collection = String(msg.payload.collection || '');
         const mode = String(msg.payload.mode || '');
+        const styleDictionary = !!msg.payload.styleDictionary;
+        const flatTokens = !!msg.payload.flatTokens;
         const createPr = !!msg.payload.createPr;
         const prBaseBranch = createPr ? String(msg.payload.prBase || '') : '';
         const prTitle = String(msg.payload.prTitle || commitMessage).trim() || commitMessage;
@@ -545,6 +553,8 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           scope,
           collection: scope === 'selected' ? collection : undefined,
           mode: scope === 'selected' ? mode : undefined,
+          styleDictionary: msg.payload.styleDictionary,
+          flatTokens: msg.payload.flatTokens,
           createPr,
           prBase: createPr ? prBaseBranch : undefined,
           prTitle: createPr ? prTitle : undefined,
@@ -555,7 +565,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           const files: Array<{ name: string; json: unknown }> = [];
 
           if (scope === 'all') {
-            const all = await deps.exportDtcg({ format: 'single' });
+            const all = await deps.exportDtcg({ format: 'single', styleDictionary, flatTokens });
             for (const f of all.files) files.push({ name: f.name, json: f.json });
           } else if (scope === 'typography') {
             const typo = await deps.exportDtcg({ format: 'typography' });
@@ -565,7 +575,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
               deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Pick a collection and a mode.' } });
               return true;
             }
-            const per = await deps.exportDtcg({ format: 'perMode' });
+            const per = await deps.exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
             const prettyExact = `${collection} - ${mode}.json`;
             const prettyLoose = `${collection} - ${mode}`;
             const legacy1 = `${collection}_mode=${mode}`;

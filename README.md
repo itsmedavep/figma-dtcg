@@ -53,6 +53,8 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 ## Import & Export Behavior
 - Importers let you filter by Figma collection, mode, or GitHub context, and remember preferred combinations for faster iteration.
 - Color normalization supports hex, RGB, and other DTCG-compliant formats. Enable the **Allow hex strings** toggle to keep raw hex values when downstream tooling requires them.
+- When exporting, toggle **Style Dictionary JSON** to emit `#RRGGBB` color strings instead of W3C color objects for easier ingestion by Style Dictionary pipelines.
+- Enable **Flatten collections** during export to drop the top-level collection grouping so tokens appear as a single hierarchy rooted at their variable paths.
 - Partial imports surface validation warnings yet still populate the intermediate graph so you can iterate in Figma before running a full sync.
 - Exports normalize token paths and ordering to keep version-control diffs minimal when committing back to source control.
 

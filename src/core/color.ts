@@ -278,6 +278,26 @@ export function toHex6FromSrgb(rgb: { r: number; g: number; b: number }): string
 export function toHex8FromSrgb(rgba: { r: number; g: number; b: number; a: number }): string {
   return srgbToHex8({ r: clamp01(rgba.r), g: clamp01(rgba.g), b: clamp01(rgba.b), a: clamp01(rgba.a) });
 }
+
+export function colorValueToHexString(value: ColorValue): string {
+  const comps = Array.isArray(value.components) ? value.components : [0, 0, 0];
+  const srgb = value.colorSpace === 'display-p3'
+    ? convertRgbSpace(comps, 'display-p3', 'srgb')
+    : clamp01Array(comps);
+
+  const baseHex = typeof value.hex === 'string' && value.hex.length > 0
+    ? (value.hex.charAt(0) === '#' ? value.hex : ('#' + value.hex))
+    : srgbToHex6(srgb);
+
+  if (typeof value.alpha === 'number') {
+    const alpha = clamp01(value.alpha);
+    if (alpha < 1) {
+      return srgbToHex8({ r: srgb[0], g: srgb[1], b: srgb[2], a: alpha });
+    }
+  }
+
+  return baseHex;
+}
 export function hexToDtcgColor(hex: string): ColorValue {
   var rgba = parseHexToSrgbRGBA(hex);
   var comps: [number, number, number] = [rgba.r, rgba.g, rgba.b];
