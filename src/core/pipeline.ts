@@ -10,7 +10,11 @@ import { readFigmaToIR } from '../adapters/figma-reader';
 import { writeIRToFigma } from '../adapters/figma-writer';
 import type { TokenGraph, TokenNode, ValueOrAlias } from './ir';
 
-export interface ExportOpts { format: 'single' | 'perMode' | 'typography' }
+export interface ExportOpts {
+  format: 'single' | 'perMode' | 'typography';
+  styleDictionary?: boolean;
+  flatTokens?: boolean;
+}
 export interface ExportResult { files: Array<{ name: string; json: unknown }> }
 
 export interface ImportSummary {
@@ -276,6 +280,8 @@ export async function importDtcg(json: unknown, opts: ImportOpts = {}): Promise<
 export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
   var current = await readFigmaToIR();
   var graph = normalize(current);
+  var styleDictionary = !!opts.styleDictionary;
+  var flatTokens = !!opts.flatTokens;
 
   if (opts.format === 'typography') {
     var typographyTokens: TokenNode[] = [];
@@ -299,7 +305,7 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
     }
 
     var typographyGraph: TokenGraph = { tokens: typographyTokens };
-    var typographySerialized = serialize(typographyGraph);
+    var typographySerialized = serialize(typographyGraph, { styleDictionary: styleDictionary, flatTokens: flatTokens });
     var typographyJson = typographySerialized.json;
     if (!typographyTokens.length) {
       typographyJson = {};
@@ -309,7 +315,7 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
   if (opts.format === 'single') {
     // One file with whatever contexts exist; writer will emit the first available per token.
-    var single = serialize(graph);
+    var single = serialize(graph, { styleDictionary: styleDictionary, flatTokens: flatTokens });
     return { files: [{ name: 'tokens.json', json: single.json }] };
   }
 
@@ -348,7 +354,7 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
     // If nothing in this context, skip
     if (filtered.tokens.length === 0) continue;
 
-    var out = serialize(filtered);
+    var out = serialize(filtered, { styleDictionary: styleDictionary, flatTokens: flatTokens });
 
     // Try to recover the original collection/mode names from per-context metadata so
     // we don't lose slashes or other punctuation that appears in the collection name.
@@ -398,7 +404,7 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
   // Fallback: if no contexts were found, still emit a single file
   if (files.length === 0) {
-    var fallback = serialize(graph);
+    var fallback = serialize(graph, { styleDictionary: styleDictionary, flatTokens: flatTokens });
     files.push({ name: 'tokens.json', json: fallback.json });
   }
 

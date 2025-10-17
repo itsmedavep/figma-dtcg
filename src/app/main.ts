@@ -49,12 +49,23 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
   const snap = await snapshotCollectionsForUi();
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
+  const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
+  const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
   const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
     ? last
     : null;
 
   send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections (initial)' } });
-  send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
+  send({
+    type: 'COLLECTIONS_DATA',
+    payload: {
+      collections: snap.collections,
+      last: lastOrNull,
+      exportAllPref: !!exportAllPrefVal,
+      styleDictionaryPref: !!styleDictionaryPrefVal,
+      flatTokensPref: !!flatTokensPrefVal,
+    }
+  });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
 
   await github.onUiReady();
@@ -65,12 +76,23 @@ async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
   const snapshot = await snapshotCollectionsForUi();
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
+  const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
+  const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
   const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
     ? last
     : null;
 
   send({ type: 'INFO', payload: { message: 'Fetched ' + String(snapshot.collections.length) + ' collections' } });
-  send({ type: 'COLLECTIONS_DATA', payload: { collections: snapshot.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
+  send({
+    type: 'COLLECTIONS_DATA',
+    payload: {
+      collections: snapshot.collections,
+      last: lastOrNull,
+      exportAllPref: !!exportAllPrefVal,
+      styleDictionaryPref: !!styleDictionaryPrefVal,
+      flatTokensPref: !!flatTokensPrefVal,
+    }
+  });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snapshot.rawText } });
 }
 
@@ -100,11 +122,22 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   const snap = await snapshotCollectionsForUi();
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
+  const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
+  const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
   const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
     ? last
     : null;
 
-  send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
+  send({
+    type: 'COLLECTIONS_DATA',
+    payload: {
+      collections: snap.collections,
+      last: lastOrNull,
+      exportAllPref: !!exportAllPrefVal,
+      styleDictionaryPref: !!styleDictionaryPrefVal,
+      flatTokensPref: !!flatTokensPrefVal,
+    }
+  });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
 }
 
@@ -112,15 +145,17 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
 async function handleExportDtcg(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'EXPORT_DTCG'>).payload;
   const exportAll = !!payload.exportAll;
+  const styleDictionary = !!payload.styleDictionary;
+  const flatTokens = !!payload.flatTokens;
   if (exportAll) {
-    const all = await exportDtcg({ format: 'single' });
+    const all = await exportDtcg({ format: 'single', styleDictionary, flatTokens });
     send({ type: 'EXPORT_RESULT', payload: { files: all.files } });
     return;
   }
 
   const collectionName = payload.collection ? payload.collection : '';
   const modeName = payload.mode ? payload.mode : '';
-  const per = await exportDtcg({ format: 'perMode' });
+  const per = await exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
 
   const prettyExact = `${collectionName} - ${modeName}.json`;
   const prettyLoose = `${collectionName} - ${modeName}`;
@@ -167,7 +202,15 @@ async function handleSaveLast(msg: UiToPlugin): Promise<void> {
 // Store persistent export preferences (currently the "export all" toggle).
 async function handleSavePrefs(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'SAVE_PREFS'>).payload;
-  await figma.clientStorage.setAsync('exportAllPref', !!payload.exportAll);
+  if (typeof payload.exportAll === 'boolean') {
+    await figma.clientStorage.setAsync('exportAllPref', !!payload.exportAll);
+  }
+  if (typeof payload.styleDictionary === 'boolean') {
+    await figma.clientStorage.setAsync('styleDictionaryPref', !!payload.styleDictionary);
+  }
+  if (typeof payload.flatTokens === 'boolean') {
+    await figma.clientStorage.setAsync('flatTokensPref', !!payload.flatTokens);
+  }
 }
 
 // Remember the iframe size so subsequent launches reopen with the user's preferred bounds.
@@ -184,8 +227,10 @@ async function handlePreviewRequest(msg: UiToPlugin): Promise<void> {
   const payload = (msg as MessageOfType<'PREVIEW_REQUEST'>).payload;
   const collectionName = payload.collection ? String(payload.collection) : '';
   const modeName = payload.mode ? String(payload.mode) : '';
+  const styleDictionary = !!payload.styleDictionary;
+  const flatTokens = !!payload.flatTokens;
 
-  const per = await exportDtcg({ format: 'perMode' });
+  const per = await exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
 
   const prettyExact = `${collectionName} - ${modeName}.json`;
   const prettyLoose = `${collectionName} - ${modeName}`;

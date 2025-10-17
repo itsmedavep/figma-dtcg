@@ -9,6 +9,8 @@ type GithubUiDependencies = {
   getCollectionSelect(): HTMLSelectElement | null;
   getModeSelect(): HTMLSelectElement | null;
   getAllowHexCheckbox(): HTMLInputElement | null;
+  getStyleDictionaryCheckbox(): HTMLInputElement | null;
+  getFlatTokensCheckbox(): HTMLInputElement | null;
   getImportContexts(): string[];
 };
 
@@ -61,6 +63,8 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghScopeSelected: HTMLInputElement | null = null;
   let ghScopeAll: HTMLInputElement | null = null;
   let ghScopeTypography: HTMLInputElement | null = null;
+  let styleDictionaryCheckbox: HTMLInputElement | null = null;
+  let flatTokensCheckbox: HTMLInputElement | null = null;
 
   let ghAuthStatusEl: HTMLElement | null = null;
   let ghTokenMetaEl: HTMLElement | null = null;
@@ -118,6 +122,16 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
 
   function pickAllowHexCheckbox(): HTMLInputElement | null {
     return deps.getAllowHexCheckbox();
+  }
+
+  function pickStyleDictionaryCheckbox(): HTMLInputElement | null {
+    if (!styleDictionaryCheckbox) styleDictionaryCheckbox = deps.getStyleDictionaryCheckbox();
+    return styleDictionaryCheckbox;
+  }
+
+  function pickFlatTokensCheckbox(): HTMLInputElement | null {
+    if (!flatTokensCheckbox) flatTokensCheckbox = deps.getFlatTokensCheckbox();
+    return flatTokensCheckbox;
   }
 
   function findTokenInput(): HTMLInputElement | null {
@@ -622,6 +636,8 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     scope: GithubScope;
     collection: string;
     mode: string;
+    styleDictionary: boolean;
+    flatTokens: boolean;
     createPr: boolean;
     prBase: string;
     prTitle: string;
@@ -1011,6 +1027,8 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
             folder: normalizedFolder.payload,
             commitMessage,
             scope,
+            styleDictionary: !!(pickStyleDictionaryCheckbox()?.checked),
+            flatTokens: !!(pickFlatTokensCheckbox()?.checked),
             createPr
           }
         };
@@ -1129,6 +1147,14 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         if (p.scope === 'all' && ghScopeAll) ghScopeAll.checked = true;
         if (p.scope === 'selected' && ghScopeSelected) ghScopeSelected.checked = true;
         if (p.scope === 'typography' && ghScopeTypography) ghScopeTypography.checked = true;
+      }
+      const styleDictChk = pickStyleDictionaryCheckbox();
+      if (styleDictChk && typeof p.styleDictionary === 'boolean') {
+        styleDictChk.checked = p.styleDictionary;
+      }
+      const flatChk = pickFlatTokensCheckbox();
+      if (flatChk && typeof p.flatTokens === 'boolean') {
+        flatChk.checked = p.flatTokens;
       }
       if (typeof p.createPr === 'boolean' && ghCreatePrChk) {
         ghCreatePrChk.checked = p.createPr;

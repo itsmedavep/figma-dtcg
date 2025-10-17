@@ -51,6 +51,8 @@
     let ghScopeSelected = null;
     let ghScopeAll = null;
     let ghScopeTypography = null;
+    let styleDictionaryCheckbox = null;
+    let flatTokensCheckbox = null;
     let ghAuthStatusEl = null;
     let ghTokenMetaEl = null;
     let folderPickerOverlay = null;
@@ -89,6 +91,14 @@
     }
     function pickAllowHexCheckbox() {
       return deps.getAllowHexCheckbox();
+    }
+    function pickStyleDictionaryCheckbox() {
+      if (!styleDictionaryCheckbox) styleDictionaryCheckbox = deps.getStyleDictionaryCheckbox();
+      return styleDictionaryCheckbox;
+    }
+    function pickFlatTokensCheckbox() {
+      if (!flatTokensCheckbox) flatTokensCheckbox = deps.getFlatTokensCheckbox();
+      return flatTokensCheckbox;
     }
     function findTokenInput() {
       if (!doc) return null;
@@ -830,6 +840,7 @@
       }
       if (ghExportAndCommitBtn) {
         ghExportAndCommitBtn.addEventListener("click", () => {
+          var _a, _b;
           const collectionSelect2 = pickCollectionSelect();
           const modeSelect2 = pickModeSelect();
           const scope = ghScopeAll && ghScopeAll.checked ? "all" : ghScopeTypography && ghScopeTypography.checked ? "typography" : "selected";
@@ -857,6 +868,8 @@
               folder: normalizedFolder.payload,
               commitMessage,
               scope,
+              styleDictionary: !!((_a = pickStyleDictionaryCheckbox()) == null ? void 0 : _a.checked),
+              flatTokens: !!((_b = pickFlatTokensCheckbox()) == null ? void 0 : _b.checked),
               createPr
             }
           };
@@ -966,6 +979,14 @@
           if (p.scope === "all" && ghScopeAll) ghScopeAll.checked = true;
           if (p.scope === "selected" && ghScopeSelected) ghScopeSelected.checked = true;
           if (p.scope === "typography" && ghScopeTypography) ghScopeTypography.checked = true;
+        }
+        const styleDictChk = pickStyleDictionaryCheckbox();
+        if (styleDictChk && typeof p.styleDictionary === "boolean") {
+          styleDictChk.checked = p.styleDictionary;
+        }
+        const flatChk = pickFlatTokensCheckbox();
+        if (flatChk && typeof p.flatTokens === "boolean") {
+          flatChk.checked = p.flatTokens;
         }
         if (typeof p.createPr === "boolean" && ghCreatePrChk) {
           ghCreatePrChk.checked = p.createPr;
@@ -1206,6 +1227,8 @@
   var copyW3cBtn = null;
   var copyLogBtn = null;
   var allowHexChk = null;
+  var styleDictionaryChk = null;
+  var flatTokensChk = null;
   var importScopeOverlay = null;
   var importScopeBody = null;
   var importScopeConfirmBtn = null;
@@ -1881,6 +1904,8 @@
     getCollectionSelect: () => collectionSelect,
     getModeSelect: () => modeSelect,
     getAllowHexCheckbox: () => allowHexChk,
+    getStyleDictionaryCheckbox: () => styleDictionaryChk,
+    getFlatTokensCheckbox: () => flatTokensChk,
     getImportContexts: () => getPreferredImportContexts()
   });
   function clearSelect(sel) {
@@ -1981,7 +2006,12 @@
       if (w3cPreviewEl) w3cPreviewEl.textContent = "{ /* select a collection & mode to preview */ }";
       return;
     }
-    postToPlugin({ type: "PREVIEW_REQUEST", payload: { collection, mode } });
+    const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
+    const flatTokens = !!(flatTokensChk && flatTokensChk.checked);
+    postToPlugin({
+      type: "PREVIEW_REQUEST",
+      payload: { collection, mode, styleDictionary, flatTokens }
+    });
   }
   window.addEventListener("message", async (event) => {
     var _a, _b, _c, _d, _e;
@@ -2077,6 +2107,12 @@
     if (msg.type === "COLLECTIONS_DATA") {
       populateCollections({ collections: msg.payload.collections });
       if (exportAllChk) exportAllChk.checked = !!msg.payload.exportAllPref;
+      if (styleDictionaryChk && typeof msg.payload.styleDictionaryPref === "boolean") {
+        styleDictionaryChk.checked = !!msg.payload.styleDictionaryPref;
+      }
+      if (flatTokensChk && typeof msg.payload.flatTokensPref === "boolean") {
+        flatTokensChk.checked = !!msg.payload.flatTokensPref;
+      }
       const last = msg.payload.last;
       applyLastSelection(last);
       setDisabledStates();
@@ -2109,6 +2145,8 @@
     copyW3cBtn = document.getElementById("copyW3cBtn");
     copyLogBtn = document.getElementById("copyLogBtn");
     allowHexChk = document.getElementById("allowHexChk");
+    styleDictionaryChk = document.getElementById("styleDictionaryChk");
+    flatTokensChk = document.getElementById("flatTokensChk");
     importScopeOverlay = document.getElementById("importScopeOverlay");
     importScopeBody = document.getElementById("importScopeBody");
     importScopeConfirmBtn = document.getElementById("importScopeConfirmBtn");
@@ -2185,6 +2223,20 @@
         githubUi.onSelectionChange();
       });
     }
+    if (styleDictionaryChk) {
+      styleDictionaryChk.addEventListener("change", () => {
+        postToPlugin({ type: "SAVE_PREFS", payload: { styleDictionary: !!styleDictionaryChk.checked } });
+        requestPreviewForCurrent();
+        githubUi.onSelectionChange();
+      });
+    }
+    if (flatTokensChk) {
+      flatTokensChk.addEventListener("change", () => {
+        postToPlugin({ type: "SAVE_PREFS", payload: { flatTokens: !!flatTokensChk.checked } });
+        requestPreviewForCurrent();
+        githubUi.onSelectionChange();
+      });
+    }
     if (refreshBtn) {
       refreshBtn.addEventListener("click", () => {
         postToPlugin({ type: "FETCH_COLLECTIONS" });
@@ -2220,7 +2272,9 @@
         var _a, _b;
         let exportAll = false;
         if (exportAllChk) exportAll = !!exportAllChk.checked;
-        const payload = { exportAll };
+        const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
+        const flatTokens = !!(flatTokensChk && flatTokensChk.checked);
+        const payload = { exportAll, styleDictionary, flatTokens };
         if (!exportAll && collectionSelect && modeSelect) {
           payload.collection = collectionSelect.value;
           payload.mode = modeSelect.value;
