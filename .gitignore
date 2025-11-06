@@ -4,3 +4,4 @@ node_modules/
 src/core/.DS_Store
 src/app/.DS_Store
 dist/.DS_Store
+.tmp-tests/.DS_Store
