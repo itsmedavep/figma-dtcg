@@ -93,6 +93,13 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
 
   async function restoreGithubTokenAndVerify(): Promise<void> {
     try {
+      const rememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
+      const rememberPref = typeof rememberPrefStored === 'boolean' ? rememberPrefStored : true;
+      if (!rememberPref) {
+        await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { });
+        return;
+      }
+
       const stored = await figma.clientStorage.getAsync('github_token_b64').catch(() => null);
       if (!stored || typeof stored !== 'string' || stored.length === 0) return;
 
@@ -438,8 +445,25 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           const snap = await deps.snapshotCollectionsForUi();
           const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
           const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
+          const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
+          const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
+          const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
+          const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
+          const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
+          const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
           const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string' ? last : null;
-          deps.send({ type: 'COLLECTIONS_DATA', payload: { collections: snap.collections, last: lastOrNull, exportAllPref: !!exportAllPrefVal } });
+          deps.send({
+            type: 'COLLECTIONS_DATA',
+            payload: {
+              collections: snap.collections,
+              last: lastOrNull,
+              exportAllPref: !!exportAllPrefVal,
+              styleDictionaryPref: !!styleDictionaryPrefVal,
+              flatTokensPref: !!flatTokensPrefVal,
+              allowHexPref: allowHexPrefVal,
+              githubRememberPref: githubRememberPrefVal,
+            }
+          });
           deps.send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
         } catch (err) {
           const msgText = (err as Error)?.message || 'Invalid JSON';

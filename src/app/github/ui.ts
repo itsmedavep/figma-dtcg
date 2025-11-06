@@ -1,3 +1,8 @@
+// src/app/github/ui.ts
+// GitHub panel orchestration: token auth, repo/branch pickers, folder browser, and commit flows.
+// - Bridges GitHub interactions with plugin storage and export preferences
+// - Keeps DOM event wiring resilient across optional UI states
+
 import type { PluginToUi, UiToPlugin, GithubScope } from '../messages';
 
 type FolderListEntry = { type: 'dir' | 'file'; name: string; path?: string };
@@ -23,9 +28,9 @@ type GithubUiApi = {
   attach(context: AttachContext): void;
   handleMessage(message: PluginToUi): boolean;
   onSelectionChange(): void;
+  setRememberPref(pref: boolean): void;
 };
 
-const GH_REMEMBER_PREF_KEY = 'ghRememberPref';
 const GH_MASK = '••••••••••';
 const BRANCH_TTL_MS = 60_000;
 
@@ -96,7 +101,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
 
   let ghIsAuthed = false;
   let ghTokenExpiresAt: string | number | null = null;
-  let ghRememberPref = false;
+  let ghRememberPref = true;
 
   let currentOwner = '';
   let currentRepo = '';
@@ -152,17 +157,16 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     return (ghTokenInput.value || '').trim();
   }
 
-  function saveRememberPref(checked: boolean): void {
-    try { win?.localStorage.setItem(GH_REMEMBER_PREF_KEY, checked ? '1' : '0'); } catch { /* ignore */ }
-  }
-
-  function loadRememberPref(): boolean {
-    try {
-      const v = win?.localStorage.getItem(GH_REMEMBER_PREF_KEY);
-      if (v === '1') return true;
-      if (v === '0') return false;
-    } catch { /* ignore */ }
-    return false;
+  function updateRememberPref(pref: boolean, persist = false): void {
+    const next = !!pref;
+    ghRememberPref = next;
+    if (ghRememberChk) {
+      ghRememberChk.checked = ghRememberPref;
+    }
+    updateGhStatusUi();
+    if (persist) {
+      deps.postToPlugin({ type: 'SAVE_PREFS', payload: { githubRememberToken: ghRememberPref } });
+    }
   }
 
   function ensureGhStatusElements(): void {
@@ -735,13 +739,10 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     folderPickerNewBtn = doc.getElementById('folderPickerNewBtn') as HTMLButtonElement | null;
     folderPickerCancelBtn = doc.getElementById('folderPickerCancelBtn') as HTMLButtonElement | null;
 
-    ghRememberPref = loadRememberPref();
     if (ghRememberChk) {
       ghRememberChk.checked = ghRememberPref;
       ghRememberChk.addEventListener('change', () => {
-        ghRememberPref = !!ghRememberChk!.checked;
-        saveRememberPref(ghRememberPref);
-        updateGhStatusUi();
+        updateRememberPref(!!ghRememberChk!.checked, true);
       });
     }
 
@@ -1100,10 +1101,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
           : ((typeof p.tokenExpiration !== 'undefined' && p.tokenExpiration !== null) ? p.tokenExpiration : null);
 
       if (typeof p.remember === 'boolean') {
-        ghRememberPref = p.remember;
-        saveRememberPref(ghRememberPref);
-      } else {
-        ghRememberPref = loadRememberPref();
+        updateRememberPref(p.remember, false);
       }
 
       if (ghIsAuthed) {
@@ -1395,9 +1393,14 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     updateExportCommitEnabled();
   }
 
+  function applyRememberPrefFromPlugin(pref: boolean): void {
+    updateRememberPref(pref, false);
+  }
+
   return {
     attach,
     handleMessage,
-    onSelectionChange
+    onSelectionChange,
+    setRememberPref: applyRememberPrefFromPlugin,
   };
 }

@@ -46,6 +46,8 @@ export type UiToPlugin =
         drawerOpen?: boolean;
         styleDictionary?: boolean;
         flatTokens?: boolean;
+        allowHexStrings?: boolean;
+        githubRememberToken?: boolean;
       };
     }
   | { type: 'UI_RESIZE'; payload: { width: number; height: number } }
@@ -161,6 +163,8 @@ export type PluginToUi =
         styleDictionaryPref?: boolean;
         flatTokensPref?: boolean;
         drawerOpenPref?: boolean;
+        allowHexPref?: boolean;
+        githubRememberPref?: boolean;
       };
     }
   | { type: 'RAW_COLLECTIONS_TEXT'; payload: { text: string } }

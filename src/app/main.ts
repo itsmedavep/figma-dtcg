@@ -51,6 +51,10 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
   const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
+  const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
+  const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
+  const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
+  const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
   const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
     ? last
     : null;
@@ -64,6 +68,8 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
       flatTokensPref: !!flatTokensPrefVal,
+      allowHexPref: allowHexPrefVal,
+      githubRememberPref: githubRememberPrefVal,
     }
   });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
@@ -78,6 +84,10 @@ async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
   const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
+  const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
+  const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
+  const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
+  const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
   const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
     ? last
     : null;
@@ -91,6 +101,8 @@ async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
       flatTokensPref: !!flatTokensPrefVal,
+      allowHexPref: allowHexPrefVal,
+      githubRememberPref: githubRememberPrefVal,
     }
   });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snapshot.rawText } });
@@ -124,6 +136,10 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
   const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
+  const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
+  const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
+  const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
+  const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
   const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
     ? last
     : null;
@@ -136,6 +152,8 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
       flatTokensPref: !!flatTokensPrefVal,
+      allowHexPref: allowHexPrefVal,
+      githubRememberPref: githubRememberPrefVal,
     }
   });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
@@ -210,6 +228,16 @@ async function handleSavePrefs(msg: UiToPlugin): Promise<void> {
   }
   if (typeof payload.flatTokens === 'boolean') {
     await figma.clientStorage.setAsync('flatTokensPref', !!payload.flatTokens);
+  }
+  if (typeof payload.allowHexStrings === 'boolean') {
+    await figma.clientStorage.setAsync('allowHexPref', !!payload.allowHexStrings);
+  }
+  if (typeof payload.githubRememberToken === 'boolean') {
+    const rememberPref = !!payload.githubRememberToken;
+    await figma.clientStorage.setAsync('githubRememberPref', rememberPref);
+    if (!rememberPref) {
+      await figma.clientStorage.deleteAsync('github_token_b64').catch(() => { });
+    }
   }
 }
 
