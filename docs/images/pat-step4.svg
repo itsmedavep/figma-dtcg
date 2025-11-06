@@ -1,0 +1,12 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='675'>
+  <rect width='1200' height='675' fill='#ffffff'/>
+  <rect x='0' y='0' width='1200' height='140' fill='#24292e'/>
+  <text x='50' y='90' font-family='Segoe UI, Arial, sans-serif' font-size='56' fill='#ffffff'>Step 4: Name and scope</text>
+  <foreignObject x='60' y='180' width='1080' height='360'>
+    <body xmlns='http://www.w3.org/1999/xhtml'>
+      <p style='font-family: Segoe UI, Arial, sans-serif; font-size: 36px; color: #24292e; line-height: 1.4;'>Give the token a name, choose how long it should last, and pick the organization/repository the plugin will update.</p>
+    </body>
+  </foreignObject>
+  <rect x='60' y='560' width='1080' height='80' fill='#d0d7de' rx='20'/>
+  <text x='90' y='612' font-family='Segoe UI, Arial, sans-serif' font-size='32' fill='#24292e'>Tip: Keep this tab open while you follow along in GitHub.</text>
+</svg>
