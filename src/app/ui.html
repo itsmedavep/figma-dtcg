@@ -722,9 +722,110 @@
       flex-wrap: wrap;
     }
 
-    .gh-branch-search input {
+    .gh-branch-combo {
+      position: relative;
       flex: 1 1 auto;
       min-width: 0;
+      display: flex;
+      align-items: stretch;
+    }
+
+    .gh-branch-combo input {
+      flex: 1 1 auto;
+      min-width: 0;
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .gh-branch-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-left: none;
+      border-top-right-radius: 8px;
+      border-bottom-right-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .gh-branch-toggle:hover:not([disabled]) {
+      background: #f3f4f6;
+    }
+
+    .gh-branch-toggle[disabled] {
+      cursor: not-allowed;
+      opacity: .5;
+    }
+
+    .gh-branch-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 216px;
+      margin: 0;
+      padding: 4px 0;
+      list-style: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+      overflow-y: auto;
+      z-index: 20;
+    }
+
+    .gh-branch-menu[hidden] {
+      display: none;
+    }
+
+    .gh-branch-item {
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ink);
+    }
+
+    .gh-branch-item[data-active="1"],
+    .gh-branch-item:hover {
+      background: #eef2ff;
+    }
+
+    .gh-branch-item[aria-disabled="true"] {
+      cursor: default;
+      color: var(--ink-muted);
+      background: transparent;
+    }
+
+    .gh-branch-item-action {
+      font-weight: 600;
+    }
+
+    .gh-branch-item-empty {
+      cursor: default;
+      color: var(--ink-muted);
+    }
+
+    .gh-branch-menu::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+
+    .gh-branch-combo:focus-within .gh-branch-toggle:not([disabled]) {
+      border-color: var(--accent);
+    }
+
+    .gh-branch-combo:focus-within input:not(:disabled) {
+      border-color: var(--accent);
     }
 
     .gh-branch-count {
@@ -884,12 +985,19 @@
               <div class="stack gh-section">
                 <label>Branch</label>
                 <div class="gh-branch-search">
-                  <input id="ghBranchSearch" type="text" placeholder="Search branches… (press Enter to refresh)" />
+                  <div class="gh-branch-combo">
+                    <input id="ghBranchInput" type="text"
+                      placeholder="Pick a repository first…" autocomplete="off" disabled />
+                    <button id="ghBranchToggleBtn" class="gh-branch-toggle" type="button"
+                      aria-label="Show branches" aria-haspopup="listbox" disabled>
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                    <ul id="ghBranchMenu" class="gh-branch-menu" role="listbox" aria-label="Branches" hidden></ul>
+                  </div>
                   <div id="ghBranchCount" class="muted gh-branch-count"></div>
                 </div>
                 <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh"
                   type="button">Refresh</button>
-                <select id="ghBranchSelect" disabled></select>
                 <button id="ghNewBranchBtn" class="css-button-neumorphic gh-new-branch-btn" disabled
                   type="button">Create new…</button>
                 <div id="ghNewBranchRow" class="gh-new-branch-row" style="display:none;">
