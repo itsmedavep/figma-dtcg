@@ -11,7 +11,7 @@ On the GitHub side, the plugin remembers the repository, branch, and folder you 
 3. Decide which collection and mode you want to work with. The plugin supports exporting everything, but this guide focuses on the “one collection, one mode” flow.
 
 ## Connect the plugin to GitHub
-1. In the GitHub panel, paste your PAT into the token field and choose whether the plugin should remember it. Selecting “remember” stores an encrypted copy so you do not have to re-enter it next time.【F:src/app/github/dispatcher.ts†L135-L167】
+1. In the GitHub panel, paste your PAT into the token field and choose whether the plugin should remember it. Selecting “remember” saves an obfuscated (but still recoverable) copy so you do not have to re-enter it next time—treat the device as if the token were stored in plain text and clear it when you are done.【F:src/app/github/dispatcher.ts†L44-L50】【F:src/app/github/dispatcher.ts†L135-L167】
 2. Press **Connect**. The plugin verifies the token with GitHub and immediately loads a list of repositories you can reach. If the token ever stops working, you’ll see a friendly error and an empty list so you know to refresh your access.【F:src/app/github/dispatcher.ts†L74-L166】
 3. If you ever want to clear the token (for example, when switching accounts), use the **Forget** action. The plugin wipes the stored token and resets the GitHub panel so you can start fresh.【F:src/app/github/dispatcher.ts†L170-L176】
 
