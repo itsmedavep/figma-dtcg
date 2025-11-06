@@ -29,8 +29,9 @@
     let ghVerifyBtn = null;
     let ghRepoSelect = null;
     let ghLogoutBtn = null;
-    let ghBranchSearch = null;
-    let ghBranchSelect = null;
+    let ghBranchInput = null;
+    let ghBranchToggleBtn = null;
+    let ghBranchMenu = null;
     let ghBranchCountEl = null;
     let ghBranchRefreshBtn = null;
     let ghNewBranchBtn = null;
@@ -81,7 +82,12 @@
     let allBranches = [];
     let filteredBranches = [];
     let renderCount = 0;
+    let branchMenuVisible = false;
+    let branchHighlightIndex = -1;
     const RENDER_STEP = 200;
+    const BRANCH_INPUT_PLACEHOLDER = "Search branches\u2026 (press Enter to refresh)";
+    let branchLastQuery = "";
+    let branchInputPristine = true;
     function pickCollectionSelect() {
       return deps.getCollectionSelect();
     }
@@ -197,7 +203,7 @@
       }
     }
     function revalidateBranchesIfStale(forceLog = false) {
-      if (!ghRepoSelect || !ghBranchSelect) return;
+      if (!ghRepoSelect || !ghBranchInput) return;
       if (!currentOwner || !currentRepo) return;
       const stale = Date.now() - lastBranchesFetchedAtMs > BRANCH_TTL_MS;
       if (!stale) {
@@ -214,6 +220,11 @@
       renderCount = 0;
       setBranchDisabled(true, "Refreshing branches\u2026");
       updateBranchCount();
+      if (ghBranchInput) {
+        ghBranchInput.value = "";
+        branchLastQuery = "";
+        branchInputPristine = true;
+      }
       deps.log("Refreshing branches\u2026");
       deps.postToPlugin({
         type: "GITHUB_FETCH_BRANCHES",
@@ -221,15 +232,21 @@
       });
     }
     function setBranchDisabled(disabled, placeholder) {
-      if (!ghBranchSelect) return;
-      ghBranchSelect.disabled = disabled;
-      if (placeholder !== void 0) {
-        clearSelect2(ghBranchSelect);
-        const opt = doc.createElement("option");
-        opt.value = "";
-        opt.textContent = placeholder;
-        ghBranchSelect.appendChild(opt);
+      const nextPlaceholder = placeholder !== void 0 ? placeholder : BRANCH_INPUT_PLACEHOLDER;
+      if (ghBranchInput) {
+        ghBranchInput.disabled = disabled;
+        ghBranchInput.placeholder = nextPlaceholder;
+        if (disabled) {
+          ghBranchInput.value = "";
+          branchLastQuery = "";
+          branchInputPristine = true;
+        }
       }
+      if (ghBranchToggleBtn) {
+        ghBranchToggleBtn.disabled = disabled;
+        ghBranchToggleBtn.setAttribute("aria-expanded", "false");
+      }
+      if (disabled) closeBranchMenu();
     }
     function updateBranchCount() {
       if (!ghBranchCountEl) return;
@@ -237,47 +254,206 @@
       const showing = filteredBranches.length;
       ghBranchCountEl.textContent = `${showing} / ${total}${hasMorePages ? " +" : ""}`;
     }
-    function clearSelect2(sel) {
-      while (sel.options.length > 0) sel.remove(0);
+    function getBranchMenuItems() {
+      if (!ghBranchMenu) return [];
+      const items = [];
+      let node = ghBranchMenu.firstElementChild;
+      while (node) {
+        if (node instanceof HTMLLIElement) items.push(node);
+        node = node.nextElementSibling;
+      }
+      return items;
+    }
+    function setBranchHighlight(index, scrollIntoView) {
+      const items = getBranchMenuItems();
+      branchHighlightIndex = index;
+      for (let i = 0; i < items.length; i++) {
+        if (i === branchHighlightIndex) items[i].setAttribute("data-active", "1");
+        else items[i].removeAttribute("data-active");
+      }
+      if (scrollIntoView && branchHighlightIndex >= 0 && branchHighlightIndex < items.length) {
+        try {
+          items[branchHighlightIndex].scrollIntoView({ block: "nearest" });
+        } catch (e) {
+        }
+      }
+    }
+    function findNextSelectable(startIndex, delta, items) {
+      if (!items.length) return -1;
+      let index = startIndex;
+      for (let i = 0; i < items.length; i++) {
+        index += delta;
+        if (index < 0) index = items.length - 1;
+        else if (index >= items.length) index = 0;
+        const item = items[index];
+        if (!item) continue;
+        if (item.dataset.selectable === "1" && item.getAttribute("aria-disabled") !== "true") return index;
+      }
+      return -1;
+    }
+    function moveBranchHighlight(delta) {
+      const items = getBranchMenuItems();
+      if (!items.length) {
+        setBranchHighlight(-1, false);
+        return;
+      }
+      const next = findNextSelectable(branchHighlightIndex, delta, items);
+      if (next >= 0) setBranchHighlight(next, true);
+    }
+    function syncBranchHighlightAfterRender() {
+      const items = getBranchMenuItems();
+      if (!branchMenuVisible) {
+        setBranchHighlight(-1, false);
+        return;
+      }
+      if (!items.length) {
+        setBranchHighlight(-1, false);
+        return;
+      }
+      if (branchHighlightIndex >= 0 && branchHighlightIndex < items.length) {
+        const current = items[branchHighlightIndex];
+        if (current && current.dataset.selectable === "1" && current.getAttribute("aria-disabled") !== "true") {
+          setBranchHighlight(branchHighlightIndex, false);
+          return;
+        }
+      }
+      const first = findNextSelectable(-1, 1, items);
+      setBranchHighlight(first, false);
+    }
+    function setBranchMenuVisible(show) {
+      if (!ghBranchMenu) {
+        branchMenuVisible = false;
+        branchHighlightIndex = -1;
+        return;
+      }
+      if (show && ghBranchInput && ghBranchInput.disabled) show = false;
+      branchMenuVisible = show;
+      if (branchMenuVisible) {
+        ghBranchMenu.hidden = false;
+        ghBranchMenu.setAttribute("data-open", "1");
+        if (ghBranchToggleBtn) ghBranchToggleBtn.setAttribute("aria-expanded", "true");
+        if (ghBranchInput) ghBranchInput.setAttribute("aria-expanded", "true");
+      } else {
+        ghBranchMenu.hidden = true;
+        ghBranchMenu.removeAttribute("data-open");
+        if (ghBranchToggleBtn) ghBranchToggleBtn.setAttribute("aria-expanded", "false");
+        if (ghBranchInput) ghBranchInput.setAttribute("aria-expanded", "false");
+        setBranchHighlight(-1, false);
+      }
+    }
+    function openBranchMenu() {
+      if (!ghBranchMenu) return;
+      if (!branchMenuVisible) {
+        if (!ghBranchMenu.childElementCount) renderOptions();
+        setBranchMenuVisible(true);
+      }
+      syncBranchHighlightAfterRender();
+    }
+    function closeBranchMenu() {
+      setBranchMenuVisible(false);
     }
     function renderOptions() {
-      if (!ghBranchSelect) return;
-      const prev = ghBranchSelect.value;
-      clearSelect2(ghBranchSelect);
+      if (!ghBranchMenu) return;
+      while (ghBranchMenu.firstChild) ghBranchMenu.removeChild(ghBranchMenu.firstChild);
       const slice = filteredBranches.slice(0, renderCount);
-      for (const name of slice) {
-        const opt = doc.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        ghBranchSelect.appendChild(opt);
+      if (slice.length > 0) {
+        for (let i = 0; i < slice.length; i++) {
+          const name = slice[i];
+          const item = doc.createElement("li");
+          item.className = "gh-branch-item";
+          item.dataset.value = name;
+          item.dataset.selectable = "1";
+          item.setAttribute("role", "option");
+          item.textContent = name;
+          if (i === branchHighlightIndex) item.setAttribute("data-active", "1");
+          ghBranchMenu.appendChild(item);
+        }
+      } else {
+        const empty = doc.createElement("li");
+        empty.className = "gh-branch-item gh-branch-item-empty";
+        empty.setAttribute("aria-disabled", "true");
+        empty.dataset.selectable = "0";
+        empty.textContent = allBranches.length ? "No matching branches" : "No branches loaded yet";
+        ghBranchMenu.appendChild(empty);
       }
       if (filteredBranches.length > renderCount) {
-        const opt = doc.createElement("option");
-        opt.value = "__more__";
-        opt.textContent = `Load more\u2026 (${filteredBranches.length - renderCount} more)`;
-        ghBranchSelect.appendChild(opt);
+        const more = doc.createElement("li");
+        more.className = "gh-branch-item gh-branch-item-action";
+        more.dataset.value = "__more__";
+        more.dataset.selectable = "1";
+        more.textContent = `Load more\u2026 (${filteredBranches.length - renderCount} more)`;
+        ghBranchMenu.appendChild(more);
       } else if (hasMorePages) {
-        const opt = doc.createElement("option");
-        opt.value = "__fetch__";
-        opt.textContent = "Load next page\u2026";
-        ghBranchSelect.appendChild(opt);
+        const fetch = doc.createElement("li");
+        fetch.className = "gh-branch-item gh-branch-item-action";
+        fetch.dataset.value = "__fetch__";
+        fetch.dataset.selectable = "1";
+        fetch.textContent = "Load next page\u2026";
+        ghBranchMenu.appendChild(fetch);
       }
-      const want = desiredBranch || defaultBranchFromApi || prev;
-      if (want && slice.includes(want)) {
-        ghBranchSelect.value = want;
-      } else if (ghBranchSelect.options.length) {
-        ghBranchSelect.selectedIndex = 0;
+      if (ghBranchInput) {
+        const want = desiredBranch || defaultBranchFromApi || "";
+        if (!ghBranchInput.value && want && branchInputPristine) {
+          ghBranchInput.value = want;
+          branchLastQuery = want;
+        }
+      }
+      if (branchMenuVisible) {
+        syncBranchHighlightAfterRender();
       }
     }
     function applyBranchFilter() {
-      const q = ((ghBranchSearch == null ? void 0 : ghBranchSearch.value) || "").toLowerCase().trim();
-      filteredBranches = q ? allBranches.filter((n) => n.toLowerCase().includes(q)) : [...allBranches];
+      const rawInput = ((ghBranchInput == null ? void 0 : ghBranchInput.value) || "").trim();
+      const raw = rawInput === "__more__" || rawInput === "__fetch__" ? branchLastQuery.trim() : rawInput;
+      const q = raw.toLowerCase();
+      const isSelected = !!desiredBranch && raw === desiredBranch;
+      const isDefaultShown = !desiredBranch && !!defaultBranchFromApi && raw === defaultBranchFromApi;
+      const effectiveQuery = isSelected || isDefaultShown ? "" : q;
+      filteredBranches = effectiveQuery ? allBranches.filter((n) => n.toLowerCase().includes(effectiveQuery)) : [...allBranches];
       renderCount = Math.min(RENDER_STEP, filteredBranches.length);
       renderOptions();
       updateBranchCount();
+      if (!branchMenuVisible && ghBranchInput && !ghBranchInput.disabled) {
+        const isFocused = !!doc && doc.activeElement === ghBranchInput;
+        if (isFocused) {
+          setBranchMenuVisible(true);
+          syncBranchHighlightAfterRender();
+        }
+      }
+    }
+    function processBranchSelection(rawValue, fromMenu) {
+      const value = (rawValue || "").trim();
+      if (!ghBranchInput) return "noop";
+      if (value === "__more__") {
+        renderCount = Math.min(renderCount + RENDER_STEP, filteredBranches.length);
+        renderOptions();
+        updateBranchCount();
+        ghBranchInput.value = branchLastQuery;
+        if (fromMenu && !branchMenuVisible) setBranchMenuVisible(true);
+        return "more";
+      }
+      if (value === "__fetch__") {
+        ensureNextPageIfNeeded();
+        ghBranchInput.value = branchLastQuery;
+        return "fetch";
+      }
+      if (!value) return "noop";
+      desiredBranch = value;
+      branchLastQuery = value;
+      ghBranchInput.value = value;
+      branchInputPristine = false;
+      deps.postToPlugin({
+        type: "GITHUB_SELECT_BRANCH",
+        payload: { owner: currentOwner, repo: currentRepo, branch: value }
+      });
+      applyBranchFilter();
+      updateFolderControlsEnabled();
+      updateExportCommitEnabled();
+      updateFetchButtonEnabled();
+      return "selected";
     }
     function ensureNextPageIfNeeded() {
-      if (!ghBranchSelect || !ghRepoSelect) return;
+      if (!ghBranchInput || !ghRepoSelect) return;
       if (!hasMorePages || isFetchingBranches) return;
       if (!currentOwner || !currentRepo) return;
       isFetchingBranches = true;
@@ -286,35 +462,11 @@
         payload: { owner: currentOwner, repo: currentRepo, page: loadedPages + 1 }
       });
     }
-    function onBranchScroll() {
-      if (!ghBranchSelect) return;
-      const el = ghBranchSelect;
-      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
-      if (nearBottom && filteredBranches.length === allBranches.length && hasMorePages && !isFetchingBranches) {
-        ensureNextPageIfNeeded();
-      }
-    }
     function onBranchChange() {
-      if (!ghBranchSelect) return;
-      const v = ghBranchSelect.value;
-      if (v === "__more__") {
-        renderCount = Math.min(renderCount + RENDER_STEP, filteredBranches.length);
-        renderOptions();
-        return;
-      }
-      if (v === "__fetch__") {
-        ensureNextPageIfNeeded();
-        return;
-      }
-      if (!v) return;
-      desiredBranch = v;
-      deps.postToPlugin({
-        type: "GITHUB_SELECT_BRANCH",
-        payload: { owner: currentOwner, repo: currentRepo, branch: v }
-      });
-      updateFolderControlsEnabled();
-      updateExportCommitEnabled();
-      updateFetchButtonEnabled();
+      if (!ghBranchInput) return;
+      const result = processBranchSelection(ghBranchInput.value, false);
+      if (result === "selected") closeBranchMenu();
+      else if (result === "more" || result === "fetch") syncBranchHighlightAfterRender();
     }
     function normalizeFolderInput(raw) {
       const trimmed = raw.trim();
@@ -517,8 +669,14 @@
       }
     }
     function getCurrentBranch() {
-      const v = ghBranchSelect && !ghBranchSelect.disabled && ghBranchSelect.value && ghBranchSelect.value !== "__more__" && ghBranchSelect.value !== "__fetch__" ? ghBranchSelect.value : desiredBranch || defaultBranchFromApi || "";
-      return v || "";
+      if (desiredBranch) return desiredBranch;
+      if (ghBranchInput && !ghBranchInput.disabled) {
+        const raw = ghBranchInput.value.trim();
+        if (raw && raw !== "__more__" && raw !== "__fetch__") {
+          if (allBranches.includes(raw) || raw === defaultBranchFromApi) return raw;
+        }
+      }
+      return defaultBranchFromApi || "";
     }
     function getPrBaseBranch() {
       return defaultBranchFromApi || "";
@@ -568,8 +726,9 @@
       ghVerifyBtn = doc.getElementById("githubVerifyBtn") || doc.getElementById("ghVerifyBtn");
       ghLogoutBtn = doc.getElementById("ghLogoutBtn");
       ghRepoSelect = doc.getElementById("ghRepoSelect");
-      ghBranchSearch = doc.getElementById("ghBranchSearch");
-      ghBranchSelect = doc.getElementById("ghBranchSelect");
+      ghBranchInput = doc.getElementById("ghBranchInput");
+      ghBranchToggleBtn = doc.getElementById("ghBranchToggleBtn");
+      ghBranchMenu = doc.getElementById("ghBranchMenu");
       ghBranchCountEl = doc.getElementById("ghBranchCount");
       ghBranchRefreshBtn = doc.getElementById("ghBranchRefreshBtn");
       ghNewBranchBtn = doc.getElementById("ghNewBranchBtn");
@@ -589,6 +748,13 @@
       ghScopeSelected = doc.getElementById("ghScopeSelected");
       ghScopeAll = doc.getElementById("ghScopeAll");
       ghScopeTypography = doc.getElementById("ghScopeTypography");
+      if (ghBranchInput) {
+        ghBranchInput.setAttribute("role", "combobox");
+        ghBranchInput.setAttribute("aria-autocomplete", "list");
+        ghBranchInput.setAttribute("aria-expanded", "false");
+        ghBranchInput.setAttribute("aria-controls", "ghBranchMenu");
+      }
+      if (ghBranchToggleBtn) ghBranchToggleBtn.setAttribute("aria-expanded", "false");
       folderPickerOverlay = doc.getElementById("folderPickerOverlay");
       folderPickerTitleEl = doc.getElementById("folderPickerTitle");
       folderPickerPathInput = doc.getElementById("folderPickerPath");
@@ -606,7 +772,7 @@
       if (ghConnectBtn) ghConnectBtn.addEventListener("click", onGitHubConnectClick);
       if (ghVerifyBtn) ghVerifyBtn.addEventListener("click", onGitHubVerifyClick);
       if (ghLogoutBtn) ghLogoutBtn.addEventListener("click", onGitHubLogoutClick);
-      if (ghRepoSelect && ghBranchSelect) {
+      if (ghRepoSelect && ghBranchInput) {
         let lastRepoKey = "";
         ghRepoSelect.addEventListener("change", () => {
           const value = ghRepoSelect.value;
@@ -628,7 +794,13 @@
           allBranches = [];
           filteredBranches = [];
           renderCount = 0;
-          if (ghBranchSearch) ghBranchSearch.value = "";
+          if (ghBranchInput) {
+            ghBranchInput.value = "";
+            branchLastQuery = "";
+            branchInputPristine = true;
+          }
+          if (ghBranchMenu) while (ghBranchMenu.firstChild) ghBranchMenu.removeChild(ghBranchMenu.firstChild);
+          closeBranchMenu();
           setBranchDisabled(true, "Loading branches\u2026");
           updateBranchCount();
           updateFolderControlsEnabled();
@@ -644,21 +816,130 @@
           updateExportCommitEnabled();
         });
       }
-      if (ghBranchSearch) {
+      if (ghBranchInput) {
         let timeout;
-        ghBranchSearch.addEventListener("input", () => {
+        ghBranchInput.addEventListener("focus", () => {
+          if (ghBranchInput.disabled) return;
+          applyBranchFilter();
+          openBranchMenu();
+        });
+        ghBranchInput.addEventListener("input", () => {
           if (timeout) win == null ? void 0 : win.clearTimeout(timeout);
+          const value = ghBranchInput.value;
+          if (value !== "__more__" && value !== "__fetch__") {
+            branchLastQuery = value;
+          }
+          branchInputPristine = false;
+          if (!branchMenuVisible) openBranchMenu();
           timeout = win == null ? void 0 : win.setTimeout(() => {
             applyBranchFilter();
           }, 120);
         });
-        ghBranchSearch.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") revalidateBranchesIfStale(true);
+        ghBranchInput.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowDown") {
+            openBranchMenu();
+            moveBranchHighlight(1);
+            e.preventDefault();
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            openBranchMenu();
+            moveBranchHighlight(-1);
+            e.preventDefault();
+            return;
+          }
+          if (e.key === "Enter") {
+            if (branchMenuVisible && branchHighlightIndex >= 0) {
+              const items = getBranchMenuItems();
+              const item = items[branchHighlightIndex];
+              if (item && item.dataset.selectable === "1") {
+                const value = item.getAttribute("data-value") || "";
+                if (value) {
+                  const result = processBranchSelection(value, true);
+                  if (result === "selected") closeBranchMenu();
+                  else if (result === "more" || result === "fetch") {
+                    syncBranchHighlightAfterRender();
+                    openBranchMenu();
+                  }
+                }
+              }
+            } else {
+              const result = processBranchSelection(ghBranchInput.value, false);
+              if (result === "selected") closeBranchMenu();
+              else if (result === "more" || result === "fetch") syncBranchHighlightAfterRender();
+            }
+            revalidateBranchesIfStale(true);
+            e.preventDefault();
+            return;
+          }
+          if (e.key === "Escape") {
+            if (branchMenuVisible) {
+              closeBranchMenu();
+              e.preventDefault();
+            }
+          }
+        });
+        ghBranchInput.addEventListener("change", () => {
+          const result = processBranchSelection(ghBranchInput.value, false);
+          if (result === "selected") closeBranchMenu();
+          else if (result === "more" || result === "fetch") syncBranchHighlightAfterRender();
         });
       }
-      if (ghBranchSelect) {
-        ghBranchSelect.addEventListener("change", onBranchChange);
-        ghBranchSelect.addEventListener("scroll", onBranchScroll);
+      if (ghBranchToggleBtn) {
+        ghBranchToggleBtn.addEventListener("click", () => {
+          if (ghBranchToggleBtn.disabled) return;
+          if (branchMenuVisible) {
+            closeBranchMenu();
+            return;
+          }
+          if (!ghBranchMenu || !ghBranchMenu.childElementCount) renderOptions();
+          openBranchMenu();
+          if (ghBranchInput && (doc == null ? void 0 : doc.activeElement) !== ghBranchInput) ghBranchInput.focus();
+        });
+      }
+      if (ghBranchMenu) {
+        ghBranchMenu.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+        });
+        ghBranchMenu.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!target) return;
+          const item = target.closest("li");
+          if (!item || !(item instanceof HTMLLIElement)) return;
+          if (item.getAttribute("aria-disabled") === "true") return;
+          const value = item.getAttribute("data-value") || "";
+          if (!value) return;
+          const result = processBranchSelection(value, true);
+          if (result === "selected") closeBranchMenu();
+          else if (result === "more" || result === "fetch") {
+            syncBranchHighlightAfterRender();
+            openBranchMenu();
+          }
+          if (ghBranchInput) ghBranchInput.focus();
+        });
+      }
+      if (doc) {
+        doc.addEventListener("mousedown", (event) => {
+          if (!branchMenuVisible) return;
+          const target = event.target;
+          if (!target) return;
+          if (ghBranchMenu && ghBranchMenu.contains(target)) return;
+          if (ghBranchInput && target === ghBranchInput) return;
+          if (ghBranchToggleBtn && ghBranchToggleBtn.contains(target)) return;
+          closeBranchMenu();
+        });
+        doc.addEventListener("focusin", (event) => {
+          if (!branchMenuVisible) return;
+          const target = event.target;
+          if (!target) {
+            closeBranchMenu();
+            return;
+          }
+          if (ghBranchMenu && ghBranchMenu.contains(target)) return;
+          if (ghBranchInput && target === ghBranchInput) return;
+          if (ghBranchToggleBtn && ghBranchToggleBtn.contains(target)) return;
+          closeBranchMenu();
+        });
       }
       if (ghBranchRefreshBtn) {
         ghBranchRefreshBtn.addEventListener("click", () => {
@@ -915,8 +1196,14 @@
       loadedPages = 0;
       hasMorePages = false;
       isFetchingBranches = false;
-      if (ghBranchSearch) ghBranchSearch.value = "";
-      if (ghBranchSelect) setBranchDisabled(true, "Pick a repository first\u2026");
+      if (ghBranchInput) {
+        ghBranchInput.value = "";
+        branchLastQuery = "";
+        branchInputPristine = true;
+      }
+      if (ghBranchMenu) while (ghBranchMenu.firstChild) ghBranchMenu.removeChild(ghBranchMenu.firstChild);
+      closeBranchMenu();
+      setBranchDisabled(true, "Pick a repository first\u2026");
       updateBranchCount();
       updateFolderControlsEnabled();
       if (ghFolderInput) ghFolderInput.value = "";
@@ -1046,8 +1333,12 @@
               allBranches = Array.from(s).sort((a, b) => a.localeCompare(b));
             }
             desiredBranch = newBranch;
+            if (ghBranchInput) {
+              ghBranchInput.value = newBranch;
+              branchLastQuery = newBranch;
+              branchInputPristine = false;
+            }
             applyBranchFilter();
-            if (ghBranchSelect) ghBranchSelect.value = newBranch;
           }
           updateFolderControlsEnabled();
           showNewBranchRow(false);
