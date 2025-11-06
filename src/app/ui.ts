@@ -1052,6 +1052,12 @@ window.addEventListener('message', async (event: MessageEvent) => {
     if (flatTokensChk && typeof msg.payload.flatTokensPref === 'boolean') {
       flatTokensChk.checked = !!msg.payload.flatTokensPref;
     }
+    if (allowHexChk && typeof msg.payload.allowHexPref === 'boolean') {
+      allowHexChk.checked = !!msg.payload.allowHexPref;
+    }
+    if (typeof msg.payload.githubRememberPref === 'boolean') {
+      githubUi.setRememberPref(!!msg.payload.githubRememberPref);
+    }
     const last = (msg.payload as any).last as { collection: string; mode: string } | null;
     applyLastSelection(last);
     setDisabledStates();
@@ -1101,6 +1107,13 @@ document.addEventListener('DOMContentLoaded', () => {
   allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
   styleDictionaryChk = document.getElementById('styleDictionaryChk') as HTMLInputElement | null;
   flatTokensChk = document.getElementById('flatTokensChk') as HTMLInputElement | null;
+
+  if (allowHexChk) {
+    allowHexChk.checked = true;
+    allowHexChk.addEventListener('change', () => {
+      postToPlugin({ type: 'SAVE_PREFS', payload: { allowHexStrings: !!allowHexChk!.checked } });
+    });
+  }
 
   importScopeOverlay = document.getElementById('importScopeOverlay');
   importScopeBody = document.getElementById('importScopeBody');

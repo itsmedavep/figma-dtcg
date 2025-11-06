@@ -18,7 +18,6 @@
   };
 
   // src/app/github/ui.ts
-  var GH_REMEMBER_PREF_KEY = "ghRememberPref";
   var GH_MASK = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
   var BRANCH_TTL_MS = 6e4;
   function createGithubUi(deps) {
@@ -70,7 +69,7 @@
     const folderCreateWaiters = [];
     let ghIsAuthed = false;
     let ghTokenExpiresAt = null;
-    let ghRememberPref = false;
+    let ghRememberPref = true;
     let currentOwner = "";
     let currentRepo = "";
     let desiredBranch = null;
@@ -110,20 +109,16 @@
       if (ghTokenInput.getAttribute("data-filled") === "1") return GH_MASK;
       return (ghTokenInput.value || "").trim();
     }
-    function saveRememberPref(checked) {
-      try {
-        win == null ? void 0 : win.localStorage.setItem(GH_REMEMBER_PREF_KEY, checked ? "1" : "0");
-      } catch (e) {
+    function updateRememberPref(pref, persist = false) {
+      const next = !!pref;
+      ghRememberPref = next;
+      if (ghRememberChk) {
+        ghRememberChk.checked = ghRememberPref;
       }
-    }
-    function loadRememberPref() {
-      try {
-        const v = win == null ? void 0 : win.localStorage.getItem(GH_REMEMBER_PREF_KEY);
-        if (v === "1") return true;
-        if (v === "0") return false;
-      } catch (e) {
+      updateGhStatusUi();
+      if (persist) {
+        deps.postToPlugin({ type: "SAVE_PREFS", payload: { githubRememberToken: ghRememberPref } });
       }
-      return false;
     }
     function ensureGhStatusElements() {
       if (!doc) return;
@@ -601,13 +596,10 @@
       folderPickerListEl = doc.getElementById("folderPickerList");
       folderPickerNewBtn = doc.getElementById("folderPickerNewBtn");
       folderPickerCancelBtn = doc.getElementById("folderPickerCancelBtn");
-      ghRememberPref = loadRememberPref();
       if (ghRememberChk) {
         ghRememberChk.checked = ghRememberPref;
         ghRememberChk.addEventListener("change", () => {
-          ghRememberPref = !!ghRememberChk.checked;
-          saveRememberPref(ghRememberPref);
-          updateGhStatusUi();
+          updateRememberPref(!!ghRememberChk.checked, true);
         });
       }
       ensureGhStatusElements();
@@ -937,10 +929,7 @@
         ghIsAuthed = !!p.ok;
         ghTokenExpiresAt = typeof p.exp !== "undefined" && p.exp !== null ? p.exp : typeof p.tokenExpiration !== "undefined" && p.tokenExpiration !== null ? p.tokenExpiration : null;
         if (typeof p.remember === "boolean") {
-          ghRememberPref = p.remember;
-          saveRememberPref(ghRememberPref);
-        } else {
-          ghRememberPref = loadRememberPref();
+          updateRememberPref(p.remember, false);
         }
         if (ghIsAuthed) {
           setPatFieldObfuscated(true);
@@ -1200,10 +1189,14 @@
     function onSelectionChange() {
       updateExportCommitEnabled();
     }
+    function applyRememberPrefFromPlugin(pref) {
+      updateRememberPref(pref, false);
+    }
     return {
       attach,
       handleMessage,
-      onSelectionChange
+      onSelectionChange,
+      setRememberPref: applyRememberPrefFromPlugin
     };
   }
 
@@ -2113,6 +2106,12 @@
       if (flatTokensChk && typeof msg.payload.flatTokensPref === "boolean") {
         flatTokensChk.checked = !!msg.payload.flatTokensPref;
       }
+      if (allowHexChk && typeof msg.payload.allowHexPref === "boolean") {
+        allowHexChk.checked = !!msg.payload.allowHexPref;
+      }
+      if (typeof msg.payload.githubRememberPref === "boolean") {
+        githubUi.setRememberPref(!!msg.payload.githubRememberPref);
+      }
       const last = msg.payload.last;
       applyLastSelection(last);
       setDisabledStates();
@@ -2147,6 +2146,12 @@
     allowHexChk = document.getElementById("allowHexChk");
     styleDictionaryChk = document.getElementById("styleDictionaryChk");
     flatTokensChk = document.getElementById("flatTokensChk");
+    if (allowHexChk) {
+      allowHexChk.checked = true;
+      allowHexChk.addEventListener("change", () => {
+        postToPlugin({ type: "SAVE_PREFS", payload: { allowHexStrings: !!allowHexChk.checked } });
+      });
+    }
     importScopeOverlay = document.getElementById("importScopeOverlay");
     importScopeBody = document.getElementById("importScopeBody");
     importScopeConfirmBtn = document.getElementById("importScopeConfirmBtn");
