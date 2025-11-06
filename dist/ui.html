@@ -715,6 +715,41 @@
       gap: 4px;
     }
 
+    .gh-repo-combo {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .gh-repo-combo select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      padding-right: 28px;
+      border-radius: 8px;
+      background-color: #fff;
+      cursor: pointer;
+    }
+
+    .gh-repo-combo select:disabled {
+      cursor: not-allowed;
+      color: var(--ink-muted);
+      background: #f8fafc;
+    }
+
+    .gh-repo-combo::after {
+      content: '\25BE';
+      position: absolute;
+      right: 10px;
+      pointer-events: none;
+      color: var(--ink-muted);
+      font-size: 12px;
+    }
+
+    .gh-repo-combo:focus-within select:not(:disabled) {
+      border-color: var(--accent);
+    }
+
     .gh-branch-search {
       display: flex;
       align-items: center;
@@ -831,6 +866,17 @@
     .gh-branch-count {
       white-space: nowrap;
       font-size: 12px;
+    }
+
+    .gh-branch-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-self: flex-start;
+    }
+
+    .gh-branch-actions button {
+      flex: 0 0 auto;
     }
 
     .gh-branch-refresh,
@@ -977,7 +1023,9 @@
               <!-- Repo picker -->
               <div class="stack gh-section">
                 <label>Repository</label>
-                <select id="ghRepoSelect" disabled></select>
+                <div class="gh-repo-combo">
+                  <select id="ghRepoSelect" disabled></select>
+                </div>
                 <div class="muted">Repos you own or are a member of (populated after Connect).</div>
               </div>
 
@@ -996,10 +1044,10 @@
                   </div>
                   <div id="ghBranchCount" class="muted gh-branch-count"></div>
                 </div>
-                <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh"
-                  type="button">Refresh</button>
-                <button id="ghNewBranchBtn" class="css-button-neumorphic gh-new-branch-btn" disabled
-                  type="button">Create new…</button>
+                <div class="gh-branch-actions">
+                  <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh" type="button">Refresh</button>
+                  <button id="ghNewBranchBtn" class="css-button-neumorphic gh-new-branch-btn" disabled type="button">Create new…</button>
+                </div>
                 <div id="ghNewBranchRow" class="gh-new-branch-row" style="display:none;">
                   <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
                   <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic" type="button">Create</button>
