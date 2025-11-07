@@ -527,8 +527,22 @@ export async function ghListDir(
             };
         }
         const json = await res.json();
-        const arr = Array.isArray(json) ? json : [];
-        const entries: GhDirEntry[] = arr.map((it: any) => ({
+        if (!Array.isArray(json)) {
+            const type = typeof json?.type === 'string' ? json.type : '';
+            const status = type === 'file' ? 409 : 400;
+            const message = type === 'file'
+                ? 'GitHub: Path is a file, not a folder.'
+                : 'GitHub: Unable to list path as a folder.';
+            return {
+                ok: false,
+                owner, repo, ref,
+                path: canonicalPath,
+                status,
+                message,
+                rate
+            };
+        }
+        const entries: GhDirEntry[] = json.map((it: any) => ({
             type: it?.type === 'dir' ? 'dir' : 'file',
             name: String(it?.name || ''),
             path: String(it?.path || '')

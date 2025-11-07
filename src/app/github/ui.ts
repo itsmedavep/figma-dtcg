@@ -81,7 +81,6 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let folderPickerPathInput: HTMLInputElement | null = null;
   let folderPickerUseBtn: HTMLButtonElement | null = null;
   let folderPickerListEl: HTMLElement | null = null;
-  let folderPickerNewBtn: HTMLButtonElement | null = null;
   let folderPickerCancelBtn: HTMLButtonElement | null = null;
 
   let folderPickerIsOpen = false;
@@ -92,7 +91,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   const folderListWaiters: Array<{
     path: string;
     resolve: (v: { ok: true; entries: FolderListEntry[] }) => void;
-    reject: (v: { ok: false; message: string }) => void;
+    reject: (v: { ok: false; message: string; status?: number }) => void;
   }> = [];
 
   const folderCreateWaiters: Array<{
@@ -610,7 +609,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     return collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
   }
 
-  function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string }> {
+  function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string; status?: number }> {
     return new Promise(resolve => {
       const req = { path: path.replace(/^\/+|\/+$/g, '') };
       folderListWaiters.push({
@@ -735,8 +734,21 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     const res = await listDir(path);
     if (requestId !== folderPickerRefreshNonce) return;
 
-    if (!('ok' in res) || !res.ok) {
-      const message = 'message' in res && res.message ? res.message : 'failed to fetch';
+    if (!res.ok) {
+      const status = typeof res.status === 'number' ? res.status : 0;
+      if (status === 404) {
+        listEl.replaceChildren(
+          createFolderPickerRow('Folder not found. It will be created during export.', { muted: true, disabled: true })
+        );
+        return;
+      }
+      if (status === 409) {
+        listEl.replaceChildren(
+          createFolderPickerRow('Cannot open this path: an existing file blocks the folder.', { muted: true, disabled: true })
+        );
+        return;
+      }
+      const message = res.message ? res.message : 'failed to fetch';
       listEl.replaceChildren(createFolderPickerRow(`Error: ${message}`, { muted: true, disabled: true }));
       return;
     }
@@ -971,7 +983,6 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     folderPickerPathInput = doc.getElementById('folderPickerPath') as HTMLInputElement | null;
     folderPickerUseBtn = doc.getElementById('folderPickerUseBtn') as HTMLButtonElement | null;
     folderPickerListEl = doc.getElementById('folderPickerList');
-    folderPickerNewBtn = doc.getElementById('folderPickerNewBtn') as HTMLButtonElement | null;
     folderPickerCancelBtn = doc.getElementById('folderPickerCancelBtn') as HTMLButtonElement | null;
 
     if (ghRememberChk) {
@@ -1199,6 +1210,9 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
 
     if (folderPickerUseBtn) {
       folderPickerUseBtn.addEventListener('click', () => {
+        if (folderPickerPathInput) {
+          setFolderPickerPath(folderPickerPathInput.value, false);
+        }
         const selectionRaw = folderPickerCurrentPath ? `${folderPickerCurrentPath}/` : '/';
         const normalized = normalizeFolderInput(selectionRaw);
         if (ghFolderInput) ghFolderInput.value = normalized.display;
@@ -1209,31 +1223,6 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         persistGhState({ folder: normalized.payload });
         closeFolderPicker();
         deps.log(`Folder selected: ${normalized.display === '/' ? '(repo root)' : normalized.display}`);
-        updateExportCommitEnabled();
-        updateFetchButtonEnabled();
-      });
-    }
-
-    if (folderPickerNewBtn) {
-      folderPickerNewBtn.addEventListener('click', () => {
-        const name = win?.prompt('New folder name (no spaces; use "-" or "_")', 'tokens');
-        if (!name) return;
-        const trimmed = name.trim().replace(/^\/+/, '').replace(/\/+$/, '');
-        if (!trimmed || /\s/.test(trimmed) || /[~^:?*[\]\\]/.test(trimmed)) {
-          win?.alert('Invalid folder name.');
-          return;
-        }
-        const next = folderPickerCurrentPath ? `${folderPickerCurrentPath}/${trimmed}` : trimmed;
-        const normalizedPath = normalizeFolderPickerPath(next);
-        const normalized = normalizeFolderInput(normalizedPath ? `${normalizedPath}/` : '/');
-        if (ghFolderInput) ghFolderInput.value = normalized.display;
-        deps.postToPlugin({
-          type: 'GITHUB_SET_FOLDER',
-          payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
-        });
-        persistGhState({ folder: normalized.payload });
-        closeFolderPicker();
-        deps.log(`Folder selected (will be created on export): ${normalized.display}`);
         updateExportCommitEnabled();
         updateFetchButtonEnabled();
       });
@@ -1659,7 +1648,11 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         if (folderListWaiters[i].path === path) {
           const waiter = folderListWaiters.splice(i, 1)[0];
           if (ok) waiter.resolve({ ok: true, entries });
-          else waiter.reject({ ok: false, message: message || `HTTP ${pl.status || 0}` });
+          else waiter.reject({
+            ok: false,
+            message: message || `HTTP ${pl.status || 0}`,
+            status: typeof pl.status === 'number' ? pl.status : undefined
+          });
           break;
         }
       }
