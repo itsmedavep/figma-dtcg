@@ -765,7 +765,7 @@
       right: 10px;
       pointer-events: none;
       color: var(--ink-muted);
-      font-size: 12px;
+      font-size: 20px;
     }
 
     .gh-repo-combo:focus-within select:not(:disabled) {
@@ -965,10 +965,10 @@
                     colors</label>
                 </div>
               </div>
-              <div id="importScopeSummary" class="import-scope-summary" hidden>
+              <!-- <div id="importScopeSummary" class="import-scope-summary" hidden>
                 <div id="importScopeSummaryText" class="muted"></div>
                 <button id="importScopeClearBtn" class="link-button" type="button">Clear remembered selection</button>
-              </div>
+              </div> -->
               <div class="import-skip-log">
                 <div class="eyebrow">Import summaries</div>
                 <div id="importSkipLogEmpty" class="muted">No partial import history yet.</div>
@@ -1114,7 +1114,7 @@
               <div class="row">
                 <div>
                   <label>Export scope</label>
-                  <div class="row" style="gap:1rem;">
+                  <div class="col" style="gap:.5rem;">
                     <label style="display:flex; align-items:center; gap:.35rem;">
                       <input type="radio" name="ghScope" id="ghScopeSelected" checked />
                       Export tab selection (collection and mode)
@@ -1144,15 +1144,16 @@
               <!-- Import from GitHub -->
               <div class="row">
                 <div>
-                  <label>Import tokens from GitHub</label>
+                  <label>Directory path to tokens in GitHub</label>
                   <div class="row">
-                    <input id="ghFetchPathInput" type="text" placeholder="tokens/Tokens - Light.json" />
+                    <input id="ghFetchPathInput" type="text" placeholder="path/to/tokens-folder/design-token.json" />
                     <div style="flex:0 0 auto;">
                       <button id="ghFetchTokensBtn" class="css-button-neumorphic" disabled>Fetch &amp; Import</button>
                     </div>
                   </div>
                   <div class="muted">Downloads a JSON file from the selected repo/branch and imports it.</div>
-                  <div id="ghImportStatus" class="gh-import-status">Select a repository and branch to enable imports.</div>
+                  <div id="ghImportStatus" class="gh-import-status">Select a repository and branch to enable imports.
+                  </div>
                 </div>
               </div>
 
@@ -1222,10 +1223,10 @@
         <p class="muted" style="margin:0;">Choose which collection and mode to bring into this file.</p>
         <p id="importScopeMissingNotice" class="import-scope-missing" hidden></p>
         <div id="importScopeBody" class="import-scope-body"></div>
-        <div class="import-scope-remember">
+        <!-- <div class="import-scope-remember">
           <label><input type="checkbox" id="importScopeRememberChk" /> Remember my choice for next time</label>
           <span class="muted">You can clear this later from the import panel.</span>
-        </div>
+        </div> -->
         <div class="import-scope-footer">
           <button id="importScopeConfirmBtn" class="css-button-neumorphic" type="button">Import selected mode</button>
           <button id="importScopeCancelBtn" class="css-button-neumorphic" type="button">Cancel</button>
