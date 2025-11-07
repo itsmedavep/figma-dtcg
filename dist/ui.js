@@ -53,6 +53,7 @@
     let ghScopeTypography = null;
     let styleDictionaryCheckbox = null;
     let flatTokensCheckbox = null;
+    let ghImportStatusEl = null;
     let ghAuthStatusEl = null;
     let ghTokenMetaEl = null;
     let folderPickerOverlay = null;
@@ -88,6 +89,27 @@
     const BRANCH_INPUT_PLACEHOLDER = "Search branches\u2026 (press Enter to refresh)";
     let branchLastQuery = "";
     let branchInputPristine = true;
+    let ghImportInFlight = false;
+    let lastImportTarget = null;
+    const IMPORT_PROMPT_SELECT = "Select a repository and branch to enable imports.";
+    const IMPORT_PROMPT_BRANCH = "Pick a branch to import from.";
+    const IMPORT_PROMPT_PATH = "Enter the path to a DTCG token file, then press Import.";
+    let currentImportStatus = "idle";
+    function setImportStatus(kind, message) {
+      if (!ghImportStatusEl) return;
+      currentImportStatus = kind;
+      ghImportStatusEl.textContent = message;
+      ghImportStatusEl.classList.remove(
+        "gh-import-status--ready",
+        "gh-import-status--progress",
+        "gh-import-status--success",
+        "gh-import-status--error"
+      );
+      if (kind === "ready") ghImportStatusEl.classList.add("gh-import-status--ready");
+      else if (kind === "progress") ghImportStatusEl.classList.add("gh-import-status--progress");
+      else if (kind === "success") ghImportStatusEl.classList.add("gh-import-status--success");
+      else if (kind === "error") ghImportStatusEl.classList.add("gh-import-status--error");
+    }
     function pickCollectionSelect() {
       return deps.getCollectionSelect();
     }
@@ -715,7 +737,32 @@
       const hasRepo = !!(ghIsAuthed && currentOwner && currentRepo);
       const branch = getCurrentBranch();
       const path = ((ghFetchPathInput == null ? void 0 : ghFetchPathInput.value) || "").trim();
-      if (ghFetchTokensBtn) ghFetchTokensBtn.disabled = !(hasRepo && branch && path);
+      if (ghFetchPathInput) ghFetchPathInput.disabled = !(hasRepo && branch) || ghImportInFlight;
+      if (ghFetchTokensBtn) ghFetchTokensBtn.disabled = ghImportInFlight || !(hasRepo && branch && path);
+      if (ghImportInFlight) return;
+      if (!hasRepo) {
+        lastImportTarget = null;
+        setImportStatus("idle", IMPORT_PROMPT_SELECT);
+        return;
+      }
+      if (!branch) {
+        lastImportTarget = null;
+        setImportStatus("idle", IMPORT_PROMPT_BRANCH);
+        return;
+      }
+      if (!path) {
+        lastImportTarget = null;
+        setImportStatus("idle", IMPORT_PROMPT_PATH);
+        return;
+      }
+      if (currentImportStatus === "success" || currentImportStatus === "error") {
+        if (!lastImportTarget || lastImportTarget.branch !== branch || lastImportTarget.path !== path) {
+          currentImportStatus = "idle";
+        }
+      }
+      if (currentImportStatus !== "success" && currentImportStatus !== "error") {
+        setImportStatus("ready", `Ready to import from ${branch}.`);
+      }
     }
     function attach(context) {
       doc = context.document;
@@ -748,6 +795,7 @@
       ghScopeSelected = doc.getElementById("ghScopeSelected");
       ghScopeAll = doc.getElementById("ghScopeAll");
       ghScopeTypography = doc.getElementById("ghScopeTypography");
+      ghImportStatusEl = doc.getElementById("ghImportStatus");
       if (ghBranchInput) {
         ghBranchInput.setAttribute("role", "combobox");
         ghBranchInput.setAttribute("aria-autocomplete", "list");
@@ -1092,6 +1140,10 @@
             deps.log("Enter a path to fetch (e.g., tokens/tokens.json).");
             return;
           }
+          ghImportInFlight = true;
+          lastImportTarget = { branch, path };
+          setImportStatus("progress", `Fetching ${path} from ${branch}\u2026`);
+          updateFetchButtonEnabled();
           deps.log(`GitHub: fetching ${path} from ${currentOwner}/${currentRepo}@${branch}\u2026`);
           const allowHex = !!((_a = pickAllowHexCheckbox()) == null ? void 0 : _a.checked);
           const contexts = deps.getImportContexts();
@@ -1468,11 +1520,23 @@
         return true;
       }
       if (msg.type === "GITHUB_FETCH_TOKENS_RESULT") {
+        ghImportInFlight = false;
         if (msg.payload.ok) {
           deps.log(`Imported tokens from ${msg.payload.path} (${msg.payload.branch})`);
+          const branch = String(msg.payload.branch || "");
+          const path = String(msg.payload.path || "");
+          lastImportTarget = { branch, path };
+          setImportStatus("success", `Imported tokens from ${branch}:${path}.`);
         } else {
           deps.log(`GitHub fetch failed (${msg.payload.status || 0}): ${msg.payload.message || "unknown error"}`);
+          const status = typeof msg.payload.status === "number" ? msg.payload.status : 0;
+          const message = msg.payload.message || "Unknown error";
+          const branch = String(msg.payload.branch || "");
+          const path = String(msg.payload.path || "");
+          lastImportTarget = { branch, path };
+          setImportStatus("error", `GitHub import failed (${status}): ${message}`);
         }
+        updateFetchButtonEnabled();
         return true;
       }
       return false;
