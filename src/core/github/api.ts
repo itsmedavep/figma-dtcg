@@ -95,21 +95,55 @@ function encodePathSegments(path: string): string {
 }
 
 /** Decode base64 text to UTF-8 while tolerating malformed inputs. */
-function decodeBase64ToUtf8(b64Text: string): string {
-    try {
-        const bin = atob(b64Text);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const dec = new TextDecoder();
-        return dec.decode(bytes);
-    } catch {
-        // Fallback: attempt via decodeURIComponent escape hatch
+function decodeBase64ToUtf8(rawInput: string): string {
+    const cleaned = typeof rawInput === 'string' ? rawInput.trim() : '';
+    if (!cleaned) return '';
+    const stripWhitespace = cleaned.replace(/\s+/g, '');
+    if (!stripWhitespace) return '';
+
+    const decodeBytes = (bytes: Uint8Array): string => {
+        if (typeof TextDecoder !== 'undefined') {
+            try {
+                return new TextDecoder().decode(bytes);
+            } catch { /* ignore */ }
+        }
+        let text = '';
+        for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
         try {
-            return decodeURIComponent(escape(atob(b64Text)));
+            // escape is fine here; this path only runs in environments lacking TextDecoder
+            return decodeURIComponent(escape(text));
         } catch {
-            return '';
+            return text;
+        }
+    };
+
+    if (typeof figma !== 'undefined' && typeof figma.base64Decode === 'function') {
+        try {
+            return decodeBytes(figma.base64Decode(stripWhitespace));
+        } catch { /* fall through */ }
+    }
+
+    if (typeof atob === 'function') {
+        try {
+            const bin = atob(stripWhitespace);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return decodeBytes(bytes);
+        } catch {
+            try {
+                return decodeURIComponent(escape(atob(stripWhitespace)));
+            } catch { /* ignore */ }
         }
     }
+
+    const maybeBuffer = (globalThis as { Buffer?: { from(data: string, encoding: string): { toString(enc: string): string } } }).Buffer;
+    if (maybeBuffer && typeof maybeBuffer.from === 'function') {
+        try {
+            return maybeBuffer.from(stripWhitespace, 'base64').toString('utf8');
+        } catch { /* ignore */ }
+    }
+
+    return '';
 }
 
 /* =========================

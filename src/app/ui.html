@@ -190,6 +190,28 @@
       font-size: 12px;
     }
 
+    .gh-import-status {
+      font-size: 12px;
+      margin-top: 6px;
+      color: var(--ink-muted);
+    }
+
+    .gh-import-status--ready {
+      color: var(--ink-subtle);
+    }
+
+    .gh-import-status--progress {
+      color: var(--accent);
+    }
+
+    .gh-import-status--success {
+      color: #047857;
+    }
+
+    .gh-import-status--error {
+      color: #b91c1c;
+    }
+
     .import-scope-summary {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1130,6 +1152,7 @@
                     </div>
                   </div>
                   <div class="muted">Downloads a JSON file from the selected repo/branch and imports it.</div>
+                  <div id="ghImportStatus" class="gh-import-status">Select a repository and branch to enable imports.</div>
                 </div>
               </div>
 

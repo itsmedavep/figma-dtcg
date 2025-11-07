@@ -71,6 +71,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghScopeTypography: HTMLInputElement | null = null;
   let styleDictionaryCheckbox: HTMLInputElement | null = null;
   let flatTokensCheckbox: HTMLInputElement | null = null;
+  let ghImportStatusEl: HTMLElement | null = null;
 
   let ghAuthStatusEl: HTMLElement | null = null;
   let ghTokenMetaEl: HTMLElement | null = null;
@@ -123,6 +124,31 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let branchLastQuery = '';
   let branchInputPristine = true;
   type BranchSelectionResult = 'selected' | 'more' | 'fetch' | 'noop';
+  let ghImportInFlight = false;
+  let lastImportTarget: { branch: string; path: string } | null = null;
+
+  const IMPORT_PROMPT_SELECT = 'Select a repository and branch to enable imports.';
+  const IMPORT_PROMPT_BRANCH = 'Pick a branch to import from.';
+  const IMPORT_PROMPT_PATH = 'Enter the path to a DTCG token file, then press Import.';
+
+  type ImportStatusKind = 'idle' | 'ready' | 'progress' | 'success' | 'error';
+  let currentImportStatus: ImportStatusKind = 'idle';
+
+  function setImportStatus(kind: ImportStatusKind, message: string): void {
+    if (!ghImportStatusEl) return;
+    currentImportStatus = kind;
+    ghImportStatusEl.textContent = message;
+    ghImportStatusEl.classList.remove(
+      'gh-import-status--ready',
+      'gh-import-status--progress',
+      'gh-import-status--success',
+      'gh-import-status--error'
+    );
+    if (kind === 'ready') ghImportStatusEl.classList.add('gh-import-status--ready');
+    else if (kind === 'progress') ghImportStatusEl.classList.add('gh-import-status--progress');
+    else if (kind === 'success') ghImportStatusEl.classList.add('gh-import-status--success');
+    else if (kind === 'error') ghImportStatusEl.classList.add('gh-import-status--error');
+  }
 
   function pickCollectionSelect(): HTMLSelectElement | null {
     return deps.getCollectionSelect();
@@ -860,7 +886,36 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     const hasRepo = !!(ghIsAuthed && currentOwner && currentRepo);
     const branch = getCurrentBranch();
     const path = (ghFetchPathInput?.value || '').trim();
-    if (ghFetchTokensBtn) ghFetchTokensBtn.disabled = !(hasRepo && branch && path);
+    if (ghFetchPathInput) ghFetchPathInput.disabled = !(hasRepo && branch) || ghImportInFlight;
+    if (ghFetchTokensBtn) ghFetchTokensBtn.disabled = ghImportInFlight || !(hasRepo && branch && path);
+
+    if (ghImportInFlight) return;
+
+    if (!hasRepo) {
+      lastImportTarget = null;
+      setImportStatus('idle', IMPORT_PROMPT_SELECT);
+      return;
+    }
+    if (!branch) {
+      lastImportTarget = null;
+      setImportStatus('idle', IMPORT_PROMPT_BRANCH);
+      return;
+    }
+    if (!path) {
+      lastImportTarget = null;
+      setImportStatus('idle', IMPORT_PROMPT_PATH);
+      return;
+    }
+
+    if (currentImportStatus === 'success' || currentImportStatus === 'error') {
+      if (!lastImportTarget || lastImportTarget.branch !== branch || lastImportTarget.path !== path) {
+        currentImportStatus = 'idle';
+      }
+    }
+
+    if (currentImportStatus !== 'success' && currentImportStatus !== 'error') {
+      setImportStatus('ready', `Ready to import from ${branch}.`);
+    }
   }
 
   function attach(context: AttachContext): void {
@@ -901,6 +956,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     ghScopeSelected = doc.getElementById('ghScopeSelected') as HTMLInputElement | null;
     ghScopeAll = doc.getElementById('ghScopeAll') as HTMLInputElement | null;
     ghScopeTypography = doc.getElementById('ghScopeTypography') as HTMLInputElement | null;
+    ghImportStatusEl = doc.getElementById('ghImportStatus');
 
     if (ghBranchInput) {
       ghBranchInput.setAttribute('role', 'combobox');
@@ -1265,6 +1321,10 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         if (!currentOwner || !currentRepo) { deps.log('Pick a repository first.'); return; }
         if (!branch) { deps.log('Pick a branch first.'); return; }
         if (!path) { deps.log('Enter a path to fetch (e.g., tokens/tokens.json).'); return; }
+        ghImportInFlight = true;
+        lastImportTarget = { branch, path };
+        setImportStatus('progress', `Fetching ${path} from ${branch}…`);
+        updateFetchButtonEnabled();
         deps.log(`GitHub: fetching ${path} from ${currentOwner}/${currentRepo}@${branch}…`);
         const allowHex = !!pickAllowHexCheckbox()?.checked;
         const contexts = deps.getImportContexts();
@@ -1681,11 +1741,23 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     }
 
     if (msg.type === 'GITHUB_FETCH_TOKENS_RESULT') {
+      ghImportInFlight = false;
       if (msg.payload.ok) {
         deps.log(`Imported tokens from ${msg.payload.path} (${msg.payload.branch})`);
+        const branch = String(msg.payload.branch || '');
+        const path = String(msg.payload.path || '');
+        lastImportTarget = { branch, path };
+        setImportStatus('success', `Imported tokens from ${branch}:${path}.`);
       } else {
         deps.log(`GitHub fetch failed (${msg.payload.status || 0}): ${msg.payload.message || 'unknown error'}`);
+        const status = typeof msg.payload.status === 'number' ? msg.payload.status : 0;
+        const message = msg.payload.message || 'Unknown error';
+        const branch = String(msg.payload.branch || '');
+        const path = String(msg.payload.path || '');
+        lastImportTarget = { branch, path };
+        setImportStatus('error', `GitHub import failed (${status}): ${message}`);
       }
+      updateFetchButtonEnabled();
       return true;
     }
 
