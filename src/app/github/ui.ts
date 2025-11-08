@@ -121,7 +121,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let branchHighlightIndex = -1;
   const RENDER_STEP = 200;
   const BRANCH_INPUT_PLACEHOLDER = 'Search branches… (press Enter to refresh)';
-  const GH_FOLDER_PLACEHOLDER = 'Pick a folder…';
+  const GH_FOLDER_PLACEHOLDER = 'Path in repository…';
   let branchLastQuery = '';
   let branchInputPristine = true;
   type BranchSelectionResult = 'selected' | 'more' | 'fetch' | 'noop';

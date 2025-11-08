@@ -1122,12 +1122,13 @@
               </div>
 
               <!-- Destination folder -->
-              <div class="stack gh-section">
+              <div class="stack gh-section" style="margin-top: .5rem;">
                 <label>Destination folder (in repo)</label>
-                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Pick a folder…</div>
+                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick a
+                  folder…</button>
+                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Folder path…
+                </div>
                 <input id="ghFolderInput" type="hidden" value="" />
-                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick…</button>
-                <div class="muted">Use “Pick…” to choose a path; files commit under that folder.</div>
               </div>
 
 

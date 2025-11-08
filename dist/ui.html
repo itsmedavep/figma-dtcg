@@ -1122,12 +1122,13 @@
               </div>
 
               <!-- Destination folder -->
-              <div class="stack gh-section">
+              <div class="stack gh-section" style="margin-top: .5rem;">
                 <label>Destination folder (in repo)</label>
-                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Pick a folder…</div>
+                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick a
+                  folder…</button>
+                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Folder path…
+                </div>
                 <input id="ghFolderInput" type="hidden" value="" />
-                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick…</button>
-                <div class="muted">Use “Pick…” to choose a path; files commit under that folder.</div>
               </div>
 
 
@@ -1369,7 +1370,7 @@
     let branchHighlightIndex = -1;
     const RENDER_STEP = 200;
     const BRANCH_INPUT_PLACEHOLDER = "Search branches\u2026 (press Enter to refresh)";
-    const GH_FOLDER_PLACEHOLDER = "Pick a folder\u2026";
+    const GH_FOLDER_PLACEHOLDER = "Path in repository\u2026";
     let branchLastQuery = "";
     let branchInputPristine = true;
     let ghImportInFlight = false;

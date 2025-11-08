@@ -87,7 +87,7 @@
     let branchHighlightIndex = -1;
     const RENDER_STEP = 200;
     const BRANCH_INPUT_PLACEHOLDER = "Search branches\u2026 (press Enter to refresh)";
-    const GH_FOLDER_PLACEHOLDER = "Pick a folder\u2026";
+    const GH_FOLDER_PLACEHOLDER = "Path in repository\u2026";
     let branchLastQuery = "";
     let branchInputPristine = true;
     let ghImportInFlight = false;
