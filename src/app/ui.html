@@ -153,6 +153,25 @@
       box-sizing: border-box;
     }
 
+    .gh-folder-display {
+      width: 100%;
+      padding: 8px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: #f9fafb;
+      color: var(--ink);
+      font-size: 12px;
+      min-height: 32px;
+      display: flex;
+      align-items: center;
+      box-sizing: border-box;
+    }
+
+    .gh-folder-display.is-placeholder {
+      color: var(--ink-muted);
+      font-style: italic;
+    }
+
     button {
       padding: 10px 12px;
       border: 2px solid var(--accent);
@@ -1105,9 +1124,10 @@
               <!-- Destination folder -->
               <div class="stack gh-section">
                 <label>Destination folder (in repo)</label>
-                <input id="ghFolderInput" type="text" placeholder="tokens/" />
+                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Pick a folder…</div>
+                <input id="ghFolderInput" type="hidden" value="" />
                 <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick…</button>
-                <div class="muted">Files will be committed under this path (e.g., <code>tokens/</code>).</div>
+                <div class="muted">Use “Pick…” to choose a path; files commit under that folder.</div>
               </div>
 
 

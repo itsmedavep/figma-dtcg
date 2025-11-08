@@ -353,6 +353,18 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           return true;
         }
 
+        const folderPath = commitPathResult.path;
+        if (folderPath) {
+          const collision = await ensureFolderPathWritable(ghToken, owner, repo, branch, folderPath);
+          if (!collision.ok) {
+            deps.send({
+              type: 'GITHUB_FOLDER_LIST_RESULT',
+              payload: { ok: false, owner, repo, branch, path: folderPath, status: collision.status, message: collision.message }
+            });
+            return true;
+          }
+        }
+
         const res = await ghListDirs(ghToken, owner, repo, branch, commitPathResult.path);
         if (res.ok) {
           deps.send({

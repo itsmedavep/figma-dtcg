@@ -57,6 +57,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
 
   let ghFolderInput: HTMLInputElement | null = null;
+  let ghFolderDisplay: HTMLElement | null = null;
   let ghPickFolderBtn: HTMLButtonElement | null = null;
   let ghCommitMsgInput: HTMLInputElement | null = null;
   let ghExportAndCommitBtn: HTMLButtonElement | null = null;
@@ -120,6 +121,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let branchHighlightIndex = -1;
   const RENDER_STEP = 200;
   const BRANCH_INPUT_PLACEHOLDER = 'Search branches… (press Enter to refresh)';
+  const GH_FOLDER_PLACEHOLDER = 'Pick a folder…';
   let branchLastQuery = '';
   let branchInputPristine = true;
   type BranchSelectionResult = 'selected' | 'more' | 'fetch' | 'noop';
@@ -609,6 +611,18 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     return collapsed.replace(/^\/+/, '').replace(/\/+$/, '');
   }
 
+  function setGhFolderDisplay(display: string): void {
+    if (ghFolderInput) ghFolderInput.value = display || '';
+    if (!ghFolderDisplay) return;
+    if (display) {
+      ghFolderDisplay.textContent = display;
+      ghFolderDisplay.classList.remove('is-placeholder');
+    } else {
+      ghFolderDisplay.textContent = GH_FOLDER_PLACEHOLDER;
+      ghFolderDisplay.classList.add('is-placeholder');
+    }
+  }
+
   function listDir(path: string): Promise<{ ok: true; entries: FolderListEntry[] } | { ok: false; message: string; status?: number }> {
     return new Promise(resolve => {
       const req = { path: path.replace(/^\/+|\/+$/g, '') };
@@ -620,21 +634,6 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       deps.postToPlugin({
         type: 'GITHUB_FOLDER_LIST',
         payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), path: req.path }
-      });
-    });
-  }
-
-  function ensureFolder(folderPath: string): Promise<{ ok: true } | { ok: false; message: string; status?: number }> {
-    return new Promise(resolve => {
-      const fp = folderPath.replace(/^\/+|\/+$/g, '');
-      folderCreateWaiters.push({
-        folderPath: fp,
-        resolve: v => resolve(v),
-        reject: v => resolve(v)
-      });
-      deps.postToPlugin({
-        type: 'GITHUB_CREATE_FOLDER',
-        payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), folderPath: fp }
       });
     });
   }
@@ -714,10 +713,10 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     }
   }
 
-  function setFolderPickerPath(raw: string, refresh = true): void {
+  function setFolderPickerPath(raw: string, refresh = true, syncInput = true): void {
     const normalized = normalizeFolderPickerPath(raw);
     folderPickerCurrentPath = normalized;
-    if (folderPickerPathInput) folderPickerPathInput.value = normalized;
+    if (syncInput && folderPickerPathInput) folderPickerPathInput.value = normalized;
     if (refresh && folderPickerIsOpen) {
       void refreshFolderPickerList();
     }
@@ -956,6 +955,8 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     ghCreateBranchConfirmBtn = doc.getElementById('ghCreateBranchConfirmBtn') as HTMLButtonElement | null;
 
     ghFolderInput = doc.getElementById('ghFolderInput') as HTMLInputElement | null;
+    ghFolderDisplay = doc.getElementById('ghFolderDisplay');
+    setGhFolderDisplay(ghFolderInput?.value || '');
     ghPickFolderBtn = doc.getElementById('ghPickFolderBtn') as HTMLButtonElement | null;
     ghCommitMsgInput = doc.getElementById('ghCommitMsgInput') as HTMLInputElement | null;
     ghExportAndCommitBtn = doc.getElementById('ghExportAndCommitBtn') as HTMLButtonElement | null;
@@ -1034,7 +1035,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         updateBranchCount();
         updateFolderControlsEnabled();
 
-        if (ghFolderInput) ghFolderInput.value = '';
+        setGhFolderDisplay('');
 
         if (currentOwner && currentRepo) {
           deps.log(`GitHub: loading branches for ${currentOwner}/${currentRepo}…`);
@@ -1196,7 +1197,15 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       folderPickerCancelBtn.addEventListener('click', () => closeFolderPicker());
     }
 
+    let folderPickerPathDebounce: number | undefined;
     if (folderPickerPathInput) {
+      folderPickerPathInput.addEventListener('input', () => {
+        if (folderPickerPathDebounce) win?.clearTimeout(folderPickerPathDebounce);
+        const value = folderPickerPathInput!.value;
+        folderPickerPathDebounce = win?.setTimeout(() => {
+          setFolderPickerPath(value, true, false);
+        }, 120) as number | undefined;
+      });
       folderPickerPathInput.addEventListener('keydown', event => {
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -1215,7 +1224,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         }
         const selectionRaw = folderPickerCurrentPath ? `${folderPickerCurrentPath}/` : '/';
         const normalized = normalizeFolderInput(selectionRaw);
-        if (ghFolderInput) ghFolderInput.value = normalized.display;
+        setGhFolderDisplay(normalized.display);
         deps.postToPlugin({
           type: 'GITHUB_SET_FOLDER',
           payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
@@ -1228,23 +1237,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       });
     }
 
-    if (ghFolderInput) {
-      ghFolderInput.addEventListener('input', () => {
-        updateExportCommitEnabled();
-        updateFetchButtonEnabled();
-      });
-      ghFolderInput.addEventListener('blur', () => {
-        const normalized = normalizeFolderInput(ghFolderInput!.value);
-        ghFolderInput!.value = normalized.display;
-        deps.postToPlugin({
-          type: 'GITHUB_SET_FOLDER',
-          payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
-        });
-        persistGhState({ folder: normalized.payload });
-        updateExportCommitEnabled();
-        updateFetchButtonEnabled();
-      });
-    }
+    // ghFolderInput is read-only; picker interactions keep it in sync.
 
     if (ghCommitMsgInput) {
       ghCommitMsgInput.addEventListener('input', () => {
@@ -1348,12 +1341,12 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
 
         if (!normalizedFolder.display) {
           deps.log('Pick a destination folder (e.g., tokens/).');
-          ghFolderInput?.focus();
+          ghPickFolderBtn?.focus();
           updateExportCommitEnabled();
           return;
         }
 
-        if (ghFolderInput) ghFolderInput.value = normalizedFolder.display;
+        setGhFolderDisplay(normalizedFolder.display);
         deps.postToPlugin({
           type: 'GITHUB_SET_FOLDER',
           payload: { owner: currentOwner, repo: currentRepo, folder: normalizedFolder.payload }
@@ -1435,7 +1428,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     setBranchDisabled(true, 'Pick a repository first…');
     updateBranchCount();
     updateFolderControlsEnabled();
-    if (ghFolderInput) ghFolderInput.value = '';
+    setGhFolderDisplay('');
     deps.log('GitHub: Logged out.');
   }
 
@@ -1482,9 +1475,9 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       currentRepo = typeof p.repo === 'string' ? p.repo : '';
       desiredBranch = typeof p.branch === 'string' ? p.branch : null;
 
-      if (typeof p.folder === 'string' && ghFolderInput) {
+      if (typeof p.folder === 'string') {
         const normalized = normalizeFolderInput(p.folder);
-        ghFolderInput.value = normalized.display;
+        setGhFolderDisplay(normalized.display);
       }
       if (typeof p.commitMessage === 'string' && ghCommitMsgInput) {
         ghCommitMsgInput.value = p.commitMessage;
