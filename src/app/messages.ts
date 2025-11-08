@@ -82,6 +82,7 @@ export type UiToPlugin =
       payload: GithubRepoTarget & {
         branch: string; // target/base branch
         folder?: string;
+        filename?: string;
         commitMessage: string;
         scope: GithubScope;
         collection?: string;
@@ -120,6 +121,7 @@ export type UiToPlugin =
         repo: string;
         branch: string;
         folder: string;
+        filename: string;
         commitMessage: string;
         scope: GithubScope;
         collection: string;
@@ -196,6 +198,7 @@ export type PluginToUi =
         repo?: string;
         branch?: string;
         folder?: string;
+        filename?: string;
         commitMessage?: string;
         scope?: GithubScope;
         collection?: string;
@@ -268,6 +271,9 @@ export type PluginToUi =
               owner: string;
               repo: string;
               branch: string;
+              folder?: string;
+              filename?: string;
+              fullPath?: string;
               commitSha: string;
               commitUrl: string;
               treeUrl?: string;
@@ -279,7 +285,18 @@ export type PluginToUi =
                 head: string;
               };
             })
-        | ({ ok: false; owner: string; repo: string; branch: string; status: number; message: string; rate?: GhRateInfo });
+        | ({
+              ok: false;
+              owner: string;
+              repo: string;
+              branch: string;
+              status: number;
+              message: string;
+              rate?: GhRateInfo;
+              folder?: string;
+              filename?: string;
+              fullPath?: string;
+            });
     }
   | {
       type: 'GITHUB_PR_RESULT';

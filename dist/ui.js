@@ -17,6 +17,31 @@
     return a;
   };
 
+  // src/app/github/filenames.ts
+  var DEFAULT_GITHUB_FILENAME = "tokens.json";
+  var INVALID_FILENAME_CHARS = /[<>:"/\\|?*\u0000-\u001F]/;
+  var MAX_FILENAME_LENGTH = 128;
+  function validateGithubFilename(raw) {
+    const initial = typeof raw === "string" ? raw : DEFAULT_GITHUB_FILENAME;
+    const trimmed = initial.trim();
+    if (!trimmed) {
+      return { ok: false, message: "GitHub: Enter a filename (e.g., tokens.json)." };
+    }
+    if (trimmed === "." || trimmed === "..") {
+      return { ok: false, message: 'GitHub: Filename cannot be "." or "..".' };
+    }
+    if (trimmed.length > MAX_FILENAME_LENGTH) {
+      return { ok: false, message: `GitHub: Filename must be ${MAX_FILENAME_LENGTH} characters or fewer.` };
+    }
+    if (INVALID_FILENAME_CHARS.test(trimmed)) {
+      return { ok: false, message: 'GitHub: Filename contains unsupported characters like / \\ : * ? " < > |.' };
+    }
+    if (!/\.json$/i.test(trimmed)) {
+      return { ok: false, message: "GitHub: Filename must end with .json." };
+    }
+    return { ok: true, filename: trimmed };
+  }
+
   // src/app/github/ui.ts
   var GH_MASK = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
   var BRANCH_TTL_MS = 6e4;
@@ -41,6 +66,8 @@
     let ghFolderInput = null;
     let ghFolderDisplay = null;
     let ghPickFolderBtn = null;
+    let ghFilenameInput = null;
+    let ghFilenameErrorEl = null;
     let ghCommitMsgInput = null;
     let ghExportAndCommitBtn = null;
     let ghCreatePrChk = null;
@@ -72,6 +99,7 @@
     let ghIsAuthed = false;
     let ghTokenExpiresAt = null;
     let ghRememberPref = true;
+    let filenameValidation = validateGithubFilename(DEFAULT_GITHUB_FILENAME);
     let currentOwner = "";
     let currentRepo = "";
     let desiredBranch = null;
@@ -519,6 +547,36 @@
         ghFolderDisplay.classList.add("is-placeholder");
       }
     }
+    function setFilenameError(message) {
+      if (!ghFilenameErrorEl) return;
+      if (message) {
+        ghFilenameErrorEl.textContent = message;
+        ghFilenameErrorEl.hidden = false;
+      } else {
+        ghFilenameErrorEl.textContent = "";
+        ghFilenameErrorEl.hidden = true;
+      }
+    }
+    function refreshFilenameValidation() {
+      const raw = ghFilenameInput ? ghFilenameInput.value : "";
+      const result = validateGithubFilename(raw || DEFAULT_GITHUB_FILENAME);
+      filenameValidation = result;
+      if (result.ok) setFilenameError(null);
+      else setFilenameError(result.message);
+    }
+    function getCurrentFilename() {
+      if (filenameValidation.ok) return filenameValidation.filename;
+      const raw = ghFilenameInput ? ghFilenameInput.value : "";
+      return raw.trim() || DEFAULT_GITHUB_FILENAME;
+    }
+    function formatDestinationForLog(folderRaw, filename) {
+      const normalized = normalizeFolderInput(folderRaw || "");
+      const folderDisplay = normalized.display || "/";
+      const base = folderDisplay || "/";
+      const name = filename && filename.trim() ? filename.trim() : "(file)";
+      const joiner = base.endsWith("/") ? "" : "/";
+      return `${base}${joiner}${name}`;
+    }
     function listDir(path) {
       return new Promise((resolve) => {
         const req = { path: path.replace(/^\/+|\/+$/g, "") };
@@ -727,8 +785,9 @@
       const scopeTypography = !!(ghScopeTypography && ghScopeTypography.checked);
       const folderRaw = ghFolderInput ? ghFolderInput.value.trim() : "";
       const hasFolder = normalizeFolderInput(folderRaw).display.length > 0;
+      const hasFilename = filenameValidation.ok;
       const hasSelection = scopeAll || scopeTypography ? true : !!(collectionSelect2 && collectionSelect2.value && modeSelect2 && modeSelect2.value);
-      let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder);
+      let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder && hasFilename);
       if (ghCreatePrChk && ghCreatePrChk.checked) {
         const prBase = getPrBaseBranch();
         if (!prBase || prBase === br) {
@@ -797,6 +856,12 @@
       ghFolderDisplay = doc.getElementById("ghFolderDisplay");
       setGhFolderDisplay((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
       ghPickFolderBtn = doc.getElementById("ghPickFolderBtn");
+      ghFilenameInput = doc.getElementById("ghFilenameInput");
+      ghFilenameErrorEl = doc.getElementById("ghFilenameError");
+      if (ghFilenameInput && !ghFilenameInput.value) {
+        ghFilenameInput.value = DEFAULT_GITHUB_FILENAME;
+      }
+      refreshFilenameValidation();
       ghCommitMsgInput = doc.getElementById("ghCommitMsgInput");
       ghExportAndCommitBtn = doc.getElementById("ghExportAndCommitBtn");
       ghCreatePrChk = doc.getElementById("ghCreatePrChk");
@@ -1062,6 +1127,14 @@
           persistGhState({ commitMessage: ghCommitMsgInput.value || "" });
         });
       }
+      if (ghFilenameInput) {
+        ghFilenameInput.addEventListener("input", () => {
+          refreshFilenameValidation();
+          persistGhState({ filename: (ghFilenameInput.value || "").trim() });
+          updateExportCommitEnabled();
+        });
+        ghFilenameInput.addEventListener("blur", () => refreshFilenameValidation());
+      }
       if (ghScopeSelected) {
         ghScopeSelected.addEventListener("change", () => {
           if ((ghScopeSelected == null ? void 0 : ghScopeSelected.checked) && ghPrOptionsEl) {
@@ -1153,18 +1226,26 @@
           const scope = ghScopeAll && ghScopeAll.checked ? "all" : ghScopeTypography && ghScopeTypography.checked ? "typography" : "selected";
           const commitMessage = ((ghCommitMsgInput == null ? void 0 : ghCommitMsgInput.value) || "Update tokens from Figma").trim();
           const normalizedFolder = normalizeFolderInput((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
+          refreshFilenameValidation();
           if (!normalizedFolder.display) {
             deps.log("Pick a destination folder (e.g., tokens/).");
             ghPickFolderBtn == null ? void 0 : ghPickFolderBtn.focus();
             updateExportCommitEnabled();
             return;
           }
+          if (!filenameValidation.ok) {
+            deps.log(filenameValidation.message);
+            ghFilenameInput == null ? void 0 : ghFilenameInput.focus();
+            updateExportCommitEnabled();
+            return;
+          }
+          const filenameToUse = filenameValidation.filename;
           setGhFolderDisplay(normalizedFolder.display);
           deps.postToPlugin({
             type: "GITHUB_SET_FOLDER",
             payload: { owner: currentOwner, repo: currentRepo, folder: normalizedFolder.payload }
           });
-          persistGhState({ folder: normalizedFolder.payload });
+          persistGhState({ folder: normalizedFolder.payload, filename: filenameToUse });
           const createPr = !!(ghCreatePrChk && ghCreatePrChk.checked);
           const payload = {
             type: "GITHUB_EXPORT_AND_COMMIT",
@@ -1173,6 +1254,7 @@
               repo: currentRepo,
               branch: getCurrentBranch(),
               folder: normalizedFolder.payload,
+              filename: filenameToUse,
               commitMessage,
               scope,
               styleDictionary: !!((_a = pickStyleDictionaryCheckbox()) == null ? void 0 : _a.checked),
@@ -1189,6 +1271,9 @@
             payload.payload.prTitle = ((ghPrTitleInput == null ? void 0 : ghPrTitleInput.value) || "").trim();
             payload.payload.prBody = (ghPrBodyInput == null ? void 0 : ghPrBodyInput.value) || "";
           }
+          const scopeLabel = scope === "all" ? "all collections" : scope === "typography" ? "typography" : "selected mode";
+          const summaryTarget = formatDestinationForLog(normalizedFolder.payload, filenameToUse);
+          deps.log(`GitHub: Export summary \u2192 ${summaryTarget} (${scopeLabel})`);
           deps.log(createPr ? "Export, Commit & PR requested\u2026" : "Export & Commit requested\u2026");
           deps.postToPlugin(payload);
         });
@@ -1282,6 +1367,14 @@
           const normalized = normalizeFolderInput(p.folder);
           setGhFolderDisplay(normalized.display);
         }
+        if (ghFilenameInput) {
+          if (typeof p.filename === "string" && p.filename.trim()) {
+            ghFilenameInput.value = p.filename;
+          } else if (!ghFilenameInput.value) {
+            ghFilenameInput.value = DEFAULT_GITHUB_FILENAME;
+          }
+        }
+        refreshFilenameValidation();
         if (typeof p.commitMessage === "string" && ghCommitMsgInput) {
           ghCommitMsgInput.value = p.commitMessage;
         }
@@ -1454,7 +1547,10 @@
         if (msg.payload.ok) {
           const url = String(msg.payload.commitUrl || "");
           const branch = msg.payload.branch || "";
-          deps.log(`Commit succeeded: ${url || "(no URL)"} (${branch})`);
+          const destination = formatDestinationForLog(msg.payload.folder, msg.payload.filename);
+          const committedPath = msg.payload.fullPath || destination;
+          deps.log(`Commit succeeded (${branch}): ${url || "(no URL)"}`);
+          deps.log(`Committed ${committedPath}`);
           if (url) {
             const logEl2 = deps.getLogElement();
             if (logEl2 && doc) {
@@ -1475,10 +1571,12 @@
         } else {
           const status = typeof msg.payload.status === "number" ? msg.payload.status : 0;
           const message = msg.payload.message || "unknown error";
+          const destination = formatDestinationForLog(msg.payload.folder, msg.payload.filename);
+          const committedPath = msg.payload.fullPath || destination;
           if (status === 304) {
-            deps.log(`Commit skipped: ${message}`);
+            deps.log(`Commit skipped: ${message} (${committedPath})`);
           } else {
-            deps.log(`Commit failed (${status}): ${message}`);
+            deps.log(`Commit failed (${status}): ${message} (${committedPath})`);
           }
         }
         return true;
