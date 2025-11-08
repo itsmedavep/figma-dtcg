@@ -137,6 +137,42 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
     return { ok: true as const, storage: folderStoredResult.storage, path: folderCommitResult.path };
   }
 
+  async function ensureFolderPathWritable(
+    token: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    folderPath: string
+  ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+    if (!folderPath) return { ok: true };
+    const segments = folderPath.split('/').filter(Boolean);
+    let prefix = '';
+    for (let i = 0; i < segments.length; i++) {
+      prefix = prefix ? `${prefix}/${segments[i]}` : segments[i];
+      const res = await ghListDirs(token, owner, repo, branch, prefix);
+      if (res.ok) continue;
+      const status = typeof res.status === 'number' ? res.status : 0;
+      if (status === 404) break;
+      if (status === 409) {
+        return {
+          ok: false,
+          status: 409,
+          message: `GitHub: "${prefix}" is already a file. Choose a different export folder.`
+        };
+      }
+      if (res.samlRequired) {
+        return {
+          ok: false,
+          status: 403,
+          message: 'GitHub: Authorize SSO for this repository to export into that folder.'
+        };
+      }
+      const message = res.message || `HTTP ${status}`;
+      return { ok: false, status: status || 400, message };
+    }
+    return { ok: true };
+  }
+
   async function handle(msg: UiToPlugin): Promise<boolean> {
     switch (msg.type) {
       case 'GITHUB_SET_TOKEN': {
@@ -557,6 +593,17 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         if (!folderInfo.ok) {
           deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderInfo.message } });
           return true;
+        }
+
+        if (folderInfo.path) {
+          const folderCheck = await ensureFolderPathWritable(ghToken, owner, repo, baseBranch, folderInfo.path);
+          if (!folderCheck.ok) {
+            deps.send({
+              type: 'GITHUB_COMMIT_RESULT',
+              payload: { ok: false, owner, repo, branch: baseBranch, status: folderCheck.status, message: folderCheck.message }
+            });
+            return true;
+          }
         }
 
         if (createPr && !prBaseBranch) {

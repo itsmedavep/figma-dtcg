@@ -99,7 +99,7 @@
       font-size: 11px;
       letter-spacing: .06em;
       text-transform: uppercase;
-      color: var(--ink-muted);
+      color: var(--in);
       margin: 0 0 2px 0;
     }
 
@@ -1025,6 +1025,7 @@
 
               <!-- Auth row -->
               <div class="stack gh-section gh-auth">
+                <h3 class="eyebrow">GitHub Authentication</h3>
                 <label>Personal Access Token (PAT)</label>
                 <input id="ghTokenInput" type="password" placeholder="GitHub personal access token"
                   autocomplete="off" />
@@ -1035,7 +1036,7 @@
                     Remember me
                   </label>
                 </div>
-                <div class="gh-auth-actions">
+                <div class="gh-auth-actions" style="margin-bottom: .5rem;">
                   <button id="ghConnectBtn" class="css-button-neumorphic">Connect</button>
                   <button id="ghLogoutBtn" class="css-button-neumorphic" type="button">Log out</button>
                 </div>
@@ -1043,9 +1044,31 @@
                 <div id="ghTokenMeta" class="muted gh-auth-meta"></div>
               </div>
 
+              <!-- Export scope -->
+              <div class="row">
+                <div>
+                  <h3 class="eyebrow" style="margin: .5rem;">Scope</h3>
+                  <div class="col" style="gap:.5rem;">
+                    <label style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="radio" name="ghScope" id="ghScopeSelected" checked />
+                      Use export tab selection (collection and mode)
+                    </label>
+                    <label style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="radio" name="ghScope" id="ghScopeAll" />
+                      All collections &amp; modes
+                    </label>
+                    <label style="display:flex; align-items:center; gap:.35rem;">
+                      <input type="radio" name="ghScope" id="ghScopeTypography" />
+                      Typography (text styles)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <!-- Repo picker -->
               <div class="stack gh-section">
-                <label>Repository</label>
+                <h3 class="eyebrow">Select repository details</h3>
+                <label>Choose repo</label>
                 <div class="gh-repo-combo">
                   <select id="ghRepoSelect" disabled></select>
                 </div>
@@ -1087,6 +1110,8 @@
                 <div class="muted">Files will be committed under this path (e.g., <code>tokens/</code>).</div>
               </div>
 
+
+
               <!-- Commit -->
               <div class="row">
                 <div>
@@ -1110,28 +1135,7 @@
                 </div>
               </div>
 
-              <!-- Scope -->
-              <div class="row">
-                <div>
-                  <label>Export scope</label>
-                  <div class="col" style="gap:.5rem;">
-                    <label style="display:flex; align-items:center; gap:.35rem;">
-                      <input type="radio" name="ghScope" id="ghScopeSelected" checked />
-                      Export tab selection (collection and mode)
-                    </label>
-                    <label style="display:flex; align-items:center; gap:.35rem;">
-                      <input type="radio" name="ghScope" id="ghScopeAll" />
-                      All collections &amp; modes
-                    </label>
-                    <label style="display:flex; align-items:center; gap:.35rem;">
-                      <input type="radio" name="ghScope" id="ghScopeTypography" />
-                      Typography (text styles)
-                    </label>
 
-
-                  </div>
-                </div>
-              </div>
 
               <!-- Actions -->
               <div class="row">
@@ -1142,21 +1146,22 @@
               </div>
 
               <!-- Import from GitHub -->
-              <div class="row">
+              <div class="row" style="margin-top: .5rem;">
                 <div>
+                  <h3 class="eyebrow" style="padding-bottom: .25rem;">Import from tokens from GitHub</h3>
                   <label>Directory path to tokens in GitHub</label>
+                  <!-- <div class="muted" style="margin: .25rem;">(Downloads a JSON file from the selected repo/branch and
+                    imports it.)</div> -->
                   <div class="row">
                     <input id="ghFetchPathInput" type="text" placeholder="path/to/tokens-folder/design-token.json" />
                     <div style="flex:0 0 auto;">
                       <button id="ghFetchTokensBtn" class="css-button-neumorphic" disabled>Fetch &amp; Import</button>
                     </div>
                   </div>
-                  <div class="muted">Downloads a JSON file from the selected repo/branch and imports it.</div>
                   <div id="ghImportStatus" class="gh-import-status">Select a repository and branch to enable imports.
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
@@ -1248,7 +1253,6 @@
           <button class="folder-picker-row is-muted" type="button" disabled>Loading…</button>
         </div>
         <div class="folder-picker-actions">
-          <button id="folderPickerNewBtn" class="tab-btn">New folder…</button>
           <button id="folderPickerCancelBtn" class="tab-btn">Cancel</button>
         </div>
       </div>
