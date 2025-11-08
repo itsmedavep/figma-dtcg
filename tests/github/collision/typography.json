@@ -1,0 +1,46 @@
+{
+  "typography": {
+    "typography-test": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Inter",
+        "fontWeight": "Regular",
+        "fontSize": {
+          "value": 12,
+          "unit": "px"
+        },
+        "letterSpacing": {
+          "value": 0,
+          "unit": "px"
+        },
+        "lineHeight": "auto"
+      },
+      "$extensions": {
+        "com.figma": {
+          "styleType": "TEXT",
+          "styleID": "S:7fb8d95106d65df531b80db1f770d9007bcb2013,",
+          "styleName": "typography-test",
+          "typography": {
+            "fontVariant": "Regular",
+            "fontStyle": "Regular",
+            "lineHeight": {
+              "unit": "AUTO"
+            },
+            "letterSpacing": {
+              "unit": "PERCENT",
+              "value": 0
+            },
+            "paragraphSpacing": 0,
+            "paragraphIndent": 0,
+            "textCase": "ORIGINAL",
+            "textDecoration": "NONE",
+            "leadingTrim": "NONE",
+            "listSpacing": 0,
+            "hangingPunctuation": false,
+            "hangingList": false
+          }
+        }
+      }
+    }
+  }
+}
