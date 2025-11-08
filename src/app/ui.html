@@ -172,6 +172,12 @@
       font-style: italic;
     }
 
+    .gh-input-error {
+      color: #b91c1c;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
     button {
       padding: 10px 12px;
       border: 2px solid var(--accent);
@@ -1066,7 +1072,7 @@
               <!-- Export scope -->
               <div class="row">
                 <div>
-                  <h3 class="eyebrow" style="margin: .5rem;">Scope</h3>
+                  <h3 class="eyebrow" style="margin: .5rem;">Export scope</h3>
                   <div class="col" style="gap:.5rem;">
                     <label style="display:flex; align-items:center; gap:.35rem;">
                       <input type="radio" name="ghScope" id="ghScopeSelected" checked />
@@ -1086,8 +1092,8 @@
 
               <!-- Repo picker -->
               <div class="stack gh-section">
-                <h3 class="eyebrow">Select repository details</h3>
-                <label>Choose repo</label>
+                <h3 class="eyebrow">Export repository details</h3>
+                <label>Export repository</label>
                 <div class="gh-repo-combo">
                   <select id="ghRepoSelect" disabled></select>
                 </div>
@@ -1096,7 +1102,7 @@
 
               <!-- Branch controls -->
               <div class="stack gh-section">
-                <label>Branch</label>
+                <label>Export repository branch</label>
                 <div class="gh-branch-search">
                   <div class="gh-branch-combo">
                     <input id="ghBranchInput" type="text" placeholder="Pick a repository first…" autocomplete="off"
@@ -1122,12 +1128,17 @@
               </div>
 
               <!-- Destination folder -->
-              <div class="stack gh-section">
+              <div class="stack gh-section" style="margin-top: .5rem;">
+                <h3 class="eyebrow">Export destination folder and file name</h3>
                 <label>Destination folder (in repo)</label>
-                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Pick a folder…</div>
+                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick a
+                  folder…</button>
+                <div id="ghFolderDisplay" class="gh-folder-display is-placeholder" aria-live="polite">Folder path…
+                </div>
                 <input id="ghFolderInput" type="hidden" value="" />
-                <button id="ghPickFolderBtn" class="css-button-neumorphic" disabled type="button">Pick…</button>
-                <div class="muted">Use “Pick…” to choose a path; files commit under that folder.</div>
+                <label for="ghFilenameInput">Filename</label>
+                <input id="ghFilenameInput" type="text" value="tokens.json" autocomplete="off" />
+                <div id="ghFilenameError" class="gh-input-error" aria-live="polite" hidden></div>
               </div>
 
 
@@ -1135,6 +1146,7 @@
               <!-- Commit -->
               <div class="row">
                 <div>
+                  <h3 class="eyebrow" style="margin-bottom: .5rem;">Commit/pull request details</h3>
                   <label>Commit message</label>
                   <input id="ghCommitMsgInput" type="text" value="Update tokens from Figma" />
                 </div>

@@ -1,6 +1,7 @@
 import { ghGetUser, ghListRepos, ghListBranches, ghCreateBranch, ghListDirs, ghEnsureFolder, ghCommitFiles, ghGetFileContents, ghCreatePullRequest } from '../../core/github/api';
 import type { UiToPlugin, PluginToUi, GithubScope } from '../messages';
 import { normalizeFolderForStorage, folderStorageToCommitPath } from './folders';
+import { validateGithubFilename, DEFAULT_GITHUB_FILENAME } from './filenames';
 
 type SnapshotFn = typeof import('../collections').snapshotCollectionsForUi;
 type AnalyzeSelectionFn = typeof import('../collections').analyzeSelectionState;
@@ -22,6 +23,7 @@ type GhSelected = {
   repo?: string;
   branch?: string;
   folder?: string;
+  filename?: string;
   commitMessage?: string;
   scope?: GithubScope;
   collection?: string;
@@ -226,6 +228,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           repo: msg.payload.repo,
           branch: sel.branch,
           folder: undefined,
+          filename: sel.filename,
           commitMessage: sel.commitMessage,
           scope: sel.scope,
           collection: sel.collection,
@@ -245,6 +248,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           repo: msg.payload.repo || sel.repo,
           branch: msg.payload.branch,
           folder: undefined,
+          filename: sel.filename,
           commitMessage: sel.commitMessage,
           scope: sel.scope,
           collection: sel.collection,
@@ -270,6 +274,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           repo: msg.payload.repo || sel.repo,
           branch: sel.branch,
           folder,
+          filename: sel.filename,
           commitMessage: sel.commitMessage,
           scope: sel.scope,
           collection: sel.collection,
@@ -292,6 +297,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           if (folderResult.ok) update.folder = folderResult.storage;
           else deps.send({ type: 'ERROR', payload: { message: folderResult.message } });
         }
+        if (typeof msg.payload.filename === 'string') update.filename = msg.payload.filename.trim();
         if (typeof msg.payload.commitMessage === 'string') update.commitMessage = msg.payload.commitMessage;
         if (msg.payload.scope === 'all' || msg.payload.scope === 'selected' || msg.payload.scope === 'typography') {
           update.scope = msg.payload.scope;
@@ -587,23 +593,57 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const prBaseBranch = createPr ? String(msg.payload.prBase || '') : '';
         const prTitle = String(msg.payload.prTitle || commitMessage).trim() || commitMessage;
         const prBody = typeof msg.payload.prBody === 'string' ? msg.payload.prBody : undefined;
+        const storedSelection = await getSelected();
+        const filenameCandidate = typeof msg.payload.filename === 'string'
+          ? msg.payload.filename
+          : (typeof storedSelection.filename === 'string' ? storedSelection.filename : undefined);
+        const filenameCheck = validateGithubFilename(filenameCandidate ?? DEFAULT_GITHUB_FILENAME);
+        if (!filenameCheck.ok) {
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: {
+              ok: false,
+              owner,
+              repo,
+              branch: baseBranch,
+              status: 400,
+              message: filenameCheck.message,
+              folder: folderRaw || '',
+              filename: filenameCandidate
+            }
+          });
+          return true;
+        }
+        const filenameToCommit = filenameCheck.filename;
 
         if (!ghToken) {
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 401, message: 'No token' } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: { ok: false, owner, repo, branch: baseBranch, status: 401, message: 'No token', folder: folderRaw || '', filename: filenameToCommit }
+          });
           return true;
         }
         if (!owner || !repo || !baseBranch) {
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Missing owner/repo/branch' } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Missing owner/repo/branch', folder: folderRaw || '', filename: filenameToCommit }
+          });
           return true;
         }
         if (!commitMessage) {
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Empty commit message' } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Empty commit message', folder: folderRaw || '', filename: filenameToCommit }
+          });
           return true;
         }
 
         const folderInfo = await getSelectedFolderForCommit(folderRaw);
         if (!folderInfo.ok) {
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderInfo.message } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderInfo.message, folder: folderRaw || '', filename: filenameToCommit }
+          });
           return true;
         }
 
@@ -612,26 +652,55 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           if (!folderCheck.ok) {
             deps.send({
               type: 'GITHUB_COMMIT_RESULT',
-              payload: { ok: false, owner, repo, branch: baseBranch, status: folderCheck.status, message: folderCheck.message }
+              payload: { ok: false, owner, repo, branch: baseBranch, status: folderCheck.status, message: folderCheck.message, folder: folderInfo.storage, filename: filenameToCommit }
             });
             return true;
           }
         }
 
         if (createPr && !prBaseBranch) {
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Unable to determine target branch for pull request.' } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: {
+              ok: false,
+              owner,
+              repo,
+              branch: baseBranch,
+              status: 400,
+              message: 'Unable to determine target branch for pull request.',
+              folder: folderInfo.storage,
+              filename: filenameToCommit
+            }
+          });
           return true;
         }
         if (createPr && prBaseBranch === baseBranch) {
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Selected branch matches PR target branch. Choose a different branch before creating a PR.' } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: {
+              ok: false,
+              owner,
+              repo,
+              branch: baseBranch,
+              status: 400,
+              message: 'Selected branch matches PR target branch. Choose a different branch before creating a PR.',
+              folder: folderInfo.storage,
+              filename: filenameToCommit
+            }
+          });
           return true;
         }
+
+        const folderStorageValue = folderInfo.storage;
+        const folderCommitPath = folderInfo.path;
+        const fullPathForCommit = folderCommitPath ? `${folderCommitPath}/${filenameToCommit}` : filenameToCommit;
 
         await mergeSelected({
           owner,
           repo,
           branch: baseBranch,
           folder: folderInfo.storage,
+          filename: filenameToCommit,
           commitMessage,
           scope,
           collection: scope === 'selected' ? collection : undefined,
@@ -655,7 +724,20 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             for (const f of typo.files) files.push({ name: f.name, json: f.json });
           } else {
             if (!collection || !mode) {
-              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: 'Pick a collection and a mode.' } });
+              deps.send({
+                type: 'GITHUB_COMMIT_RESULT',
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch: baseBranch,
+                  status: 400,
+                  message: 'Pick a collection and a mode.',
+                  folder: folderStorageValue,
+                  filename: filenameToCommit,
+                  fullPath: fullPathForCommit
+                }
+              });
               return true;
             }
             const per = await deps.exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
@@ -677,10 +759,41 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             }
             if (!picked) {
               const available = per.files.map(f => f.name).join(', ');
-              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 404, message: `No export found for "${collection}" / "${mode}". Available: [${available}]` } });
+              deps.send({
+                type: 'GITHUB_COMMIT_RESULT',
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch: baseBranch,
+                  status: 404,
+                  message: `No export found for "${collection}" / "${mode}". Available: [${available}]`,
+                  folder: folderStorageValue,
+                  filename: filenameToCommit,
+                  fullPath: fullPathForCommit
+                }
+              });
               return true;
             }
             files.push({ name: picked.name, json: picked.json });
+          }
+
+          if (files.length > 1) {
+            deps.send({
+              type: 'GITHUB_COMMIT_RESULT',
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch: baseBranch,
+                status: 400,
+                message: 'GitHub: Custom filename requires a single export file. Adjust scope or disable extra formats.',
+                folder: folderStorageValue,
+                filename: filenameToCommit,
+                fullPath: fullPathForCommit
+              }
+            });
+            return true;
           }
 
           const isPlainEmptyObject = (v: any) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0;
@@ -694,9 +807,35 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
               const tail = diag.ok
                 ? `Found ${diag.variableCount} variable(s) in "${collection}", but ${diag.variablesWithValues ?? 0} with a value in "${mode}".`
                 : (diag.message || 'No values present.');
-              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 412, message: `Export for "${collection}" / "${mode}" produced an empty tokens file. ${tail}` } });
+              deps.send({
+                type: 'GITHUB_COMMIT_RESULT',
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch: baseBranch,
+                  status: 412,
+                  message: `Export for "${collection}" / "${mode}" produced an empty tokens file. ${tail}`,
+                  folder: folderStorageValue,
+                  filename: filenameToCommit,
+                  fullPath: fullPathForCommit
+                }
+              });
             } else {
-              deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 412, message: 'Export produced an empty tokens file. Ensure this file contains local Variables with values.' } });
+              deps.send({
+                type: 'GITHUB_COMMIT_RESULT',
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch: baseBranch,
+                  status: 412,
+                  message: 'Export produced an empty tokens file. Ensure this file contains local Variables with values.',
+                  folder: folderStorageValue,
+                  filename: filenameToCommit,
+                  fullPath: fullPathForCommit
+                }
+              });
             }
             if (scope !== 'typography') return true;
           }
@@ -707,11 +846,14 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             if (m) return `${m[1].trim()} - ${m[2].trim()}.json`;
             return name.endsWith('.json') ? name : (name + '.json');
           };
-          const prefix = folderInfo.path ? (folderInfo.path + '/') : '';
-          const commitFiles = files.map(f => ({
-            path: prefix + prettyExportName(f.name),
-            content: JSON.stringify(f.json, null, 2) + '\n'
-          }));
+          const prefix = folderCommitPath ? (folderCommitPath + '/') : '';
+          const commitFiles = files.map(f => {
+            const resolvedName = files.length === 1 ? filenameToCommit : prettyExportName(f.name);
+            return {
+              path: prefix + resolvedName,
+              content: JSON.stringify(f.json, null, 2) + '\n'
+            };
+          });
 
           const normalizeForCompare = (text: string): string => text.replace(/\r\n/g, '\n').trimEnd();
           const tryParseJson = (text: string): unknown | undefined => {
@@ -766,7 +908,20 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             const noChangeMessage = scope === 'selected'
               ? `No token values changed for "${collection}" / "${mode}"; repository already matches the current export.`
               : 'No token values changed; repository already matches the current export.';
-            deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 304, message: noChangeMessage } });
+            deps.send({
+              type: 'GITHUB_COMMIT_RESULT',
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch: baseBranch,
+                status: 304,
+                message: noChangeMessage,
+                folder: folderStorageValue,
+                filename: filenameToCommit,
+                fullPath: fullPathForCommit
+              }
+            });
             return true;
           }
 
@@ -780,11 +935,29 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                 : 'No token values changed; repository already matches the current export.';
               deps.send({
                 type: 'GITHUB_COMMIT_RESULT',
-                payload: { ok: false, owner, repo, branch: baseBranch, status: 304, message: noChangeMessage }
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch: baseBranch,
+                  status: 304,
+                  message: noChangeMessage,
+                  folder: folderStorageValue,
+                  filename: filenameToCommit,
+                  fullPath: fullPathForCommit
+                }
               });
               return true;
             }
-            deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: commitRes });
+            deps.send({
+              type: 'GITHUB_COMMIT_RESULT',
+              payload: {
+                ...commitRes,
+                folder: folderStorageValue,
+                filename: filenameToCommit,
+                fullPath: fullPathForCommit
+              }
+            });
             deps.send({ type: 'ERROR', payload: { message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}` } });
             return true;
           }
@@ -804,6 +977,9 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             owner,
             repo,
             branch: baseBranch,
+            folder: folderStorageValue,
+            filename: filenameToCommit,
+            fullPath: fullPathForCommit,
             commitSha: commitRes.commitSha,
             commitUrl: commitRes.commitUrl,
             treeUrl: commitRes.treeUrl,
@@ -826,7 +1002,20 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           }
         } catch (e) {
           const msgText = (e as Error)?.message || 'unknown error';
-          deps.send({ type: 'GITHUB_COMMIT_RESULT', payload: { ok: false, owner, repo, branch: baseBranch, status: 0, message: msgText } });
+          deps.send({
+            type: 'GITHUB_COMMIT_RESULT',
+            payload: {
+              ok: false,
+              owner,
+              repo,
+              branch: baseBranch,
+              status: 0,
+              message: msgText,
+              folder: folderStorageValue,
+              filename: filenameToCommit,
+              fullPath: fullPathForCommit
+            }
+          });
         }
         return true;
       }
