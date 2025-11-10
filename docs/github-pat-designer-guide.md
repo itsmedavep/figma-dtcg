@@ -52,6 +52,8 @@ Scroll down to the **Repository permissions** area. Turn on the following:
 
 Leave other sections at their default "No access" setting unless your team needs more.
 
+> **Tip:** The plugin can create branches and commits on your behalf. Make sure the token truly has write access (push permission) to the repository, and authorize SSO when GitHub prompts you—otherwise the plugin will warn you that branch creation failed or that SSO approval is required.【F:src/core/github/api.ts†L367-L444】【F:src/app/github/ui.ts†L1660-L1707】
+
 Finally, click **Generate token** at the very bottom.
 
 ![Step 5: Repository access](images/pat-step5.svg)
@@ -68,9 +70,9 @@ Finally, click **Generate token** at the very bottom.
 ---
 
 ## 7. Test the connection in the plugin
-1. Open the Figma plugin and go to the GitHub connection settings.
-2. Paste the token into the PAT field and save.
-3. Use the **Test connection** (or similar) button. The plugin should confirm that it can reach your repository.
+1. Open the Figma plugin and go to the GitHub tab.
+2. Paste the token into the PAT field, choose whether to let the plugin remember it, and click **Connect**.
+3. Watch the status line—on success it reports that you are authenticated and shows whether the token will be remembered on this device.【F:src/app/ui.html†L1051-L1069】【F:src/app/github/ui.ts†L247-L280】【F:src/app/github/ui.ts†L1467-L1475】
 
 If the test fails, double-check that:
 - You chose the correct repository when creating the token.
