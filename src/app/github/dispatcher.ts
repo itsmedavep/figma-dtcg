@@ -1,5 +1,5 @@
 import { ghGetUser, ghListRepos, ghListBranches, ghCreateBranch, ghListDirs, ghEnsureFolder, ghCommitFiles, ghGetFileContents, ghCreatePullRequest } from '../../core/github/api';
-import type { UiToPlugin, PluginToUi, GithubScope } from '../messages';
+import type { UiToPlugin, PluginToUi, GithubScope, GithubRepoListErrorReason } from '../messages';
 import { normalizeFolderForStorage, folderStorageToCommitPath } from './folders';
 import { validateGithubFilename, DEFAULT_GITHUB_FILENAME } from './filenames';
 
@@ -76,7 +76,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
   async function listAndSendRepos(token: string): Promise<void> {
     await sleep(75);
     let repos = await ghListRepos(token);
-    if (!repos.ok && /Failed to fetch|network error/i.test(repos.error || '')) {
+    if (!repos.ok && /Failed to fetch|network error/i.test(repos.message || '')) {
       await sleep(200);
       repos = await ghListRepos(token);
     }
@@ -86,9 +86,19 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         default_branch: r.default_branch,
         private: !!r.private
       }));
+      deps.send({ type: 'GITHUB_REPO_LIST_ERROR', payload: { message: '', reason: 'none' } });
       deps.send({ type: 'GITHUB_REPOS', payload: { repos: minimal } });
     } else {
-      deps.send({ type: 'ERROR', payload: { message: `GitHub: Could not list repos: ${repos.error}` } });
+      const reason: GithubRepoListErrorReason = repos.samlRequired
+        ? 'sso'
+        : (repos.status === 403 ? 'scope' : 'unknown');
+      const message = repos.samlRequired
+        ? 'GitHub: Authorize SSO for the organization that owns this repository before listing it.'
+        : (reason === 'scope'
+          ? 'GitHub: This token lacks the organization read access needed to list those repositories.'
+          : `GitHub: Could not list repos: ${repos.message || 'unknown error'}`);
+      deps.send({ type: 'ERROR', payload: { message } });
+      deps.send({ type: 'GITHUB_REPO_LIST_ERROR', payload: { message, reason } });
       deps.send({ type: 'GITHUB_REPOS', payload: { repos: [] } });
     }
   }

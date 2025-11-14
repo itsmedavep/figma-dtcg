@@ -15,6 +15,8 @@ export interface GithubRepoTarget {
 /** Scope for export/commit actions coming from the UI. */
 export type GithubScope = 'all' | 'selected' | 'typography';
 
+export type GithubRepoListErrorReason = 'none' | 'scope' | 'sso' | 'unknown';
+
 export interface GithubBranchPayload extends GithubRepoTarget {
   branch: string;
 }
@@ -190,6 +192,10 @@ export type PluginToUi =
   | {
       type: 'GITHUB_REPOS';
       payload: { repos: Array<{ full_name: string; default_branch?: string; private?: boolean }> };
+    }
+  | {
+      type: 'GITHUB_REPO_LIST_ERROR';
+      payload: { message: string; reason: GithubRepoListErrorReason };
     }
   | {
       type: 'GITHUB_RESTORE_SELECTED';

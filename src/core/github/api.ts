@@ -187,7 +187,7 @@ export interface GhRepo {
 
 export type GhListReposResult =
     | { ok: true; repos: GhRepo[] }
-    | { ok: false; error: string };
+    | { ok: false; status?: number; message: string; samlRequired?: boolean };
 
 /** Fetch helper that retries transient failures a couple of times. */
 async function fetchJsonWithRetry(url: string, init: any, tries = 2) {
@@ -217,10 +217,15 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
 
         while (true) {
             const res = await fetchJsonWithRetry(`${base}&page=${page}`, { headers }, 2);
-            if (res.status === 401) return { ok: false, error: 'bad credentials' };
+            const saml = headerGet((res as any)?.headers, 'x-github-saml');
+            if (res.status === 401) return { ok: false, status: 401, message: 'bad credentials' };
             if (!res.ok) {
+                if (res.status === 403 && saml) {
+                    return { ok: false, status: 403, message: 'SAML/SSO required', samlRequired: true };
+                }
                 if (all.length) return { ok: true, repos: all };
-                return { ok: false, error: (await res.text()) || `HTTP ${res.status}` };
+                const text = await safeText(res);
+                return { ok: false, status: res.status, message: text || `HTTP ${res.status}` };
             }
 
             const arr = await res.json();
@@ -247,7 +252,7 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
 
         return { ok: true, repos: all };
     } catch (e) {
-        return { ok: false, error: (e as Error)?.message || 'network error' };
+        return { ok: false, status: 0, message: (e as Error)?.message || 'network error' };
     }
 }
 

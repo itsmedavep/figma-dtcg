@@ -3,7 +3,7 @@
 // - Bridges GitHub interactions with plugin storage and export preferences
 // - Keeps DOM event wiring resilient across optional UI states
 
-import type { PluginToUi, UiToPlugin, GithubScope } from '../messages';
+import type { PluginToUi, UiToPlugin, GithubScope, GithubRepoListErrorReason } from '../messages';
 import type { GithubFilenameValidation } from './filenames';
 import { DEFAULT_GITHUB_FILENAME, validateGithubFilename } from './filenames';
 
@@ -45,6 +45,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghConnectBtn: HTMLButtonElement | null = null;
   let ghVerifyBtn: HTMLButtonElement | null = null;
   let ghRepoSelect: HTMLSelectElement | null = null;
+  let ghRepoErrorEl: HTMLElement | null = null;
   let ghLogoutBtn: HTMLButtonElement | null = null;
 
   let ghBranchInput: HTMLInputElement | null = null;
@@ -154,6 +155,20 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     else if (kind === 'progress') ghImportStatusEl.classList.add('gh-import-status--progress');
     else if (kind === 'success') ghImportStatusEl.classList.add('gh-import-status--success');
     else if (kind === 'error') ghImportStatusEl.classList.add('gh-import-status--error');
+  }
+
+  function setGhRepoError(message: string, reason: GithubRepoListErrorReason): void {
+    if (!ghRepoErrorEl && doc) ghRepoErrorEl = doc.getElementById('ghRepoError');
+    if (!ghRepoErrorEl) return;
+    if (!message) {
+      ghRepoErrorEl.hidden = true;
+      ghRepoErrorEl.textContent = '';
+      ghRepoErrorEl.removeAttribute('data-reason');
+      return;
+    }
+    ghRepoErrorEl.hidden = false;
+    ghRepoErrorEl.textContent = message;
+    ghRepoErrorEl.setAttribute('data-reason', reason);
   }
 
   function pickCollectionSelect(): HTMLSelectElement | null {
@@ -983,6 +998,8 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       || (doc.getElementById('ghVerifyBtn') as HTMLButtonElement | null);
     ghLogoutBtn = doc.getElementById('ghLogoutBtn') as HTMLButtonElement | null;
     ghRepoSelect = doc.getElementById('ghRepoSelect') as HTMLSelectElement | null;
+    ghRepoErrorEl = doc.getElementById('ghRepoError');
+    setGhRepoError('', 'none');
 
     ghBranchInput = doc.getElementById('ghBranchInput') as HTMLInputElement | null;
     ghBranchToggleBtn = doc.getElementById('ghBranchToggleBtn') as HTMLButtonElement | null;
@@ -1537,6 +1554,14 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       const repos = (msg.payload?.repos ?? []) as Array<{ full_name: string; default_branch: string; private: boolean }>;
       populateGhRepos(repos);
       deps.log(`GitHub: Repository list updated (${repos.length}).`);
+      return true;
+    }
+
+    if (msg.type === 'GITHUB_REPO_LIST_ERROR') {
+      setGhRepoError(msg.payload.message, msg.payload.reason);
+      if (msg.payload.message) {
+        deps.log(msg.payload.message);
+      }
       return true;
     }
 
