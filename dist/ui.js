@@ -53,6 +53,7 @@
     let ghConnectBtn = null;
     let ghVerifyBtn = null;
     let ghRepoSelect = null;
+    let ghRepoErrorEl = null;
     let ghLogoutBtn = null;
     let ghBranchInput = null;
     let ghBranchToggleBtn = null;
@@ -138,6 +139,19 @@
       else if (kind === "progress") ghImportStatusEl.classList.add("gh-import-status--progress");
       else if (kind === "success") ghImportStatusEl.classList.add("gh-import-status--success");
       else if (kind === "error") ghImportStatusEl.classList.add("gh-import-status--error");
+    }
+    function setGhRepoError(message, reason) {
+      if (!ghRepoErrorEl && doc) ghRepoErrorEl = doc.getElementById("ghRepoError");
+      if (!ghRepoErrorEl) return;
+      if (!message) {
+        ghRepoErrorEl.hidden = true;
+        ghRepoErrorEl.textContent = "";
+        ghRepoErrorEl.removeAttribute("data-reason");
+        return;
+      }
+      ghRepoErrorEl.hidden = false;
+      ghRepoErrorEl.textContent = message;
+      ghRepoErrorEl.setAttribute("data-reason", reason);
     }
     function pickCollectionSelect() {
       return deps.getCollectionSelect();
@@ -843,6 +857,8 @@
       ghVerifyBtn = doc.getElementById("githubVerifyBtn") || doc.getElementById("ghVerifyBtn");
       ghLogoutBtn = doc.getElementById("ghLogoutBtn");
       ghRepoSelect = doc.getElementById("ghRepoSelect");
+      ghRepoErrorEl = doc.getElementById("ghRepoError");
+      setGhRepoError("", "none");
       ghBranchInput = doc.getElementById("ghBranchInput");
       ghBranchToggleBtn = doc.getElementById("ghBranchToggleBtn");
       ghBranchMenu = doc.getElementById("ghBranchMenu");
@@ -1356,6 +1372,13 @@
         const repos = (_b = (_a = msg.payload) == null ? void 0 : _a.repos) != null ? _b : [];
         populateGhRepos(repos);
         deps.log(`GitHub: Repository list updated (${repos.length}).`);
+        return true;
+      }
+      if (msg.type === "GITHUB_REPO_LIST_ERROR") {
+        setGhRepoError(msg.payload.message, msg.payload.reason);
+        if (msg.payload.message) {
+          deps.log(msg.payload.message);
+        }
         return true;
       }
       if (msg.type === "GITHUB_RESTORE_SELECTED") {

@@ -5,3 +5,5 @@ src/core/.DS_Store
 src/app/.DS_Store
 dist/.DS_Store
 .tmp-tests/.DS_Store
+docs/.DS_Store
+openspec/.DS_Store
