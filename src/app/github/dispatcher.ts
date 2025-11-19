@@ -497,7 +497,6 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           deps.send({ type: 'IMPORT_SUMMARY', payload: { summary, timestamp: Date.now(), source: 'github' } });
 
           const snap = await deps.snapshotCollectionsForUi();
-          const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
           const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
           const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
           const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
@@ -505,12 +504,10 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
           const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
           const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-          const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string' ? last : null;
           deps.send({
             type: 'COLLECTIONS_DATA',
             payload: {
               collections: snap.collections,
-              last: lastOrNull,
               exportAllPref: !!exportAllPrefVal,
               styleDictionaryPref: !!styleDictionaryPrefVal,
               flatTokensPref: !!flatTokensPrefVal,

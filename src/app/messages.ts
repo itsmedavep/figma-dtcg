@@ -38,7 +38,6 @@ export type UiToPlugin =
       };
     }
   | { type: 'EXPORT_TYPOGRAPHY' }
-  | { type: 'SAVE_LAST'; payload: { collection: string; mode: string } }
   | {
       type: 'SAVE_PREFS';
       payload: {
@@ -160,7 +159,6 @@ export type PluginToUi =
           modes: Array<{ id: string; name: string }>;
           variables: Array<{ id: string; name: string; type: string }>;
         }>;
-        last: { collection: string; mode: string } | null;
         exportAllPref: boolean;
         styleDictionaryPref?: boolean;
         flatTokensPref?: boolean;

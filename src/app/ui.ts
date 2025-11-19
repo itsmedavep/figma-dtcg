@@ -898,34 +898,6 @@ function onCollectionChange(): void {
   if (firstModeSet) requestPreviewForCurrent();
 }
 
-
-/** Restore the most recently used collection/mode pair. */
-function applyLastSelection(last: { collection: string; mode: string } | null): void {
-  if (!last || !(collectionSelect && modeSelect)) return;
-
-  let found = false;
-  for (let i = 0; i < collectionSelect.options.length; i++) {
-    if (collectionSelect.options[i].value === last.collection) {
-      collectionSelect.selectedIndex = i;
-      found = true;
-      break;
-    }
-  }
-
-  onCollectionChange();
-
-  if (found) {
-    for (let j = 0; j < modeSelect.options.length; j++) {
-      if (modeSelect.options[j].value === last.mode) {
-        modeSelect.selectedIndex = j;
-        break;
-      }
-    }
-  }
-
-  setDisabledStates();
-}
-
 /** Format JSON with indentation while collapsing undefined/null gracefully. */
 function prettyJson(obj: unknown): string {
   try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
@@ -1058,8 +1030,6 @@ window.addEventListener('message', async (event: MessageEvent) => {
     if (typeof msg.payload.githubRememberPref === 'boolean') {
       githubUi.setRememberPref(!!msg.payload.githubRememberPref);
     }
-    const last = (msg.payload as any).last as { collection: string; mode: string } | null;
-    applyLastSelection(last);
     setDisabledStates();
     requestPreviewForCurrent();
     return;
@@ -1293,19 +1263,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (collectionSelect) {
     collectionSelect.addEventListener('change', () => {
       onCollectionChange();
-      if (collectionSelect && modeSelect) {
-        postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
-        requestPreviewForCurrent();
-      }
+      requestPreviewForCurrent();
       githubUi.onSelectionChange();
     });
   }
 
   if (modeSelect) {
     modeSelect.addEventListener('change', () => {
-      if (collectionSelect && modeSelect) {
-        postToPlugin({ type: 'SAVE_LAST', payload: { collection: collectionSelect.value, mode: modeSelect.value } });
-      }
       setDisabledStates();
       requestPreviewForCurrent();
       githubUi.onSelectionChange();

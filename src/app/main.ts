@@ -47,7 +47,6 @@ type Handler = (msg: UiToPlugin) => Promise<void> | void;
 // Prime the UI with cached state and fresh collections so the iframe can render immediately.
 async function handleUiReady(_msg: UiToPlugin): Promise<void> {
   const snap = await snapshotCollectionsForUi();
-  const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
   const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
@@ -55,16 +54,12 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
   const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
   const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
   const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-  const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
-    ? last
-    : null;
 
   send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections (initial)' } });
   send({
     type: 'COLLECTIONS_DATA',
     payload: {
       collections: snap.collections,
-      last: lastOrNull,
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
       flatTokensPref: !!flatTokensPrefVal,
@@ -80,7 +75,6 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
 // Refresh the collection snapshot on demand, mirroring the bootstrap payload.
 async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
   const snapshot = await snapshotCollectionsForUi();
-  const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
   const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
@@ -88,16 +82,12 @@ async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
   const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
   const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
   const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-  const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
-    ? last
-    : null;
 
   send({ type: 'INFO', payload: { message: 'Fetched ' + String(snapshot.collections.length) + ' collections' } });
   send({
     type: 'COLLECTIONS_DATA',
     payload: {
       collections: snapshot.collections,
-      last: lastOrNull,
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
       flatTokensPref: !!flatTokensPrefVal,
@@ -132,7 +122,6 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   send({ type: 'IMPORT_SUMMARY', payload: { summary, timestamp: Date.now(), source: 'local' } });
 
   const snap = await snapshotCollectionsForUi();
-  const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
   const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
@@ -140,15 +129,11 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
   const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
   const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
   const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-  const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
-    ? last
-    : null;
 
   send({
     type: 'COLLECTIONS_DATA',
     payload: {
       collections: snap.collections,
-      last: lastOrNull,
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
       flatTokensPref: !!flatTokensPrefVal,
@@ -206,14 +191,6 @@ async function handleExportTypography(_msg: UiToPlugin): Promise<void> {
   if (result.files.length > 0) {
     const first = result.files[0];
     send({ type: 'W3C_PREVIEW', payload: { name: first.name, json: first.json } });
-  }
-}
-
-// Persist the last selected collection/mode pair so the UI can restore the user's focus.
-async function handleSaveLast(msg: UiToPlugin): Promise<void> {
-  const payload = (msg as MessageOfType<'SAVE_LAST'>).payload;
-  if (typeof payload.collection === 'string' && typeof payload.mode === 'string') {
-    await figma.clientStorage.setAsync('lastSelection', { collection: payload.collection, mode: payload.mode });
   }
 }
 
@@ -283,7 +260,6 @@ const coreHandlers = new Map<UiToPlugin['type'], Handler>([
   ['IMPORT_DTCG', handleImportDtcg],
   ['EXPORT_DTCG', handleExportDtcg],
   ['EXPORT_TYPOGRAPHY', handleExportTypography],
-  ['SAVE_LAST', handleSaveLast],
   ['SAVE_PREFS', handleSavePrefs],
   ['UI_RESIZE', handleUiResize],
   ['PREVIEW_REQUEST', handlePreviewRequest],
