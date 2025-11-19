@@ -32,10 +32,21 @@ function inlineUiScriptIntoHtml() {
   const js = fs.readFileSync(jsPath, 'utf8');
 
   // Replace a <script src="./ui.js"></script> (or with quotes variations) with inline script
-  const replaced = html.replace(
+  // Replace a <script src="./ui.js"></script> (or with quotes variations) with inline script
+  let replaced = html.replace(
     /<script\s+src=["']\.\/ui\.js["']><\/script>/i,
     '<script>' + js + '</script>'
   );
+
+  // Inline CSS if present
+  const cssPath = path.join(OUTDIR, 'ui.css');
+  if (fs.existsSync(cssPath)) {
+    const css = fs.readFileSync(cssPath, 'utf8');
+    replaced = replaced.replace(
+      /<link\s+rel=["']stylesheet["']\s+href=["']\.\/ui\.css["']>/i,
+      '<style>' + css + '</style>'
+    );
+  }
 
   // Overwrite dist/ui.html with inlined content for reference (optional)
   fs.writeFileSync(htmlPath, replaced, 'utf8');

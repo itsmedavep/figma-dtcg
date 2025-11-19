@@ -1661,6 +1661,7 @@
   var allowHexChk = null;
   var styleDictionaryChk = null;
   var flatTokensChk = null;
+  var githubRememberChk = null;
   var importScopeOverlay = null;
   var importScopeBody = null;
   var importScopeConfirmBtn = null;
@@ -1678,6 +1679,15 @@
   var importLogEntries = [];
   var importScopeModalState = null;
   var lastImportSelection = [];
+  var systemDarkMode = false;
+  function applyTheme() {
+    const effective = systemDarkMode ? "dark" : "light";
+    if (effective === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
   function prettyExportName(original) {
     const name = original && typeof original === "string" ? original : "tokens.json";
     const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
@@ -2549,7 +2559,7 @@
         allowHexChk.checked = !!msg.payload.allowHexPref;
       }
       if (typeof msg.payload.githubRememberPref === "boolean") {
-        githubUi.setRememberPref(!!msg.payload.githubRememberPref);
+        if (githubRememberChk) githubRememberChk.checked = msg.payload.githubRememberPref;
       }
       const last = msg.payload.last;
       applyLastSelection(last);
@@ -2585,6 +2595,7 @@
     allowHexChk = document.getElementById("allowHexChk");
     styleDictionaryChk = document.getElementById("styleDictionaryChk");
     flatTokensChk = document.getElementById("flatTokensChk");
+    githubRememberChk = document.getElementById("githubRememberChk");
     if (allowHexChk) {
       allowHexChk.checked = true;
       allowHexChk.addEventListener("change", () => {
@@ -2602,6 +2613,13 @@
     importScopeClearBtn = document.getElementById("importScopeClearBtn");
     importSkipLogListEl = document.getElementById("importSkipLogList");
     importSkipLogEmptyEl = document.getElementById("importSkipLogEmpty");
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    systemDarkMode = mediaQuery.matches;
+    mediaQuery.addEventListener("change", (e) => {
+      systemDarkMode = e.matches;
+      applyTheme();
+    });
+    applyTheme();
     loadImportPreference();
     loadImportLog();
     renderImportPreferenceSummary();
@@ -2679,6 +2697,11 @@
         postToPlugin({ type: "SAVE_PREFS", payload: { flatTokens: !!flatTokensChk.checked } });
         requestPreviewForCurrent();
         githubUi.onSelectionChange();
+      });
+    }
+    if (githubRememberChk) {
+      githubRememberChk.addEventListener("change", () => {
+        postToPlugin({ type: "SAVE_PREFS", payload: { githubRememberToken: !!githubRememberChk.checked } });
       });
     }
     if (refreshBtn) {
