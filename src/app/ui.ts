@@ -4,6 +4,7 @@
 // - Provides guarded DOM helpers to survive partial renders or optional features
 
 import type { PluginToUi, UiToPlugin, ImportSummary } from './messages';
+import './ui.css';
 import { createGithubUi } from './github/ui';
 
 /* -------------------------------------------------------
@@ -37,6 +38,7 @@ let copyLogBtn: HTMLButtonElement | null = null;
 let allowHexChk: HTMLInputElement | null = null;
 let styleDictionaryChk: HTMLInputElement | null = null;
 let flatTokensChk: HTMLInputElement | null = null;
+let githubRememberChk: HTMLInputElement | null = null;
 
 let importScopeOverlay: HTMLElement | null = null;
 let importScopeBody: HTMLElement | null = null;
@@ -75,6 +77,18 @@ let importPreference: ImportPreference | null = null;
 let importLogEntries: ImportLogEntry[] = [];
 let importScopeModalState: ImportScopeModalState | null = null;
 let lastImportSelection: string[] = [];
+
+type ThemePref = 'auto' | 'light' | 'dark';
+let systemDarkMode = false;
+
+function applyTheme(): void {
+  const effective = systemDarkMode ? 'dark' : 'light';
+  if (effective === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+}
 
 function prettyExportName(original: string | undefined | null): string {
   const name = (original && typeof original === 'string') ? original : 'tokens.json';
@@ -1056,7 +1070,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
       allowHexChk.checked = !!msg.payload.allowHexPref;
     }
     if (typeof msg.payload.githubRememberPref === 'boolean') {
-      githubUi.setRememberPref(!!msg.payload.githubRememberPref);
+      if (githubRememberChk) githubRememberChk.checked = msg.payload.githubRememberPref;
     }
     const last = (msg.payload as any).last as { collection: string; mode: string } | null;
     applyLastSelection(last);
@@ -1107,6 +1121,7 @@ document.addEventListener('DOMContentLoaded', () => {
   allowHexChk = document.getElementById('allowHexChk') as HTMLInputElement | null;
   styleDictionaryChk = document.getElementById('styleDictionaryChk') as HTMLInputElement | null;
   flatTokensChk = document.getElementById('flatTokensChk') as HTMLInputElement | null;
+  githubRememberChk = document.getElementById('githubRememberChk') as HTMLInputElement | null;
 
   if (allowHexChk) {
     allowHexChk.checked = true;
@@ -1128,6 +1143,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   importSkipLogListEl = document.getElementById('importSkipLogList');
   importSkipLogEmptyEl = document.getElementById('importSkipLogEmpty');
+
+  // System theme listener
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  systemDarkMode = mediaQuery.matches;
+  mediaQuery.addEventListener('change', (e) => {
+    systemDarkMode = e.matches;
+    applyTheme();
+  });
+  // Initial apply (defaults to auto/system until we get prefs)
+  applyTheme();
 
   loadImportPreference();
   loadImportLog();
@@ -1210,6 +1235,12 @@ document.addEventListener('DOMContentLoaded', () => {
       postToPlugin({ type: 'SAVE_PREFS', payload: { flatTokens: !!flatTokensChk!.checked } });
       requestPreviewForCurrent();
       githubUi.onSelectionChange();
+    });
+  }
+
+  if (githubRememberChk) {
+    githubRememberChk.addEventListener('change', () => {
+      postToPlugin({ type: 'SAVE_PREFS', payload: { githubRememberToken: !!githubRememberChk!.checked } });
     });
   }
 
