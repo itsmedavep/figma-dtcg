@@ -63,6 +63,7 @@
     let ghNewBranchRow = null;
     let ghNewBranchName = null;
     let ghCreateBranchConfirmBtn = null;
+    let ghCancelBranchBtn = null;
     let ghFolderInput = null;
     let ghFolderDisplay = null;
     let ghPickFolderBtn = null;
@@ -252,6 +253,44 @@
         ghNewBranchName.focus();
         ghNewBranchName.select();
       }
+    }
+    function isNewBranchRowVisible() {
+      if (!ghNewBranchRow) return false;
+      return ghNewBranchRow.style.display !== "none";
+    }
+    function cancelNewBranchFlow(refocusBtn) {
+      showNewBranchRow(false);
+      if (ghNewBranchName) ghNewBranchName.value = "";
+      if (refocusBtn && ghNewBranchBtn) ghNewBranchBtn.focus();
+    }
+    function requestNewBranchCreation() {
+      if (!ghCreateBranchConfirmBtn || ghCreateBranchConfirmBtn.disabled) return;
+      if (!currentOwner || !currentRepo) {
+        deps.log("Pick a repository before creating a branch.");
+        return;
+      }
+      const baseBranch = getCurrentBranch();
+      if (!baseBranch) {
+        deps.log("Pick a branch first.");
+        return;
+      }
+      const newBranch = ((ghNewBranchName == null ? void 0 : ghNewBranchName.value) || "").trim();
+      if (!newBranch) {
+        deps.log("Enter a branch name to create.");
+        if (ghNewBranchName) ghNewBranchName.focus();
+        return;
+      }
+      if (newBranch === baseBranch) {
+        deps.log("Enter a branch name that differs from the source branch.");
+        if (ghNewBranchName) ghNewBranchName.focus();
+        return;
+      }
+      ghCreateBranchConfirmBtn.disabled = true;
+      deps.log(`GitHub: creating ${newBranch} from ${baseBranch}\u2026`);
+      deps.postToPlugin({
+        type: "GITHUB_CREATE_BRANCH",
+        payload: { owner: currentOwner, repo: currentRepo, baseBranch, newBranch }
+      });
     }
     function revalidateBranchesIfStale(forceLog = false) {
       if (!ghRepoSelect || !ghBranchInput) return;
@@ -852,6 +891,7 @@
       ghNewBranchRow = doc.getElementById("ghNewBranchRow");
       ghNewBranchName = doc.getElementById("ghNewBranchName");
       ghCreateBranchConfirmBtn = doc.getElementById("ghCreateBranchConfirmBtn");
+      ghCancelBranchBtn = doc.getElementById("ghCancelBranchBtn");
       ghFolderInput = doc.getElementById("ghFolderInput");
       ghFolderDisplay = doc.getElementById("ghFolderDisplay");
       setGhFolderDisplay((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
@@ -930,6 +970,7 @@
           updateBranchCount();
           updateFolderControlsEnabled();
           setGhFolderDisplay("");
+          cancelNewBranchFlow(false);
           if (currentOwner && currentRepo) {
             deps.log(`GitHub: loading branches for ${currentOwner}/${currentRepo}\u2026`);
             isFetchingBranches = true;
@@ -1070,6 +1111,35 @@
         ghBranchRefreshBtn.addEventListener("click", () => {
           lastBranchesFetchedAtMs = 0;
           revalidateBranchesIfStale(true);
+        });
+      }
+      if (ghNewBranchBtn) {
+        ghNewBranchBtn.addEventListener("click", () => {
+          if (ghNewBranchBtn.disabled) return;
+          const next = !isNewBranchRowVisible();
+          if (next) showNewBranchRow(true);
+          else cancelNewBranchFlow(false);
+        });
+      }
+      if (ghNewBranchName) {
+        ghNewBranchName.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            requestNewBranchCreation();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            cancelNewBranchFlow(true);
+          }
+        });
+      }
+      if (ghCreateBranchConfirmBtn) {
+        ghCreateBranchConfirmBtn.addEventListener("click", () => {
+          requestNewBranchCreation();
+        });
+      }
+      if (ghCancelBranchBtn) {
+        ghCancelBranchBtn.addEventListener("click", () => {
+          cancelNewBranchFlow(true);
         });
       }
       if (ghPickFolderBtn) {
@@ -1224,9 +1294,20 @@
           const collectionSelect2 = pickCollectionSelect();
           const modeSelect2 = pickModeSelect();
           const scope = ghScopeAll && ghScopeAll.checked ? "all" : ghScopeTypography && ghScopeTypography.checked ? "typography" : "selected";
+          const selectedCollection = collectionSelect2 ? collectionSelect2.value || "" : "";
+          const selectedMode = modeSelect2 ? modeSelect2.value || "" : "";
           const commitMessage = ((ghCommitMsgInput == null ? void 0 : ghCommitMsgInput.value) || "Update tokens from Figma").trim();
           const normalizedFolder = normalizeFolderInput((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
           refreshFilenameValidation();
+          if (scope === "selected") {
+            if (!selectedCollection || !selectedMode) {
+              deps.log("Pick a collection and a mode before exporting.");
+              if (!selectedCollection && collectionSelect2) collectionSelect2.focus();
+              else if (!selectedMode && modeSelect2) modeSelect2.focus();
+              updateExportCommitEnabled();
+              return;
+            }
+          }
           if (!normalizedFolder.display) {
             deps.log("Pick a destination folder (e.g., tokens/).");
             ghPickFolderBtn == null ? void 0 : ghPickFolderBtn.focus();
@@ -1262,10 +1343,8 @@
               createPr
             }
           };
-          if (scope === "selected" && collectionSelect2 && modeSelect2) {
-            payload.payload.collection = collectionSelect2.value || "";
-            payload.payload.mode = modeSelect2.value || "";
-          }
+          if (selectedCollection) payload.payload.collection = selectedCollection;
+          if (selectedMode) payload.payload.mode = selectedMode;
           if (createPr) {
             payload.payload.prBase = getPrBaseBranch();
             payload.payload.prTitle = ((ghPrTitleInput == null ? void 0 : ghPrTitleInput.value) || "").trim();
@@ -1326,6 +1405,7 @@
       updateBranchCount();
       updateFolderControlsEnabled();
       setGhFolderDisplay("");
+      cancelNewBranchFlow(false);
       deps.log("GitHub: Logged out.");
     }
     function handleMessage(msg) {

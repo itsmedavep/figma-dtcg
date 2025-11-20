@@ -57,6 +57,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghNewBranchRow: HTMLElement | null = null;
   let ghNewBranchName: HTMLInputElement | null = null;
   let ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
+  let ghCancelBranchBtn: HTMLButtonElement | null = null;
 
   let ghFolderInput: HTMLInputElement | null = null;
   let ghFolderDisplay: HTMLElement | null = null;
@@ -294,6 +295,48 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       ghNewBranchName.focus();
       ghNewBranchName.select();
     }
+  }
+
+  function isNewBranchRowVisible(): boolean {
+    if (!ghNewBranchRow) return false;
+    return ghNewBranchRow.style.display !== 'none';
+  }
+
+  function cancelNewBranchFlow(refocusBtn: boolean): void {
+    showNewBranchRow(false);
+    if (ghNewBranchName) ghNewBranchName.value = '';
+    if (refocusBtn && ghNewBranchBtn) ghNewBranchBtn.focus();
+  }
+
+  function requestNewBranchCreation(): void {
+    if (!ghCreateBranchConfirmBtn || ghCreateBranchConfirmBtn.disabled) return;
+    if (!currentOwner || !currentRepo) {
+      deps.log('Pick a repository before creating a branch.');
+      return;
+    }
+    const baseBranch = getCurrentBranch();
+    if (!baseBranch) {
+      deps.log('Pick a branch first.');
+      return;
+    }
+    const newBranch = (ghNewBranchName?.value || '').trim();
+    if (!newBranch) {
+      deps.log('Enter a branch name to create.');
+      if (ghNewBranchName) ghNewBranchName.focus();
+      return;
+    }
+    if (newBranch === baseBranch) {
+      deps.log('Enter a branch name that differs from the source branch.');
+      if (ghNewBranchName) ghNewBranchName.focus();
+      return;
+    }
+
+    ghCreateBranchConfirmBtn.disabled = true;
+    deps.log(`GitHub: creating ${newBranch} from ${baseBranch}…`);
+    deps.postToPlugin({
+      type: 'GITHUB_CREATE_BRANCH',
+      payload: { owner: currentOwner, repo: currentRepo, baseBranch, newBranch }
+    });
   }
 
   function revalidateBranchesIfStale(forceLog = false): void {
@@ -994,6 +1037,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     ghNewBranchRow = doc.getElementById('ghNewBranchRow');
     ghNewBranchName = doc.getElementById('ghNewBranchName') as HTMLInputElement | null;
     ghCreateBranchConfirmBtn = doc.getElementById('ghCreateBranchConfirmBtn') as HTMLButtonElement | null;
+    ghCancelBranchBtn = doc.getElementById('ghCancelBranchBtn') as HTMLButtonElement | null;
 
     ghFolderInput = doc.getElementById('ghFolderInput') as HTMLInputElement | null;
     ghFolderDisplay = doc.getElementById('ghFolderDisplay');
@@ -1083,6 +1127,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         updateFolderControlsEnabled();
 
         setGhFolderDisplay('');
+        cancelNewBranchFlow(false);
 
         if (currentOwner && currentRepo) {
           deps.log(`GitHub: loading branches for ${currentOwner}/${currentRepo}…`);
@@ -1227,6 +1272,39 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       ghBranchRefreshBtn.addEventListener('click', () => {
         lastBranchesFetchedAtMs = 0;
         revalidateBranchesIfStale(true);
+      });
+    }
+
+    if (ghNewBranchBtn) {
+      ghNewBranchBtn.addEventListener('click', () => {
+        if (ghNewBranchBtn!.disabled) return;
+        const next = !isNewBranchRowVisible();
+        if (next) showNewBranchRow(true);
+        else cancelNewBranchFlow(false);
+      });
+    }
+
+    if (ghNewBranchName) {
+      ghNewBranchName.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          requestNewBranchCreation();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelNewBranchFlow(true);
+        }
+      });
+    }
+
+    if (ghCreateBranchConfirmBtn) {
+      ghCreateBranchConfirmBtn.addEventListener('click', () => {
+        requestNewBranchCreation();
+      });
+    }
+
+    if (ghCancelBranchBtn) {
+      ghCancelBranchBtn.addEventListener('click', () => {
+        cancelNewBranchFlow(true);
       });
     }
 
@@ -1392,9 +1470,21 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         const scope: GithubScope = ghScopeAll && ghScopeAll.checked
           ? 'all'
           : (ghScopeTypography && ghScopeTypography.checked ? 'typography' : 'selected');
+        const selectedCollection = collectionSelect ? (collectionSelect.value || '') : '';
+        const selectedMode = modeSelect ? (modeSelect.value || '') : '';
         const commitMessage = (ghCommitMsgInput?.value || 'Update tokens from Figma').trim();
         const normalizedFolder = normalizeFolderInput(ghFolderInput?.value || '');
         refreshFilenameValidation();
+
+        if (scope === 'selected') {
+          if (!selectedCollection || !selectedMode) {
+            deps.log('Pick a collection and a mode before exporting.');
+            if (!selectedCollection && collectionSelect) collectionSelect.focus();
+            else if (!selectedMode && modeSelect) modeSelect.focus();
+            updateExportCommitEnabled();
+            return;
+          }
+        }
 
         if (!normalizedFolder.display) {
           deps.log('Pick a destination folder (e.g., tokens/).');
@@ -1435,10 +1525,8 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
           }
         };
 
-        if (scope === 'selected' && collectionSelect && modeSelect) {
-          payload.payload.collection = collectionSelect.value || '';
-          payload.payload.mode = modeSelect.value || '';
-        }
+        if (selectedCollection) payload.payload.collection = selectedCollection;
+        if (selectedMode) payload.payload.mode = selectedMode;
 
         if (createPr) {
           payload.payload.prBase = getPrBaseBranch();
@@ -1500,6 +1588,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     updateBranchCount();
     updateFolderControlsEnabled();
     setGhFolderDisplay('');
+    cancelNewBranchFlow(false);
     deps.log('GitHub: Logged out.');
   }
 

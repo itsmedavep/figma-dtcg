@@ -73,6 +73,30 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
     return merged;
   }
 
+  function pickPerModeFile(
+    files: Array<{ name: string; json: unknown }>,
+    collectionName: string,
+    modeName: string
+  ): { name: string; json: unknown } | null {
+    const prettyExact = `${collectionName} - ${modeName}.json`;
+    const prettyLoose = `${collectionName} - ${modeName}`;
+    const legacy1 = `${collectionName}_mode=${modeName}`;
+    const legacy2 = `${collectionName}/mode=${modeName}`;
+    const legacy3 = deps.safeKeyFromCollectionAndMode(collectionName, modeName);
+
+    let picked = files.find(f => {
+      const n = String(f?.name || '');
+      return n === prettyExact || n === prettyLoose || n.includes(`${collectionName} - ${modeName}`);
+    });
+    if (!picked) {
+      picked = files.find(f => {
+        const n = String(f?.name || '');
+        return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
+      });
+    }
+    return picked || null;
+  }
+
   async function listAndSendRepos(token: string): Promise<void> {
     await sleep(75);
     let repos = await ghListRepos(token);
@@ -582,9 +606,10 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const baseBranch = String(msg.payload.branch || '');
         const folderRaw = typeof msg.payload.folder === 'string' ? msg.payload.folder : '';
         const commitMessage = (String(msg.payload.commitMessage || '') || 'Update tokens from Figma').trim();
-        const scope: GithubScope = msg.payload.scope === 'all'
+        const requestedScope: GithubScope = msg.payload.scope === 'all'
           ? 'all'
           : (msg.payload.scope === 'typography' ? 'typography' : 'selected');
+        let scope: GithubScope = requestedScope;
         const collection = String(msg.payload.collection || '');
         const mode = String(msg.payload.mode || '');
         const styleDictionary = !!msg.payload.styleDictionary;
@@ -594,6 +619,10 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const prTitle = String(msg.payload.prTitle || commitMessage).trim() || commitMessage;
         const prBody = typeof msg.payload.prBody === 'string' ? msg.payload.prBody : undefined;
         const storedSelection = await getSelected();
+        const selectionCollection = collection
+          || (typeof storedSelection.collection === 'string' ? storedSelection.collection : '');
+        const selectionMode = mode
+          || (typeof storedSelection.mode === 'string' ? storedSelection.mode : '');
         const filenameCandidate = typeof msg.payload.filename === 'string'
           ? msg.payload.filename
           : (typeof storedSelection.filename === 'string' ? storedSelection.filename : undefined);
@@ -695,7 +724,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const folderCommitPath = folderInfo.path;
         const fullPathForCommit = folderCommitPath ? `${folderCommitPath}/${filenameToCommit}` : filenameToCommit;
 
-        await mergeSelected({
+        const selectionState: Partial<GhSelected> = {
           owner,
           repo,
           branch: baseBranch,
@@ -703,15 +732,16 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           filename: filenameToCommit,
           commitMessage,
           scope,
-          collection: scope === 'selected' ? collection : undefined,
-          mode: scope === 'selected' ? mode : undefined,
           styleDictionary: msg.payload.styleDictionary,
           flatTokens: msg.payload.flatTokens,
           createPr,
           prBase: createPr ? prBaseBranch : undefined,
           prTitle: createPr ? prTitle : undefined,
           prBody: createPr ? prBody : undefined
-        });
+        };
+        if (selectionCollection) selectionState.collection = selectionCollection;
+        if (selectionMode) selectionState.mode = selectionMode;
+        await mergeSelected(selectionState);
 
         try {
           const files: Array<{ name: string; json: unknown }> = [];
@@ -723,7 +753,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             const typo = await deps.exportDtcg({ format: 'typography' });
             for (const f of typo.files) files.push({ name: f.name, json: f.json });
           } else {
-            if (!collection || !mode) {
+            if (!selectionCollection || !selectionMode) {
               deps.send({
                 type: 'GITHUB_COMMIT_RESULT',
                 payload: {
@@ -741,22 +771,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
               return true;
             }
             const per = await deps.exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
-            const prettyExact = `${collection} - ${mode}.json`;
-            const prettyLoose = `${collection} - ${mode}`;
-            const legacy1 = `${collection}_mode=${mode}`;
-            const legacy2 = `${collection}/mode=${mode}`;
-            const legacy3 = deps.safeKeyFromCollectionAndMode(collection, mode);
-
-            let picked = per.files.find(f => {
-              const n = String(f?.name || '');
-              return n === prettyExact || n === prettyLoose || n.includes(`${collection} - ${mode}`);
-            });
-            if (!picked) {
-              picked = per.files.find(f => {
-                const n = String(f?.name || '');
-                return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
-              });
-            }
+            const picked = pickPerModeFile(per.files, selectionCollection, selectionMode);
             if (!picked) {
               const available = per.files.map(f => f.name).join(', ');
               deps.send({
@@ -767,7 +782,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                   repo,
                   branch: baseBranch,
                   status: 404,
-                  message: `No export found for "${collection}" / "${mode}". Available: [${available}]`,
+                  message: `No export found for "${selectionCollection}" / "${selectionMode}". Available: [${available}]`,
                   folder: folderStorageValue,
                   filename: filenameToCommit,
                   fullPath: fullPathForCommit
@@ -797,15 +812,64 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
           }
 
           const isPlainEmptyObject = (v: any) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0;
-          const exportLooksEmpty = files.length === 0 || files.every(f => isPlainEmptyObject(f.json));
+          let exportLooksEmpty = files.length === 0 || files.every(f => isPlainEmptyObject(f.json));
 
           if (exportLooksEmpty) {
             if (scope === 'typography') {
-              deps.send({ type: 'INFO', payload: { message: 'GitHub export warning: typography.json is empty (no local text styles).' } });
-            } else if (scope === 'selected') {
-              const diag = await deps.analyzeSelectionState(collection, mode);
+              if (selectionCollection && selectionMode) {
+                deps.send({
+                  type: 'INFO',
+                  payload: {
+                    message: `GitHub export warning: typography.json is empty (no local text styles). Using "${selectionCollection}" / "${selectionMode}" instead.`
+                  }
+                });
+                const per = await deps.exportDtcg({ format: 'perMode', styleDictionary, flatTokens });
+                const picked = pickPerModeFile(per.files, selectionCollection, selectionMode);
+                if (!picked) {
+                  const available = per.files.map(f => f.name).join(', ');
+                  deps.send({
+                    type: 'GITHUB_COMMIT_RESULT',
+                    payload: {
+                      ok: false,
+                      owner,
+                      repo,
+                      branch: baseBranch,
+                      status: 404,
+                      message: `No export found for "${selectionCollection}" / "${selectionMode}". Available: [${available}]`,
+                      folder: folderStorageValue,
+                      filename: filenameToCommit,
+                      fullPath: fullPathForCommit
+                    }
+                  });
+                  return true;
+                }
+                files.length = 0;
+                files.push({ name: picked.name, json: picked.json });
+                scope = 'selected';
+                exportLooksEmpty = files.length === 0 || files.every(f => isPlainEmptyObject(f.json));
+              } else {
+                deps.send({ type: 'INFO', payload: { message: 'GitHub export warning: typography.json is empty (no local text styles).' } });
+                deps.send({
+                  type: 'GITHUB_COMMIT_RESULT',
+                  payload: {
+                    ok: false,
+                    owner,
+                    repo,
+                    branch: baseBranch,
+                    status: 412,
+                    message: 'Typography export produced an empty tokens file. Add local text styles or change export scope.',
+                    folder: folderStorageValue,
+                    filename: filenameToCommit,
+                    fullPath: fullPathForCommit
+                  }
+                });
+                return true;
+              }
+            }
+            if (exportLooksEmpty && scope === 'selected') {
+              const diag = await deps.analyzeSelectionState(selectionCollection, selectionMode);
               const tail = diag.ok
-                ? `Found ${diag.variableCount} variable(s) in "${collection}", but ${diag.variablesWithValues ?? 0} with a value in "${mode}".`
+                ? `Found ${diag.variableCount} variable(s) in "${selectionCollection}", but ${diag.variablesWithValues ?? 0} with a value in "${selectionMode}".`
                 : (diag.message || 'No values present.');
               deps.send({
                 type: 'GITHUB_COMMIT_RESULT',
@@ -815,13 +879,15 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                   repo,
                   branch: baseBranch,
                   status: 412,
-                  message: `Export for "${collection}" / "${mode}" produced an empty tokens file. ${tail}`,
+                  message: `Export for "${selectionCollection}" / "${selectionMode}" produced an empty tokens file. ${tail}`,
                   folder: folderStorageValue,
                   filename: filenameToCommit,
                   fullPath: fullPathForCommit
                 }
               });
-            } else {
+              return true;
+            }
+            if (exportLooksEmpty) {
               deps.send({
                 type: 'GITHUB_COMMIT_RESULT',
                 payload: {
@@ -836,8 +902,8 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                   fullPath: fullPathForCommit
                 }
               });
+              return true;
             }
-            if (scope !== 'typography') return true;
           }
 
           const prettyExportName = (original: string | undefined | null): string => {
@@ -906,7 +972,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
 
           if (allFilesIdentical) {
             const noChangeMessage = scope === 'selected'
-              ? `No token values changed for "${collection}" / "${mode}"; repository already matches the current export.`
+              ? `No token values changed for "${selectionCollection}" / "${selectionMode}"; repository already matches the current export.`
               : 'No token values changed; repository already matches the current export.';
             deps.send({
               type: 'GITHUB_COMMIT_RESULT',
@@ -931,7 +997,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
               && /not a fast forward/i.test(commitRes.message);
             if (looksLikeFastForwardRace) {
               const noChangeMessage = scope === 'selected'
-                ? `No token values changed for "${collection}" / "${mode}"; repository already matches the current export.`
+                ? `No token values changed for "${selectionCollection}" / "${selectionMode}"; repository already matches the current export.`
                 : 'No token values changed; repository already matches the current export.';
               deps.send({
                 type: 'GITHUB_COMMIT_RESULT',
