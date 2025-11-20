@@ -57,12 +57,21 @@ type CollectionsDataPayload = Extract<
 >["payload"];
 type RefreshReason = "initial" | "manual" | "auto";
 type AutoRefreshSource = "style-event" | "variable-poll";
+type DocumentSnapshot = {
+    collections: Awaited<
+        ReturnType<typeof snapshotCollectionsForUi>
+    >["collections"];
+    rawText: string;
+    signature: string;
+};
 
 // Poll for variable graph changes every 5s, but after a detected change we run a short
 // burst of faster polls so repeated edits feel responsive without hammering constantly.
 const VARIABLE_POLL_INTERVAL_MS = 5000;
-const VARIABLE_POLL_BURST_DELAY_MS = 350;
 const VARIABLE_POLL_BURST_LIMIT = 3;
+const VARIABLE_POLL_FAST_DELAY_MS = 150;
+const VARIABLE_POLL_SLOW_DELAY_MS = 350;
+const SNAPSHOT_FAST_THRESHOLD_MS = 120;
 const AUTO_REFRESH_DEBOUNCE_MS = 600;
 
 let autoSyncActive = false;
@@ -72,10 +81,14 @@ let autoRefreshRunning = false;
 let variablePollTimer: ReturnType<typeof setTimeout> | null = null;
 // Tracks how many burst polls remain after a change so we can fall back to the slower cadence.
 let variableBurstRemaining = 0;
+let lastSnapshotDurationMs = 0;
 let documentChangeHandler: ((event: DocumentChangeEvent) => void) | null = null;
 let styleChangeHandler: ((event: StyleChangeEvent) => void) | null = null;
 let lastCollectionsSignature: string | null = null;
 let pendingSignatureAfterRefresh: string | null = null;
+let pendingSnapshot: DocumentSnapshot | null = null;
+let lastCollectionsPayload: CollectionsDataPayload | null = null;
+let pendingCollectionsPayload: CollectionsDataPayload | null = null;
 let pendingAutoRefreshSource: AutoRefreshSource | null = null;
 const pendingStyleEvents = new Map<
     string,
@@ -119,13 +132,18 @@ function computeCollectionsSignatureFromPayload(
     return parts.join("|");
 }
 
-async function buildCollectionsPayload(): Promise<{
+async function buildCollectionsPayload(
+    precomputed?: DocumentSnapshot | null
+): Promise<{
     payload: CollectionsDataPayload;
     rawText: string;
     count: number;
     signature: string;
+    snapshot: DocumentSnapshot;
 }> {
-    const snap = await snapshotCollectionsForUi();
+    const start = Date.now();
+    const doc = await ensureDocumentSnapshot(precomputed);
+    lastSnapshotDurationMs = Date.now() - start;
     const last = await figma.clientStorage
         .getAsync("lastSelection")
         .catch(() => null);
@@ -158,7 +176,7 @@ async function buildCollectionsPayload(): Promise<{
             : null;
 
     const payload: CollectionsDataPayload = {
-        collections: snap.collections,
+        collections: doc.collections,
         last: lastOrNull,
         exportAllPref: !!exportAllPrefVal,
         styleDictionaryPref: !!styleDictionaryPrefVal,
@@ -166,12 +184,20 @@ async function buildCollectionsPayload(): Promise<{
         allowHexPref: allowHexPrefVal,
         githubRememberPref: githubRememberPrefVal,
     };
+    const signature =
+        doc.signature || computeCollectionsSignatureFromPayload(payload);
+    const snapshot: DocumentSnapshot = {
+        collections: doc.collections,
+        rawText: doc.rawText,
+        signature,
+    };
 
     return {
         payload,
-        rawText: snap.rawText,
-        count: snap.collections.length,
-        signature: computeCollectionsSignatureFromPayload(payload),
+        rawText: doc.rawText,
+        count: doc.collections.length,
+        signature,
+        snapshot,
     };
 }
 
@@ -181,7 +207,13 @@ async function refreshCollections(
 ): Promise<void> {
     const prevStyleIds = new Set(knownStyleIds);
     try {
-        const snap = await buildCollectionsPayload();
+        const snap = await buildCollectionsPayload(pendingSnapshot);
+        pendingSnapshot = null;
+        const payload =
+            reason === "auto" && pendingCollectionsPayload
+                ? pendingCollectionsPayload
+                : snap.payload;
+        pendingCollectionsPayload = null;
         const shouldLog = reason !== "auto";
         if (shouldLog) {
             let message = "";
@@ -200,7 +232,8 @@ async function refreshCollections(
                 send({ type: "INFO", payload: { message } });
             }
         }
-        send({ type: "COLLECTIONS_DATA", payload: snap.payload });
+        send({ type: "COLLECTIONS_DATA", payload });
+        lastCollectionsPayload = payload;
         send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
         lastCollectionsSignature = snap.signature;
         pendingSignatureAfterRefresh = null;
@@ -217,12 +250,17 @@ async function refreshCollections(
     }
 }
 
-async function computeVariableCollectionsSignature(): Promise<string | null> {
+type VariableSignatureSnapshot = {
+    signature: string | null;
+    variableMap: Map<string, Variable> | null;
+};
+
+async function computeVariableCollectionsSignature(): Promise<VariableSignatureSnapshot> {
     if (
         !figma.variables ||
         typeof figma.variables.getLocalVariableCollectionsAsync !== "function"
     ) {
-        return null;
+        return { signature: null, variableMap: null };
     }
 
     const collections =
@@ -246,14 +284,17 @@ async function computeVariableCollectionsSignature(): Promise<string | null> {
         for (let vi = 0; vi < vars.length; vi++) signatures.push(vars[vi]);
     }
 
+    let variableMap: Map<string, Variable> | null = null;
     if (typeof figma.variables.getLocalVariablesAsync === "function") {
         const allVars = await figma.variables.getLocalVariablesAsync();
         const sortedVars = (allVars || [])
             .slice()
             .sort((a, b) => a.id.localeCompare(b.id));
+        variableMap = new Map<string, Variable>();
         for (let vi = 0; vi < sortedVars.length; vi++) {
             const variable = sortedVars[vi];
             if (!variable) continue;
+            variableMap.set(variable.id, variable);
             signatures.push(
                 variable.id,
                 variable.name,
@@ -264,7 +305,51 @@ async function computeVariableCollectionsSignature(): Promise<string | null> {
         }
     }
 
-    return signatures.join("|");
+    return { signature: signatures.join("|"), variableMap };
+}
+
+async function captureDocumentSnapshotFromData(
+    signature: string,
+    variableMap: Map<string, Variable> | null
+): Promise<DocumentSnapshot> {
+    const snap = await snapshotCollectionsForUi(
+        variableMap ? { variableMap } : undefined
+    );
+    return {
+        collections: snap.collections,
+        rawText: snap.rawText,
+        signature,
+    };
+}
+
+async function captureDocumentSnapshot(): Promise<DocumentSnapshot> {
+    const { signature, variableMap } =
+        await computeVariableCollectionsSignature();
+    if (signature) {
+        return await captureDocumentSnapshotFromData(signature, variableMap);
+    }
+    const snap = await snapshotCollectionsForUi();
+    const fallbackPayload: CollectionsDataPayload = {
+        collections: snap.collections,
+        last: null,
+        exportAllPref: false,
+        styleDictionaryPref: false,
+        flatTokensPref: false,
+        allowHexPref: true,
+        githubRememberPref: true,
+    };
+    return {
+        collections: snap.collections,
+        rawText: snap.rawText,
+        signature: computeCollectionsSignatureFromPayload(fallbackPayload),
+    };
+}
+
+async function ensureDocumentSnapshot(
+    snapshot?: DocumentSnapshot | null
+): Promise<DocumentSnapshot> {
+    if (snapshot) return snapshot;
+    return await captureDocumentSnapshot();
 }
 
 function serializeVariableValues(
@@ -294,21 +379,50 @@ function formatVariableValue(value: unknown): string {
 
 async function variableGraphLikelyChanged(): Promise<boolean> {
     try {
-        const signature = await computeVariableCollectionsSignature();
-        if (!signature) return false;
-        if (lastCollectionsSignature === null) {
-            pendingSignatureAfterRefresh = signature;
-            return true;
+        const { signature, variableMap } =
+            await computeVariableCollectionsSignature();
+        if (!signature) {
+            pendingSnapshot = null;
+            return false;
         }
-        if (signature === lastCollectionsSignature) return false;
+        if (signature === lastCollectionsSignature) {
+            pendingSnapshot = null;
+            return false;
+        }
         if (
             pendingSignatureAfterRefresh &&
             pendingSignatureAfterRefresh === signature
-        )
+        ) {
+            pendingSnapshot = null;
             return false;
+        }
+        const doc = await captureDocumentSnapshotFromData(
+            signature,
+            variableMap
+        );
+        pendingSnapshot = doc;
+        if (lastCollectionsPayload) {
+            const tempPayload = {
+                ...lastCollectionsPayload,
+                collections: doc.collections,
+            };
+            pendingCollectionsPayload = tempPayload;
+            send({ type: "COLLECTIONS_DATA", payload: tempPayload });
+        } else {
+            pendingCollectionsPayload = {
+                collections: doc.collections,
+                last: null,
+                exportAllPref: false,
+                styleDictionaryPref: false,
+                flatTokensPref: false,
+                allowHexPref: true,
+                githubRememberPref: true,
+            };
+        }
         pendingSignatureAfterRefresh = signature;
         return true;
     } catch {
+        pendingSnapshot = null;
         return true;
     }
 }
@@ -539,11 +653,19 @@ function scheduleVariablePoll(
         if (needsRefresh) {
             requestAutoRefresh("variable-poll");
             variableBurstRemaining = VARIABLE_POLL_BURST_LIMIT;
-            scheduleVariablePoll(VARIABLE_POLL_BURST_DELAY_MS);
+            const burstDelay =
+                lastSnapshotDurationMs <= SNAPSHOT_FAST_THRESHOLD_MS
+                    ? VARIABLE_POLL_FAST_DELAY_MS
+                    : VARIABLE_POLL_SLOW_DELAY_MS;
+            scheduleVariablePoll(burstDelay);
         } else {
             if (variableBurstRemaining > 0) {
                 variableBurstRemaining--;
-                scheduleVariablePoll(VARIABLE_POLL_BURST_DELAY_MS);
+                const followupDelay =
+                    lastSnapshotDurationMs <= SNAPSHOT_FAST_THRESHOLD_MS
+                        ? VARIABLE_POLL_FAST_DELAY_MS
+                        : VARIABLE_POLL_SLOW_DELAY_MS;
+                scheduleVariablePoll(followupDelay);
             } else {
                 scheduleVariablePoll(VARIABLE_POLL_INTERVAL_MS);
             }

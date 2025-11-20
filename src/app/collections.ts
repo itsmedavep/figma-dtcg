@@ -1,7 +1,11 @@
 // src/app/collections.ts
 // Helpers for enumerating variable collections and analyzing selection state.
 
-export async function snapshotCollectionsForUi(): Promise<{
+type SnapshotOptions = {
+  variableMap?: Map<string, Variable>;
+};
+
+export async function snapshotCollectionsForUi(options?: SnapshotOptions): Promise<{
   collections: Array<{
     id: string;
     name: string;
@@ -53,7 +57,12 @@ export async function snapshotCollectionsForUi(): Promise<{
     const varsList: Array<{ id: string; name: string; type: string }> = [];
     for (let vi = 0; vi < c.variableIds.length; vi++) {
       const varId = c.variableIds[vi];
-      const v = await figma.variables.getVariableByIdAsync(varId);
+      let v: Variable | null = null;
+      if (options && options.variableMap && options.variableMap.has(varId)) {
+        v = options.variableMap.get(varId) || null;
+      } else {
+        v = await figma.variables.getVariableByIdAsync(varId);
+      }
       if (!v) continue;
       varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
     }

@@ -21,7 +21,7 @@
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
   // src/app/collections.ts
-  async function snapshotCollectionsForUi() {
+  async function snapshotCollectionsForUi(options) {
     if (typeof figma.editorType !== "string" || figma.editorType !== "figma") {
       return {
         collections: [],
@@ -48,7 +48,12 @@
       const varsList = [];
       for (let vi = 0; vi < c.variableIds.length; vi++) {
         const varId = c.variableIds[vi];
-        const v = await figma.variables.getVariableByIdAsync(varId);
+        let v = null;
+        if (options && options.variableMap && options.variableMap.has(varId)) {
+          v = options.variableMap.get(varId) || null;
+        } else {
+          v = await figma.variables.getVariableByIdAsync(varId);
+        }
         if (!v) continue;
         varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
       }
@@ -5008,8 +5013,10 @@
     exportDtcg
   });
   var VARIABLE_POLL_INTERVAL_MS = 5e3;
-  var VARIABLE_POLL_BURST_DELAY_MS = 350;
   var VARIABLE_POLL_BURST_LIMIT = 3;
+  var VARIABLE_POLL_FAST_DELAY_MS = 150;
+  var VARIABLE_POLL_SLOW_DELAY_MS = 350;
+  var SNAPSHOT_FAST_THRESHOLD_MS = 120;
   var AUTO_REFRESH_DEBOUNCE_MS = 600;
   var autoSyncActive = false;
   var autoRefreshTimer = null;
@@ -5017,10 +5024,14 @@
   var autoRefreshRunning = false;
   var variablePollTimer = null;
   var variableBurstRemaining = 0;
+  var lastSnapshotDurationMs = 0;
   var documentChangeHandler = null;
   var styleChangeHandler = null;
   var lastCollectionsSignature = null;
   var pendingSignatureAfterRefresh = null;
+  var pendingSnapshot = null;
+  var lastCollectionsPayload = null;
+  var pendingCollectionsPayload = null;
   var pendingAutoRefreshSource = null;
   var pendingStyleEvents = /* @__PURE__ */ new Map();
   var styleDisplayIds = /* @__PURE__ */ new Map();
@@ -5045,8 +5056,10 @@
     }
     return parts.join("|");
   }
-  async function buildCollectionsPayload() {
-    const snap = await snapshotCollectionsForUi();
+  async function buildCollectionsPayload(precomputed) {
+    const start = Date.now();
+    const doc = await ensureDocumentSnapshot(precomputed);
+    lastSnapshotDurationMs = Date.now() - start;
     const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
     const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
     const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);
@@ -5057,7 +5070,7 @@
     const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
     const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
     const payload = {
-      collections: snap.collections,
+      collections: doc.collections,
       last: lastOrNull,
       exportAllPref: !!exportAllPrefVal,
       styleDictionaryPref: !!styleDictionaryPrefVal,
@@ -5065,17 +5078,27 @@
       allowHexPref: allowHexPrefVal,
       githubRememberPref: githubRememberPrefVal
     };
+    const signature = doc.signature || computeCollectionsSignatureFromPayload(payload);
+    const snapshot = {
+      collections: doc.collections,
+      rawText: doc.rawText,
+      signature
+    };
     return {
       payload,
-      rawText: snap.rawText,
-      count: snap.collections.length,
-      signature: computeCollectionsSignatureFromPayload(payload)
+      rawText: doc.rawText,
+      count: doc.collections.length,
+      signature,
+      snapshot
     };
   }
   async function refreshCollections(reason, autoSource) {
     const prevStyleIds = new Set(knownStyleIds);
     try {
-      const snap = await buildCollectionsPayload();
+      const snap = await buildCollectionsPayload(pendingSnapshot);
+      pendingSnapshot = null;
+      const payload = reason === "auto" && pendingCollectionsPayload ? pendingCollectionsPayload : snap.payload;
+      pendingCollectionsPayload = null;
       const shouldLog = reason !== "auto";
       if (shouldLog) {
         let message = "";
@@ -5090,7 +5113,8 @@
           send({ type: "INFO", payload: { message } });
         }
       }
-      send({ type: "COLLECTIONS_DATA", payload: snap.payload });
+      send({ type: "COLLECTIONS_DATA", payload });
+      lastCollectionsPayload = payload;
       send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
       lastCollectionsSignature = snap.signature;
       pendingSignatureAfterRefresh = null;
@@ -5108,7 +5132,7 @@
   }
   async function computeVariableCollectionsSignature() {
     if (!figma.variables || typeof figma.variables.getLocalVariableCollectionsAsync !== "function") {
-      return null;
+      return { signature: null, variableMap: null };
     }
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
     const signatures = [];
@@ -5125,12 +5149,15 @@
       const vars = (col.variableIds || []).slice().sort();
       for (let vi = 0; vi < vars.length; vi++) signatures.push(vars[vi]);
     }
+    let variableMap = null;
     if (typeof figma.variables.getLocalVariablesAsync === "function") {
       const allVars = await figma.variables.getLocalVariablesAsync();
       const sortedVars = (allVars || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+      variableMap = /* @__PURE__ */ new Map();
       for (let vi = 0; vi < sortedVars.length; vi++) {
         const variable = sortedVars[vi];
         if (!variable) continue;
+        variableMap.set(variable.id, variable);
         signatures.push(
           variable.id,
           variable.name,
@@ -5140,7 +5167,42 @@
         );
       }
     }
-    return signatures.join("|");
+    return { signature: signatures.join("|"), variableMap };
+  }
+  async function captureDocumentSnapshotFromData(signature, variableMap) {
+    const snap = await snapshotCollectionsForUi(
+      variableMap ? { variableMap } : void 0
+    );
+    return {
+      collections: snap.collections,
+      rawText: snap.rawText,
+      signature
+    };
+  }
+  async function captureDocumentSnapshot() {
+    const { signature, variableMap } = await computeVariableCollectionsSignature();
+    if (signature) {
+      return await captureDocumentSnapshotFromData(signature, variableMap);
+    }
+    const snap = await snapshotCollectionsForUi();
+    const fallbackPayload = {
+      collections: snap.collections,
+      last: null,
+      exportAllPref: false,
+      styleDictionaryPref: false,
+      flatTokensPref: false,
+      allowHexPref: true,
+      githubRememberPref: true
+    };
+    return {
+      collections: snap.collections,
+      rawText: snap.rawText,
+      signature: computeCollectionsSignatureFromPayload(fallbackPayload)
+    };
+  }
+  async function ensureDocumentSnapshot(snapshot) {
+    if (snapshot) return snapshot;
+    return await captureDocumentSnapshot();
   }
   function serializeVariableValues(values) {
     if (!values) return "";
@@ -5165,18 +5227,45 @@
   }
   async function variableGraphLikelyChanged() {
     try {
-      const signature = await computeVariableCollectionsSignature();
-      if (!signature) return false;
-      if (lastCollectionsSignature === null) {
-        pendingSignatureAfterRefresh = signature;
-        return true;
-      }
-      if (signature === lastCollectionsSignature) return false;
-      if (pendingSignatureAfterRefresh && pendingSignatureAfterRefresh === signature)
+      const { signature, variableMap } = await computeVariableCollectionsSignature();
+      if (!signature) {
+        pendingSnapshot = null;
         return false;
+      }
+      if (signature === lastCollectionsSignature) {
+        pendingSnapshot = null;
+        return false;
+      }
+      if (pendingSignatureAfterRefresh && pendingSignatureAfterRefresh === signature) {
+        pendingSnapshot = null;
+        return false;
+      }
+      const doc = await captureDocumentSnapshotFromData(
+        signature,
+        variableMap
+      );
+      pendingSnapshot = doc;
+      if (lastCollectionsPayload) {
+        const tempPayload = __spreadProps(__spreadValues({}, lastCollectionsPayload), {
+          collections: doc.collections
+        });
+        pendingCollectionsPayload = tempPayload;
+        send({ type: "COLLECTIONS_DATA", payload: tempPayload });
+      } else {
+        pendingCollectionsPayload = {
+          collections: doc.collections,
+          last: null,
+          exportAllPref: false,
+          styleDictionaryPref: false,
+          flatTokensPref: false,
+          allowHexPref: true,
+          githubRememberPref: true
+        };
+      }
       pendingSignatureAfterRefresh = signature;
       return true;
     } catch (e) {
+      pendingSnapshot = null;
       return true;
     }
   }
@@ -5357,11 +5446,13 @@
       if (needsRefresh) {
         requestAutoRefresh("variable-poll");
         variableBurstRemaining = VARIABLE_POLL_BURST_LIMIT;
-        scheduleVariablePoll(VARIABLE_POLL_BURST_DELAY_MS);
+        const burstDelay = lastSnapshotDurationMs <= SNAPSHOT_FAST_THRESHOLD_MS ? VARIABLE_POLL_FAST_DELAY_MS : VARIABLE_POLL_SLOW_DELAY_MS;
+        scheduleVariablePoll(burstDelay);
       } else {
         if (variableBurstRemaining > 0) {
           variableBurstRemaining--;
-          scheduleVariablePoll(VARIABLE_POLL_BURST_DELAY_MS);
+          const followupDelay = lastSnapshotDurationMs <= SNAPSHOT_FAST_THRESHOLD_MS ? VARIABLE_POLL_FAST_DELAY_MS : VARIABLE_POLL_SLOW_DELAY_MS;
+          scheduleVariablePoll(followupDelay);
         } else {
           scheduleVariablePoll(VARIABLE_POLL_INTERVAL_MS);
         }
