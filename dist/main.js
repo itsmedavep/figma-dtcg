@@ -5008,12 +5008,15 @@
     exportDtcg
   });
   var VARIABLE_POLL_INTERVAL_MS = 5e3;
+  var VARIABLE_POLL_BURST_DELAY_MS = 350;
+  var VARIABLE_POLL_BURST_LIMIT = 3;
   var AUTO_REFRESH_DEBOUNCE_MS = 600;
   var autoSyncActive = false;
   var autoRefreshTimer = null;
   var autoRefreshRequested = false;
   var autoRefreshRunning = false;
   var variablePollTimer = null;
+  var variableBurstRemaining = 0;
   var documentChangeHandler = null;
   var styleChangeHandler = null;
   var lastCollectionsSignature = null;
@@ -5097,7 +5100,10 @@
       flushStyleEventLogs(prevStyleIds, nextStyleIds);
     } catch (err) {
       const message = (err == null ? void 0 : err.message) || "unknown error";
-      send({ type: "ERROR", payload: { message: "Failed to refresh collections: " + message } });
+      send({
+        type: "ERROR",
+        payload: { message: "Failed to refresh collections: " + message }
+      });
     }
   }
   async function computeVariableCollectionsSignature() {
@@ -5125,7 +5131,12 @@
       for (let vi = 0; vi < sortedVars.length; vi++) {
         const variable = sortedVars[vi];
         if (!variable) continue;
-        signatures.push(variable.id, variable.name, variable.variableCollectionId, variable.resolvedType);
+        signatures.push(
+          variable.id,
+          variable.name,
+          variable.variableCollectionId,
+          variable.resolvedType
+        );
       }
     }
     return signatures.join("|");
@@ -5139,7 +5150,8 @@
         return true;
       }
       if (signature === lastCollectionsSignature) return false;
-      if (pendingSignatureAfterRefresh && pendingSignatureAfterRefresh === signature) return false;
+      if (pendingSignatureAfterRefresh && pendingSignatureAfterRefresh === signature)
+        return false;
       pendingSignatureAfterRefresh = signature;
       return true;
     } catch (e) {
@@ -5224,10 +5236,14 @@
           ids.add(norm);
         }
       };
-      if (typeof figma.getLocalPaintStyles === "function") collect(figma.getLocalPaintStyles());
-      if (typeof figma.getLocalTextStyles === "function") collect(figma.getLocalTextStyles());
-      if (typeof figma.getLocalEffectStyles === "function") collect(figma.getLocalEffectStyles());
-      if (typeof figma.getLocalGridStyles === "function") collect(figma.getLocalGridStyles());
+      if (typeof figma.getLocalPaintStyles === "function")
+        collect(figma.getLocalPaintStyles());
+      if (typeof figma.getLocalTextStyles === "function")
+        collect(figma.getLocalTextStyles());
+      if (typeof figma.getLocalEffectStyles === "function")
+        collect(figma.getLocalEffectStyles());
+      if (typeof figma.getLocalGridStyles === "function")
+        collect(figma.getLocalGridStyles());
     } catch (e) {
     }
     return ids;
@@ -5282,7 +5298,10 @@
     if (!autoRefreshRequested) return;
     if (autoRefreshRunning) {
       if (autoRefreshTimer === null) {
-        autoRefreshTimer = setTimeout(runAutoRefresh, AUTO_REFRESH_DEBOUNCE_MS);
+        autoRefreshTimer = setTimeout(
+          runAutoRefresh,
+          AUTO_REFRESH_DEBOUNCE_MS
+        );
       }
       return;
     }
@@ -5295,11 +5314,14 @@
     } finally {
       autoRefreshRunning = false;
       if (autoSyncActive && autoRefreshRequested && autoRefreshTimer === null) {
-        autoRefreshTimer = setTimeout(runAutoRefresh, AUTO_REFRESH_DEBOUNCE_MS);
+        autoRefreshTimer = setTimeout(
+          runAutoRefresh,
+          AUTO_REFRESH_DEBOUNCE_MS
+        );
       }
     }
   }
-  function scheduleVariablePoll() {
+  function scheduleVariablePoll(delayMs = VARIABLE_POLL_INTERVAL_MS) {
     if (!autoSyncActive || variablePollTimer !== null) return;
     variablePollTimer = setTimeout(async () => {
       variablePollTimer = null;
@@ -5310,9 +5332,19 @@
       } catch (e) {
         needsRefresh = true;
       }
-      if (needsRefresh) requestAutoRefresh("variable-poll");
-      scheduleVariablePoll();
-    }, VARIABLE_POLL_INTERVAL_MS);
+      if (needsRefresh) {
+        requestAutoRefresh("variable-poll");
+        variableBurstRemaining = VARIABLE_POLL_BURST_LIMIT;
+        scheduleVariablePoll(VARIABLE_POLL_BURST_DELAY_MS);
+      } else {
+        if (variableBurstRemaining > 0) {
+          variableBurstRemaining--;
+          scheduleVariablePoll(VARIABLE_POLL_BURST_DELAY_MS);
+        } else {
+          scheduleVariablePoll(VARIABLE_POLL_INTERVAL_MS);
+        }
+      }
+    }, delayMs);
   }
   function startDocumentStateSync() {
     if (autoSyncActive) return;
@@ -5380,7 +5412,10 @@
     } else {
       send({ type: "INFO", payload: { message: "Import completed." } });
     }
-    send({ type: "IMPORT_SUMMARY", payload: { summary, timestamp: Date.now(), source: "local" } });
+    send({
+      type: "IMPORT_SUMMARY",
+      payload: { summary, timestamp: Date.now(), source: "local" }
+    });
     const snap = await snapshotCollectionsForUi();
     const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
     const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
@@ -5411,13 +5446,21 @@
     const styleDictionary = !!payload.styleDictionary;
     const flatTokens = !!payload.flatTokens;
     if (exportAll) {
-      const all = await exportDtcg({ format: "single", styleDictionary, flatTokens });
+      const all = await exportDtcg({
+        format: "single",
+        styleDictionary,
+        flatTokens
+      });
       send({ type: "EXPORT_RESULT", payload: { files: all.files } });
       return;
     }
     const collectionName = payload.collection ? payload.collection : "";
     const modeName = payload.mode ? payload.mode : "";
-    const per = await exportDtcg({ format: "perMode", styleDictionary, flatTokens });
+    const per = await exportDtcg({
+      format: "perMode",
+      styleDictionary,
+      flatTokens
+    });
     const prettyExact = `${collectionName} - ${modeName}.json`;
     const prettyLoose = `${collectionName} - ${modeName}`;
     const legacy1 = `${collectionName}_mode=${modeName}`;
@@ -5435,7 +5478,12 @@
     }
     const filesToSend = picked ? [picked] : per.files;
     if (!picked) {
-      send({ type: "INFO", payload: { message: `Export: pretty file not found for "${collectionName}" / "${modeName}". Falling back to all per-mode files.` } });
+      send({
+        type: "INFO",
+        payload: {
+          message: `Export: pretty file not found for "${collectionName}" / "${modeName}". Falling back to all per-mode files.`
+        }
+      });
     }
     send({ type: "EXPORT_RESULT", payload: { files: filesToSend } });
   }
@@ -5444,28 +5492,46 @@
     send({ type: "EXPORT_RESULT", payload: { files: result.files } });
     if (result.files.length > 0) {
       const first = result.files[0];
-      send({ type: "W3C_PREVIEW", payload: { name: first.name, json: first.json } });
+      send({
+        type: "W3C_PREVIEW",
+        payload: { name: first.name, json: first.json }
+      });
     }
   }
   async function handleSaveLast(msg) {
     const payload = msg.payload;
     if (typeof payload.collection === "string" && typeof payload.mode === "string") {
-      await figma.clientStorage.setAsync("lastSelection", { collection: payload.collection, mode: payload.mode });
+      await figma.clientStorage.setAsync("lastSelection", {
+        collection: payload.collection,
+        mode: payload.mode
+      });
     }
   }
   async function handleSavePrefs(msg) {
     const payload = msg.payload;
     if (typeof payload.exportAll === "boolean") {
-      await figma.clientStorage.setAsync("exportAllPref", !!payload.exportAll);
+      await figma.clientStorage.setAsync(
+        "exportAllPref",
+        !!payload.exportAll
+      );
     }
     if (typeof payload.styleDictionary === "boolean") {
-      await figma.clientStorage.setAsync("styleDictionaryPref", !!payload.styleDictionary);
+      await figma.clientStorage.setAsync(
+        "styleDictionaryPref",
+        !!payload.styleDictionary
+      );
     }
     if (typeof payload.flatTokens === "boolean") {
-      await figma.clientStorage.setAsync("flatTokensPref", !!payload.flatTokens);
+      await figma.clientStorage.setAsync(
+        "flatTokensPref",
+        !!payload.flatTokens
+      );
     }
     if (typeof payload.allowHexStrings === "boolean") {
-      await figma.clientStorage.setAsync("allowHexPref", !!payload.allowHexStrings);
+      await figma.clientStorage.setAsync(
+        "allowHexPref",
+        !!payload.allowHexStrings
+      );
     }
     if (typeof payload.githubRememberToken === "boolean") {
       const rememberPref = !!payload.githubRememberToken;
@@ -5492,7 +5558,11 @@
     const modeName = payload.mode ? String(payload.mode) : "";
     const styleDictionary = !!payload.styleDictionary;
     const flatTokens = !!payload.flatTokens;
-    const per = await exportDtcg({ format: "perMode", styleDictionary, flatTokens });
+    const per = await exportDtcg({
+      format: "perMode",
+      styleDictionary,
+      flatTokens
+    });
     const prettyExact = `${collectionName} - ${modeName}.json`;
     const prettyLoose = `${collectionName} - ${modeName}`;
     const legacy1 = `${collectionName}_mode=${modeName}`;
@@ -5505,7 +5575,10 @@
       const n = String((f == null ? void 0 : f.name) || "");
       return n.includes(legacy1) || n.includes(legacy2) || n.includes(legacy3);
     }) || per.files[0] || { name: "tokens-empty.json", json: {} };
-    send({ type: "W3C_PREVIEW", payload: { name: picked.name, json: picked.json } });
+    send({
+      type: "W3C_PREVIEW",
+      payload: { name: picked.name, json: picked.json }
+    });
   }
   var coreHandlers = /* @__PURE__ */ new Map([
     ["UI_READY", handleUiReady],
