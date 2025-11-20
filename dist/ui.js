@@ -69,6 +69,7 @@
     let ghPickFolderBtn = null;
     let ghFilenameInput = null;
     let ghFilenameErrorEl = null;
+    let ghCollectionsRefreshing = false;
     let ghCommitMsgInput = null;
     let ghExportAndCommitBtn = null;
     let ghCreatePrChk = null;
@@ -269,9 +270,9 @@
         deps.log("Pick a repository before creating a branch.");
         return;
       }
-      const baseBranch = getCurrentBranch();
+      const baseBranch = defaultBranchFromApi || "";
       if (!baseBranch) {
-        deps.log("Pick a branch first.");
+        deps.log("GitHub: Unable to determine the repository default branch. Refresh branches first.");
         return;
       }
       const newBranch = ((ghNewBranchName == null ? void 0 : ghNewBranchName.value) || "").trim();
@@ -814,6 +815,13 @@
     function persistGhState(partial) {
       deps.postToPlugin({ type: "GITHUB_SAVE_STATE", payload: partial });
     }
+    function requestCollectionsRefresh() {
+      if (ghCollectionsRefreshing) return;
+      ghCollectionsRefreshing = true;
+      deps.log("Refreshing Figma document state\u2026");
+      deps.postToPlugin({ type: "FETCH_COLLECTIONS" });
+      updateExportCommitEnabled();
+    }
     function updateExportCommitEnabled() {
       const collectionSelect2 = pickCollectionSelect();
       const modeSelect2 = pickModeSelect();
@@ -827,6 +835,9 @@
       const hasFilename = filenameValidation.ok;
       const hasSelection = scopeAll || scopeTypography ? true : !!(collectionSelect2 && collectionSelect2.value && modeSelect2 && modeSelect2.value);
       let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder && hasFilename);
+      if (ghCollectionsRefreshing) {
+        ready = false;
+      }
       if (ghCreatePrChk && ghCreatePrChk.checked) {
         const prBase = getPrBaseBranch();
         if (!prBase || prBase === br) {
@@ -1210,19 +1221,28 @@
           if ((ghScopeSelected == null ? void 0 : ghScopeSelected.checked) && ghPrOptionsEl) {
             ghPrOptionsEl.style.display = (ghCreatePrChk == null ? void 0 : ghCreatePrChk.checked) ? "flex" : "none";
           }
-          if (ghScopeSelected.checked) persistGhState({ scope: "selected" });
+          if (ghScopeSelected.checked) {
+            persistGhState({ scope: "selected" });
+            requestCollectionsRefresh();
+          }
           updateExportCommitEnabled();
         });
       }
       if (ghScopeAll) {
         ghScopeAll.addEventListener("change", () => {
-          if (ghScopeAll.checked) persistGhState({ scope: "all" });
+          if (ghScopeAll.checked) {
+            persistGhState({ scope: "all" });
+            requestCollectionsRefresh();
+          }
           updateExportCommitEnabled();
         });
       }
       if (ghScopeTypography) {
         ghScopeTypography.addEventListener("change", () => {
-          if (ghScopeTypography.checked) persistGhState({ scope: "typography" });
+          if (ghScopeTypography.checked) {
+            persistGhState({ scope: "typography" });
+            requestCollectionsRefresh();
+          }
           if (ghPrOptionsEl) ghPrOptionsEl.style.display = (ghCreatePrChk == null ? void 0 : ghCreatePrChk.checked) ? "flex" : "none";
           updateExportCommitEnabled();
         });
@@ -1708,6 +1728,10 @@
     function onSelectionChange() {
       updateExportCommitEnabled();
     }
+    function onCollectionsData() {
+      ghCollectionsRefreshing = false;
+      updateExportCommitEnabled();
+    }
     function applyRememberPrefFromPlugin(pref) {
       updateRememberPref(pref, false);
     }
@@ -1715,6 +1739,7 @@
       attach,
       handleMessage,
       onSelectionChange,
+      onCollectionsData,
       setRememberPref: applyRememberPrefFromPlugin
     };
   }
@@ -2627,6 +2652,7 @@
       return;
     }
     if (msg.type === "COLLECTIONS_DATA") {
+      githubUi.onCollectionsData();
       populateCollections({ collections: msg.payload.collections });
       if (exportAllChk) exportAllChk.checked = !!msg.payload.exportAllPref;
       if (styleDictionaryChk && typeof msg.payload.styleDictionaryPref === "boolean") {

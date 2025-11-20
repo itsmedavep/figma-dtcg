@@ -31,6 +31,7 @@ type GithubUiApi = {
   handleMessage(message: PluginToUi): boolean;
   onSelectionChange(): void;
   setRememberPref(pref: boolean): void;
+  onCollectionsData(): void;
 };
 
 const GH_MASK = '••••••••••';
@@ -64,6 +65,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
   let ghPickFolderBtn: HTMLButtonElement | null = null;
   let ghFilenameInput: HTMLInputElement | null = null;
   let ghFilenameErrorEl: HTMLElement | null = null;
+  let ghCollectionsRefreshing = false;
   let ghCommitMsgInput: HTMLInputElement | null = null;
   let ghExportAndCommitBtn: HTMLButtonElement | null = null;
   let ghCreatePrChk: HTMLInputElement | null = null;
@@ -314,9 +316,9 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       deps.log('Pick a repository before creating a branch.');
       return;
     }
-    const baseBranch = getCurrentBranch();
+    const baseBranch = defaultBranchFromApi || '';
     if (!baseBranch) {
-      deps.log('Pick a branch first.');
+      deps.log('GitHub: Unable to determine the repository default branch. Refresh branches first.');
       return;
     }
     const newBranch = (ghNewBranchName?.value || '').trim();
@@ -940,6 +942,14 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     deps.postToPlugin({ type: 'GITHUB_SAVE_STATE', payload: partial });
   }
 
+  function requestCollectionsRefresh(): void {
+    if (ghCollectionsRefreshing) return;
+    ghCollectionsRefreshing = true;
+    deps.log('Refreshing Figma document state…');
+    deps.postToPlugin({ type: 'FETCH_COLLECTIONS' });
+    updateExportCommitEnabled();
+  }
+
   function updateExportCommitEnabled(): void {
     const collectionSelect = pickCollectionSelect();
     const modeSelect = pickModeSelect();
@@ -958,6 +968,10 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
       : !!(collectionSelect && collectionSelect.value && modeSelect && modeSelect.value);
 
     let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder && hasFilename);
+
+    if (ghCollectionsRefreshing) {
+      ready = false;
+    }
 
     if (ghCreatePrChk && ghCreatePrChk.checked) {
       const prBase = getPrBaseBranch();
@@ -1385,21 +1399,30 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
         if (ghScopeSelected?.checked && ghPrOptionsEl) {
           ghPrOptionsEl.style.display = ghCreatePrChk?.checked ? 'flex' : 'none';
         }
-        if (ghScopeSelected!.checked) persistGhState({ scope: 'selected' });
+        if (ghScopeSelected!.checked) {
+          persistGhState({ scope: 'selected' });
+          requestCollectionsRefresh();
+        }
         updateExportCommitEnabled();
       });
     }
 
     if (ghScopeAll) {
       ghScopeAll.addEventListener('change', () => {
-        if (ghScopeAll!.checked) persistGhState({ scope: 'all' });
+        if (ghScopeAll!.checked) {
+          persistGhState({ scope: 'all' });
+          requestCollectionsRefresh();
+        }
         updateExportCommitEnabled();
       });
     }
 
     if (ghScopeTypography) {
       ghScopeTypography.addEventListener('change', () => {
-        if (ghScopeTypography!.checked) persistGhState({ scope: 'typography' });
+        if (ghScopeTypography!.checked) {
+          persistGhState({ scope: 'typography' });
+          requestCollectionsRefresh();
+        }
         if (ghPrOptionsEl) ghPrOptionsEl.style.display = ghCreatePrChk?.checked ? 'flex' : 'none';
         updateExportCommitEnabled();
       });
@@ -1927,6 +1950,11 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     updateExportCommitEnabled();
   }
 
+  function onCollectionsData(): void {
+    ghCollectionsRefreshing = false;
+    updateExportCommitEnabled();
+  }
+
   function applyRememberPrefFromPlugin(pref: boolean): void {
     updateRememberPref(pref, false);
   }
@@ -1935,6 +1963,7 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
     attach,
     handleMessage,
     onSelectionChange,
+    onCollectionsData,
     setRememberPref: applyRememberPrefFromPlugin,
   };
 }

@@ -55,6 +55,7 @@ type GithubDispatcher = {
 };
 
 const GH_SELECTED_KEY = "gh.selected";
+const GH_LAST_COMMIT_KEY = "gh.lastCommitSignature";
 
 function encodeToken(s: string): string {
     try {
@@ -101,8 +102,45 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const current = await getSelected();
         const merged = { ...current, ...partial };
         await setSelected(merged);
-        return merged;
+    return merged;
+}
+
+type CommitSignature = { branch: string; fullPath: string; scope: GithubScope };
+
+async function getLastCommitSignature(): Promise<CommitSignature | null> {
+    try {
+        const stored = await figma.clientStorage.getAsync(GH_LAST_COMMIT_KEY);
+        if (
+            stored &&
+            typeof stored === "object" &&
+            typeof (stored as { branch?: unknown }).branch === "string" &&
+            typeof (stored as { fullPath?: unknown }).fullPath === "string"
+        ) {
+            return {
+                branch: (stored as { branch: string }).branch,
+                fullPath: (stored as { fullPath: string }).fullPath,
+                scope:
+                    typeof (stored as { scope?: unknown }).scope === "string" &&
+                    ((stored as { scope?: unknown }).scope === "all" ||
+                        (stored as { scope?: unknown }).scope === "selected" ||
+                        (stored as { scope?: unknown }).scope === "typography")
+                        ? ((stored as { scope: GithubScope }).scope as GithubScope)
+                        : "selected",
+            };
+        }
+    } catch {
+        /* ignore */
     }
+    return null;
+}
+
+async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
+    try {
+        await figma.clientStorage.setAsync(GH_LAST_COMMIT_KEY, sig);
+    } catch {
+        /* ignore */
+    }
+}
 
     function pickPerModeFile(
         files: Array<{ name: string; json: unknown }>,
@@ -239,13 +277,13 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         };
     }
 
-    async function ensureFolderPathWritable(
-        token: string,
-        owner: string,
-        repo: string,
-        branch: string,
-        folderPath: string
-    ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  async function ensureFolderPathWritable(
+    token: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    folderPath: string
+  ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
         if (!folderPath) return { ok: true };
         const segments = folderPath.split("/").filter(Boolean);
         let prefix = "";
@@ -272,9 +310,43 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
             }
             const message = res.message || `HTTP ${status}`;
             return { ok: false, status: status || 400, message };
-        }
-        return { ok: true };
     }
+    return { ok: true };
+  }
+
+  async function refreshCollectionsSnapshotForUi(): Promise<void> {
+    try {
+      const snap = await deps.snapshotCollectionsForUi();
+      const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
+      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
+      const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
+      const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
+      const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
+      const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
+      const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
+      const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
+      const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
+        ? last
+        : null;
+
+      deps.send({
+        type: 'COLLECTIONS_DATA',
+        payload: {
+          collections: snap.collections,
+          last: lastOrNull,
+          exportAllPref: !!exportAllPrefVal,
+          styleDictionaryPref: !!styleDictionaryPrefVal,
+          flatTokensPref: !!flatTokensPrefVal,
+          allowHexPref: allowHexPrefVal,
+          githubRememberPref: githubRememberPrefVal
+        }
+      });
+      deps.send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
+    } catch (err) {
+      const message = (err as Error)?.message || 'unknown error';
+      deps.send({ type: 'ERROR', payload: { message: `GitHub: Failed to refresh local state: ${message}` } });
+    }
+  }
 
     async function handle(msg: UiToPlugin): Promise<boolean> {
         switch (msg.type) {
@@ -920,55 +992,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                         },
                     });
 
-                    const snap = await deps.snapshotCollectionsForUi();
-                    const last = await figma.clientStorage
-                        .getAsync("lastSelection")
-                        .catch(() => null);
-                    const exportAllPrefVal = await figma.clientStorage
-                        .getAsync("exportAllPref")
-                        .catch(() => false);
-                    const styleDictionaryPrefVal = await figma.clientStorage
-                        .getAsync("styleDictionaryPref")
-                        .catch(() => false);
-                    const flatTokensPrefVal = await figma.clientStorage
-                        .getAsync("flatTokensPref")
-                        .catch(() => false);
-                    const allowHexPrefStored = await figma.clientStorage
-                        .getAsync("allowHexPref")
-                        .catch(() => null);
-                    const githubRememberPrefStored = await figma.clientStorage
-                        .getAsync("githubRememberPref")
-                        .catch(() => null);
-                    const allowHexPrefVal =
-                        typeof allowHexPrefStored === "boolean"
-                            ? allowHexPrefStored
-                            : true;
-                    const githubRememberPrefVal =
-                        typeof githubRememberPrefStored === "boolean"
-                            ? githubRememberPrefStored
-                            : true;
-                    const lastOrNull =
-                        last &&
-                        typeof last.collection === "string" &&
-                        typeof last.mode === "string"
-                            ? last
-                            : null;
-                    deps.send({
-                        type: "COLLECTIONS_DATA",
-                        payload: {
-                            collections: snap.collections,
-                            last: lastOrNull,
-                            exportAllPref: !!exportAllPrefVal,
-                            styleDictionaryPref: !!styleDictionaryPrefVal,
-                            flatTokensPref: !!flatTokensPrefVal,
-                            allowHexPref: allowHexPrefVal,
-                            githubRememberPref: githubRememberPrefVal,
-                        },
-                    });
-                    deps.send({
-                        type: "RAW_COLLECTIONS_TEXT",
-                        payload: { text: snap.rawText },
-                    });
+                    await refreshCollectionsSnapshotForUi();
                 } catch (err) {
                     const msgText = (err as Error)?.message || "Invalid JSON";
                     deps.send({
@@ -1298,6 +1322,13 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                 const fullPathForCommit = folderCommitPath
                     ? `${folderCommitPath}/${filenameToCommit}`
                     : filenameToCommit;
+                const lastCommitSignature =
+                    (await getLastCommitSignature()) || null;
+                const sameTargetAsLastCommit =
+                    !!lastCommitSignature &&
+                    lastCommitSignature.branch === baseBranch &&
+                    lastCommitSignature.fullPath === fullPathForCommit &&
+                    lastCommitSignature.scope === scope;
 
                 const selectionState: Partial<GhSelected> = {
                     owner,
@@ -1318,6 +1349,7 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                     selectionState.collection = selectionCollection;
                 if (selectionMode) selectionState.mode = selectionMode;
                 await mergeSelected(selectionState);
+                await refreshCollectionsSnapshotForUi();
 
                 try {
                     const files: Array<{ name: string; json: unknown }> = [];
@@ -1538,6 +1570,55 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                         }
                         return value;
                     };
+                    const containsTypographyTokens = (text: string): boolean => {
+                        const parsed = tryParseJson(text);
+                        const hasTypography = (value: unknown): boolean => {
+                            if (!value) return false;
+                            if (typeof value === "string") {
+                                return value.toLowerCase() === "typography";
+                            }
+                            if (typeof value === "object") {
+                                if (
+                                    Object.prototype.hasOwnProperty.call(
+                                        value,
+                                        "$type"
+                                    )
+                                ) {
+                                    const t = (value as {
+                                        [k: string]: unknown;
+                                    })["$type"];
+                                    if (
+                                        typeof t === "string" &&
+                                        t.toLowerCase() === "typography"
+                                    ) {
+                                        return true;
+                                    }
+                                }
+                                for (const key in value as {
+                                    [k: string]: unknown;
+                                }) {
+                                    if (
+                                        Object.prototype.hasOwnProperty.call(
+                                            value,
+                                            key
+                                        ) &&
+                                        hasTypography(
+                                            (value as {
+                                                [k: string]: unknown;
+                                            })[key]
+                                        )
+                                    ) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        };
+                        if (parsed !== undefined) {
+                            return hasTypography(parsed);
+                        }
+                        return /"\$type"\s*:\s*"typography"/i.test(text);
+                    };
                     const contentsMatch = (
                         existing: string,
                         nextContent: string
@@ -1581,10 +1662,22 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                             allFilesIdentical = false;
                             break;
                         }
+                        if (
+                            scope === "typography" &&
+                            containsTypographyTokens(file.content) &&
+                            !containsTypographyTokens(current.contentText)
+                        ) {
+                            allFilesIdentical = false;
+                            break;
+                        }
                         if (!contentsMatch(current.contentText, file.content)) {
                             allFilesIdentical = false;
                             break;
                         }
+                    }
+
+                    if (allFilesIdentical && !sameTargetAsLastCommit) {
+                        allFilesIdentical = false;
                     }
 
                     if (allFilesIdentical) {
@@ -1609,20 +1702,33 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                         return true;
                     }
 
-                    const commitRes = await ghCommitFiles(
-                        ghToken,
-                        owner,
-                        repo,
-                        baseBranch,
-                        commitMessage,
-                        commitFiles
-                    );
+                    const attemptCommit = async () =>
+                        ghCommitFiles(
+                            ghToken!,
+                            owner,
+                            repo,
+                            baseBranch,
+                            commitMessage,
+                            commitFiles
+                        );
+                    let commitRes = await attemptCommit();
+                    let fastForwardRetry = false;
+                    if (
+                        !commitRes.ok &&
+                        commitRes.status === 422 &&
+                        typeof commitRes.message === "string" &&
+                        /not a fast forward/i.test(commitRes.message)
+                    ) {
+                        await sleep(200);
+                        commitRes = await attemptCommit();
+                        fastForwardRetry = true;
+                    }
                     if (!commitRes.ok) {
                         const looksLikeFastForwardRace =
                             commitRes.status === 422 &&
                             typeof commitRes.message === "string" &&
                             /not a fast forward/i.test(commitRes.message);
-                        if (looksLikeFastForwardRace) {
+                        if (looksLikeFastForwardRace && sameTargetAsLastCommit) {
                             const noChangeMessage =
                                 scope === "selected"
                                     ? `No token values changed for "${selectionCollection}" / "${selectionMode}"; repository already matches the current export.`
@@ -1655,11 +1761,21 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
                         deps.send({
                             type: "ERROR",
                             payload: {
-                                message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}`,
+                                message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}${
+                                    fastForwardRetry
+                                        ? " (after retry)"
+                                        : ""
+                                }`,
                             },
                         });
                         return true;
                     }
+
+                    await setLastCommitSignature({
+                        branch: baseBranch,
+                        fullPath: fullPathForCommit,
+                        scope,
+                    });
 
                     let prResult:
                         | Awaited<ReturnType<typeof ghCreatePullRequest>>

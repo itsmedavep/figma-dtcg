@@ -817,7 +817,8 @@ export async function ghCommitFiles(
 
     try {
         // 1) Resolve branch → commit SHA
-        const refRes = await fetch(`${base}/git/ref/heads/${encodeURIComponent(branch)}`, { headers });
+        const cacheBust = `_ts=${Date.now()}`;
+        const refRes = await fetch(`${base}/git/ref/heads/${encodeURIComponent(branch)}?${cacheBust}`, { headers });
         const rate1 = parseRate((refRes as any)?.headers);
         if (!refRes.ok) {
             const text = await safeText(refRes);
@@ -830,7 +831,7 @@ export async function ghCommitFiles(
         }
 
         // 2) Resolve base commit → tree SHA
-        const commitRes = await fetch(`${base}/git/commits/${baseCommitSha}`, { headers });
+        const commitRes = await fetch(`${base}/git/commits/${baseCommitSha}?${cacheBust}`, { headers });
         const rate2 = parseRate((commitRes as any)?.headers);
         if (!commitRes.ok) {
             const text = await safeText(commitRes);
