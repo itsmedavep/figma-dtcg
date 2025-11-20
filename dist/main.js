@@ -5007,7 +5007,42 @@
     importDtcg,
     exportDtcg
   });
-  async function handleUiReady(_msg) {
+  var VARIABLE_POLL_INTERVAL_MS = 5e3;
+  var AUTO_REFRESH_DEBOUNCE_MS = 600;
+  var autoSyncActive = false;
+  var autoRefreshTimer = null;
+  var autoRefreshRequested = false;
+  var autoRefreshRunning = false;
+  var variablePollTimer = null;
+  var documentChangeHandler = null;
+  var styleChangeHandler = null;
+  var lastCollectionsSignature = null;
+  var pendingSignatureAfterRefresh = null;
+  var pendingAutoRefreshSource = null;
+  var pendingStyleEvents = /* @__PURE__ */ new Map();
+  var styleDisplayIds = /* @__PURE__ */ new Map();
+  var knownStyleIds = /* @__PURE__ */ new Set();
+  function computeCollectionsSignatureFromPayload(payload) {
+    const parts = [];
+    const collections = (payload.collections || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+    for (let i = 0; i < collections.length; i++) {
+      const col = collections[i];
+      if (!col) continue;
+      parts.push(col.id, col.name);
+      const modes = (col.modes || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+      for (let mi = 0; mi < modes.length; mi++) {
+        const mode = modes[mi];
+        parts.push(mode.id, mode.name);
+      }
+      const variables = (col.variables || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+      for (let vi = 0; vi < variables.length; vi++) {
+        const variable = variables[vi];
+        parts.push(variable.id, variable.name, variable.type);
+      }
+    }
+    return parts.join("|");
+  }
+  async function buildCollectionsPayload() {
     const snap = await snapshotCollectionsForUi();
     const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
     const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
@@ -5018,47 +5053,314 @@
     const allowHexPrefVal = typeof allowHexPrefStored === "boolean" ? allowHexPrefStored : true;
     const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
     const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-    send({ type: "INFO", payload: { message: "Fetched " + String(snap.collections.length) + " collections (initial)" } });
-    send({
-      type: "COLLECTIONS_DATA",
-      payload: {
-        collections: snap.collections,
-        last: lastOrNull,
-        exportAllPref: !!exportAllPrefVal,
-        styleDictionaryPref: !!styleDictionaryPrefVal,
-        flatTokensPref: !!flatTokensPrefVal,
-        allowHexPref: allowHexPrefVal,
-        githubRememberPref: githubRememberPrefVal
+    const payload = {
+      collections: snap.collections,
+      last: lastOrNull,
+      exportAllPref: !!exportAllPrefVal,
+      styleDictionaryPref: !!styleDictionaryPrefVal,
+      flatTokensPref: !!flatTokensPrefVal,
+      allowHexPref: allowHexPrefVal,
+      githubRememberPref: githubRememberPrefVal
+    };
+    return {
+      payload,
+      rawText: snap.rawText,
+      count: snap.collections.length,
+      signature: computeCollectionsSignatureFromPayload(payload)
+    };
+  }
+  async function refreshCollections(reason, autoSource) {
+    const prevStyleIds = new Set(knownStyleIds);
+    try {
+      const snap = await buildCollectionsPayload();
+      const shouldLog = reason !== "auto";
+      if (shouldLog) {
+        let message = "";
+        if (reason === "initial") {
+          message = "Fetched " + String(snap.count) + " collections (initial)";
+        } else if (reason === "manual") {
+          message = "Fetched " + String(snap.count) + " collections";
+        } else if (autoSource === "style-event") {
+          message = "Document change detected; refreshed " + String(snap.count) + " collections";
+        }
+        if (message) {
+          send({ type: "INFO", payload: { message } });
+        }
+      }
+      send({ type: "COLLECTIONS_DATA", payload: snap.payload });
+      send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
+      lastCollectionsSignature = snap.signature;
+      pendingSignatureAfterRefresh = null;
+      const nextStyleIds = collectCurrentStyleIds();
+      knownStyleIds.clear();
+      nextStyleIds.forEach((id) => knownStyleIds.add(id));
+      flushStyleEventLogs(prevStyleIds, nextStyleIds);
+    } catch (err) {
+      const message = (err == null ? void 0 : err.message) || "unknown error";
+      send({ type: "ERROR", payload: { message: "Failed to refresh collections: " + message } });
+    }
+  }
+  async function computeVariableCollectionsSignature() {
+    if (!figma.variables || typeof figma.variables.getLocalVariableCollectionsAsync !== "function") {
+      return null;
+    }
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const signatures = [];
+    const sortedCollections = (collections || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+    for (let i = 0; i < sortedCollections.length; i++) {
+      const col = sortedCollections[i];
+      if (!col) continue;
+      signatures.push(col.id, col.name, col.defaultModeId);
+      const modes = (col.modes || []).slice().sort((a, b) => a.modeId.localeCompare(b.modeId));
+      for (let mi = 0; mi < modes.length; mi++) {
+        const mode = modes[mi];
+        signatures.push(mode.modeId, mode.name);
+      }
+      const vars = (col.variableIds || []).slice().sort();
+      for (let vi = 0; vi < vars.length; vi++) signatures.push(vars[vi]);
+    }
+    if (typeof figma.variables.getLocalVariablesAsync === "function") {
+      const allVars = await figma.variables.getLocalVariablesAsync();
+      const sortedVars = (allVars || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+      for (let vi = 0; vi < sortedVars.length; vi++) {
+        const variable = sortedVars[vi];
+        if (!variable) continue;
+        signatures.push(variable.id, variable.name, variable.variableCollectionId, variable.resolvedType);
+      }
+    }
+    return signatures.join("|");
+  }
+  async function variableGraphLikelyChanged() {
+    try {
+      const signature = await computeVariableCollectionsSignature();
+      if (!signature) return false;
+      if (lastCollectionsSignature === null) {
+        pendingSignatureAfterRefresh = signature;
+        return true;
+      }
+      if (signature === lastCollectionsSignature) return false;
+      if (pendingSignatureAfterRefresh && pendingSignatureAfterRefresh === signature) return false;
+      pendingSignatureAfterRefresh = signature;
+      return true;
+    } catch (e) {
+      return true;
+    }
+  }
+  function isStyleDocumentChange(change) {
+    if (!change) return false;
+    return change.type === "STYLE_CREATE" || change.type === "STYLE_DELETE" || change.type === "STYLE_PROPERTY_CHANGE";
+  }
+  function handleDocumentChangeEvent(event) {
+    if (!autoSyncActive || !event || !event.documentChanges) return;
+    const list = event.documentChanges;
+    let sawStyleChange = false;
+    for (let i = 0; i < list.length; i++) {
+      const change = list[i];
+      if (isStyleDocumentChange(change)) {
+        recordStyleEvent(change == null ? void 0 : change.type, change == null ? void 0 : change.id);
+        sawStyleChange = true;
+      }
+    }
+    if (sawStyleChange) {
+      requestAutoRefresh("style-event");
+    }
+  }
+  function handleStyleChangeEvent(event) {
+    if (!autoSyncActive || !event || !event.styleChanges) return;
+    const list = event.styleChanges;
+    let sawStyleChange = false;
+    for (let i = 0; i < list.length; i++) {
+      const change = list[i];
+      if (!change || !change.type) continue;
+      recordStyleEvent(change.type, change.id);
+      sawStyleChange = true;
+    }
+    if (sawStyleChange) {
+      requestAutoRefresh("style-event");
+    }
+  }
+  function normalizeStyleId(raw) {
+    if (!raw) return null;
+    const idx = raw.indexOf(",");
+    return idx >= 0 ? raw.slice(0, idx) : raw;
+  }
+  function recordStyleEvent(type, idRaw) {
+    if (!type) return;
+    const id = normalizeStyleId(idRaw);
+    if (!id) return;
+    if (type !== "STYLE_CREATE" && type !== "STYLE_DELETE" && type !== "STYLE_PROPERTY_CHANGE") {
+      return;
+    }
+    if (idRaw) styleDisplayIds.set(id, idRaw);
+    const entry = pendingStyleEvents.get(id) || {};
+    if (type === "STYLE_CREATE") {
+      entry.create = true;
+      entry.update = false;
+      entry.delete = false;
+      entry.loggedUpdate = false;
+    } else if (type === "STYLE_PROPERTY_CHANGE") {
+      if (!entry.create) {
+        entry.update = true;
+        if (!entry.loggedUpdate && knownStyleIds.has(id)) {
+          logStyleMessage("Style updated", styleDisplayIds.get(id) || id);
+          entry.loggedUpdate = true;
+        }
+      }
+    } else if (type === "STYLE_DELETE") {
+      entry.delete = true;
+    }
+    entry.attempts = entry.attempts || 0;
+    pendingStyleEvents.set(id, entry);
+  }
+  function collectCurrentStyleIds() {
+    const ids = /* @__PURE__ */ new Set();
+    try {
+      const collect = (styles) => {
+        if (!styles) return;
+        for (let i = 0; i < styles.length; i++) {
+          const style = styles[i];
+          if (!style || typeof style.id !== "string") continue;
+          const norm = normalizeStyleId(style.id) || style.id;
+          ids.add(norm);
+        }
+      };
+      if (typeof figma.getLocalPaintStyles === "function") collect(figma.getLocalPaintStyles());
+      if (typeof figma.getLocalTextStyles === "function") collect(figma.getLocalTextStyles());
+      if (typeof figma.getLocalEffectStyles === "function") collect(figma.getLocalEffectStyles());
+      if (typeof figma.getLocalGridStyles === "function") collect(figma.getLocalGridStyles());
+    } catch (e) {
+    }
+    return ids;
+  }
+  function flushStyleEventLogs(prev, next) {
+    if (pendingStyleEvents.size === 0) return;
+    const survivors = /* @__PURE__ */ new Map();
+    pendingStyleEvents.forEach((entry, id) => {
+      const hadPrev = prev.has(id);
+      const hasNext = next.has(id);
+      let handled = false;
+      if (entry.delete && hadPrev && !hasNext) {
+        logStyleMessage("Style deleted", styleDisplayIds.get(id) || id);
+        handled = true;
+      } else if (entry.create && !hadPrev && hasNext) {
+        logStyleMessage("Style created", styleDisplayIds.get(id) || id);
+        handled = true;
+      } else if (entry.update && !entry.create && !entry.loggedUpdate && hadPrev && hasNext) {
+        logStyleMessage("Style updated", styleDisplayIds.get(id) || id);
+        handled = true;
+      }
+      if (!handled) {
+        const attempts = (entry.attempts || 0) + 1;
+        if (attempts < 4) {
+          survivors.set(id, __spreadProps(__spreadValues({}, entry), { attempts }));
+        }
       }
     });
-    send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
+    pendingStyleEvents.clear();
+    survivors.forEach((value, key) => pendingStyleEvents.set(key, value));
+  }
+  function logStyleMessage(prefix, _id) {
+    send({ type: "INFO", payload: { message: prefix } });
+  }
+  function requestAutoRefresh(source) {
+    if (!autoSyncActive) return;
+    autoRefreshRequested = true;
+    if (source === "style-event") {
+      pendingAutoRefreshSource = "style-event";
+    } else if (pendingAutoRefreshSource !== "style-event") {
+      pendingAutoRefreshSource = "variable-poll";
+    }
+    if (autoRefreshTimer !== null) return;
+    autoRefreshTimer = setTimeout(runAutoRefresh, AUTO_REFRESH_DEBOUNCE_MS);
+  }
+  async function runAutoRefresh() {
+    autoRefreshTimer = null;
+    if (!autoSyncActive) {
+      autoRefreshRequested = false;
+      return;
+    }
+    if (!autoRefreshRequested) return;
+    if (autoRefreshRunning) {
+      if (autoRefreshTimer === null) {
+        autoRefreshTimer = setTimeout(runAutoRefresh, AUTO_REFRESH_DEBOUNCE_MS);
+      }
+      return;
+    }
+    autoRefreshRequested = false;
+    autoRefreshRunning = true;
+    try {
+      const source = pendingAutoRefreshSource;
+      pendingAutoRefreshSource = null;
+      await refreshCollections("auto", source);
+    } finally {
+      autoRefreshRunning = false;
+      if (autoSyncActive && autoRefreshRequested && autoRefreshTimer === null) {
+        autoRefreshTimer = setTimeout(runAutoRefresh, AUTO_REFRESH_DEBOUNCE_MS);
+      }
+    }
+  }
+  function scheduleVariablePoll() {
+    if (!autoSyncActive || variablePollTimer !== null) return;
+    variablePollTimer = setTimeout(async () => {
+      variablePollTimer = null;
+      if (!autoSyncActive) return;
+      let needsRefresh = true;
+      try {
+        needsRefresh = await variableGraphLikelyChanged();
+      } catch (e) {
+        needsRefresh = true;
+      }
+      if (needsRefresh) requestAutoRefresh("variable-poll");
+      scheduleVariablePoll();
+    }, VARIABLE_POLL_INTERVAL_MS);
+  }
+  function startDocumentStateSync() {
+    if (autoSyncActive) return;
+    autoSyncActive = true;
+    documentChangeHandler = handleDocumentChangeEvent;
+    figma.on("documentchange", handleDocumentChangeEvent);
+    if (typeof figma.on === "function") {
+      styleChangeHandler = handleStyleChangeEvent;
+      figma.on("stylechange", handleStyleChangeEvent);
+    }
+    scheduleVariablePoll();
+  }
+  function stopDocumentStateSync() {
+    if (!autoSyncActive) return;
+    autoSyncActive = false;
+    if (documentChangeHandler) {
+      figma.off("documentchange", documentChangeHandler);
+      documentChangeHandler = null;
+    }
+    if (styleChangeHandler) {
+      figma.off("stylechange", styleChangeHandler);
+      styleChangeHandler = null;
+    }
+    if (variablePollTimer !== null) {
+      clearTimeout(variablePollTimer);
+      variablePollTimer = null;
+    }
+    autoRefreshRequested = false;
+    if (autoRefreshTimer !== null) {
+      clearTimeout(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+    autoRefreshRunning = false;
+    pendingAutoRefreshSource = null;
+    pendingStyleEvents.clear();
+    styleDisplayIds.clear();
+    knownStyleIds.clear();
+  }
+  figma.on("close", () => {
+    stopDocumentStateSync();
+  });
+  async function handleUiReady(_msg) {
+    await refreshCollections("initial");
     await github.onUiReady();
+    startDocumentStateSync();
   }
   async function handleFetchCollections(_msg) {
-    const snapshot = await snapshotCollectionsForUi();
-    const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
-    const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
-    const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);
-    const flatTokensPrefVal = await figma.clientStorage.getAsync("flatTokensPref").catch(() => false);
-    const allowHexPrefStored = await figma.clientStorage.getAsync("allowHexPref").catch(() => null);
-    const githubRememberPrefStored = await figma.clientStorage.getAsync("githubRememberPref").catch(() => null);
-    const allowHexPrefVal = typeof allowHexPrefStored === "boolean" ? allowHexPrefStored : true;
-    const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
-    const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-    send({ type: "INFO", payload: { message: "Fetched " + String(snapshot.collections.length) + " collections" } });
-    send({
-      type: "COLLECTIONS_DATA",
-      payload: {
-        collections: snapshot.collections,
-        last: lastOrNull,
-        exportAllPref: !!exportAllPrefVal,
-        styleDictionaryPref: !!styleDictionaryPrefVal,
-        flatTokensPref: !!flatTokensPrefVal,
-        allowHexPref: allowHexPrefVal,
-        githubRememberPref: githubRememberPrefVal
-      }
-    });
-    send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snapshot.rawText } });
+    await refreshCollections("manual");
   }
   async function handleImportDtcg(msg) {
     const payload = msg.payload;
