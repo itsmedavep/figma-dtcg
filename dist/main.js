@@ -3473,7 +3473,10 @@
       const prettyLoose = `${collectionName} - ${modeName}`;
       const legacy1 = `${collectionName}_mode=${modeName}`;
       const legacy2 = `${collectionName}/mode=${modeName}`;
-      const legacy3 = deps.safeKeyFromCollectionAndMode(collectionName, modeName);
+      const legacy3 = deps.safeKeyFromCollectionAndMode(
+        collectionName,
+        modeName
+      );
       let picked = files.find((f) => {
         const n = String((f == null ? void 0 : f.name) || "");
         return n === prettyExact || n === prettyLoose || n.includes(`${collectionName} - ${modeName}`);
@@ -3501,7 +3504,12 @@
         }));
         deps.send({ type: "GITHUB_REPOS", payload: { repos: minimal } });
       } else {
-        deps.send({ type: "ERROR", payload: { message: `GitHub: Could not list repos: ${repos.error}` } });
+        deps.send({
+          type: "ERROR",
+          payload: {
+            message: `GitHub: Could not list repos: ${repos.error}`
+          }
+        });
         deps.send({ type: "GITHUB_REPOS", payload: { repos: [] } });
       }
     }
@@ -3515,18 +3523,29 @@
           return;
         }
         const stored = await figma.clientStorage.getAsync("github_token_b64").catch(() => null);
-        if (!stored || typeof stored !== "string" || stored.length === 0) return;
+        if (!stored || typeof stored !== "string" || stored.length === 0)
+          return;
         const decoded = decodeToken(stored);
         ghToken = decoded;
         const who = await ghGetUser(decoded);
         if (who.ok) {
           deps.send({
             type: "GITHUB_AUTH_RESULT",
-            payload: { ok: true, login: who.user.login, name: who.user.name, remember: true }
+            payload: {
+              ok: true,
+              login: who.user.login,
+              name: who.user.name,
+              remember: true
+            }
           });
           await listAndSendRepos(decoded);
         } else {
-          deps.send({ type: "ERROR", payload: { message: `GitHub: Authentication failed (stored token): ${who.error}.` } });
+          deps.send({
+            type: "ERROR",
+            payload: {
+              message: `GitHub: Authentication failed (stored token): ${who.error}.`
+            }
+          });
           deps.send({
             type: "GITHUB_AUTH_RESULT",
             payload: { ok: false, error: who.error, remember: false }
@@ -3540,11 +3559,17 @@
       if (!folderStoredResult.ok) {
         return folderStoredResult;
       }
-      const folderCommitResult = folderStorageToCommitPath(folderStoredResult.storage);
+      const folderCommitResult = folderStorageToCommitPath(
+        folderStoredResult.storage
+      );
       if (!folderCommitResult.ok) {
         return folderCommitResult;
       }
-      return { ok: true, storage: folderStoredResult.storage, path: folderCommitResult.path };
+      return {
+        ok: true,
+        storage: folderStoredResult.storage,
+        path: folderCommitResult.path
+      };
     }
     async function ensureFolderPathWritable(token, owner, repo, branch, folderPath) {
       if (!folderPath) return { ok: true };
@@ -3582,8 +3607,18 @@
           const token = String(msg.payload.token || "").trim();
           const remember = !!msg.payload.remember;
           if (!token) {
-            deps.send({ type: "ERROR", payload: { message: "GitHub: Empty token." } });
-            deps.send({ type: "GITHUB_AUTH_RESULT", payload: { ok: false, error: "empty token", remember: false } });
+            deps.send({
+              type: "ERROR",
+              payload: { message: "GitHub: Empty token." }
+            });
+            deps.send({
+              type: "GITHUB_AUTH_RESULT",
+              payload: {
+                ok: false,
+                error: "empty token",
+                remember: false
+              }
+            });
             return true;
           }
           ghToken = token;
@@ -3598,14 +3633,28 @@
           if (who.ok) {
             deps.send({
               type: "GITHUB_AUTH_RESULT",
-              payload: { ok: true, login: who.user.login, name: who.user.name, remember }
+              payload: {
+                ok: true,
+                login: who.user.login,
+                name: who.user.name,
+                remember
+              }
             });
             await listAndSendRepos(token);
           } else {
-            deps.send({ type: "ERROR", payload: { message: `GitHub: Authentication failed: ${who.error}.` } });
+            deps.send({
+              type: "ERROR",
+              payload: {
+                message: `GitHub: Authentication failed: ${who.error}.`
+              }
+            });
             deps.send({
               type: "GITHUB_AUTH_RESULT",
-              payload: { ok: false, error: who.error, remember: false }
+              payload: {
+                ok: false,
+                error: who.error,
+                remember: false
+              }
             });
             deps.send({ type: "GITHUB_REPOS", payload: { repos: [] } });
           }
@@ -3615,8 +3664,14 @@
           ghToken = null;
           await figma.clientStorage.deleteAsync("github_token_b64").catch(() => {
           });
-          deps.send({ type: "INFO", payload: { message: "GitHub: Token cleared." } });
-          deps.send({ type: "GITHUB_AUTH_RESULT", payload: { ok: false, remember: false } });
+          deps.send({
+            type: "INFO",
+            payload: { message: "GitHub: Token cleared." }
+          });
+          deps.send({
+            type: "GITHUB_AUTH_RESULT",
+            payload: { ok: false, remember: false }
+          });
           deps.send({ type: "GITHUB_REPOS", payload: { repos: [] } });
           return true;
         }
@@ -3659,9 +3714,14 @@
           return true;
         }
         case "GITHUB_SET_FOLDER": {
-          const folderResult = normalizeFolderForStorage(String((_a = msg.payload.folder) != null ? _a : ""));
+          const folderResult = normalizeFolderForStorage(
+            String((_a = msg.payload.folder) != null ? _a : "")
+          );
           if (!folderResult.ok) {
-            deps.send({ type: "ERROR", payload: { message: folderResult.message } });
+            deps.send({
+              type: "ERROR",
+              payload: { message: folderResult.message }
+            });
             return true;
           }
           const folder = folderResult.storage;
@@ -3685,27 +3745,46 @@
         }
         case "GITHUB_SAVE_STATE": {
           const update = {};
-          if (typeof msg.payload.owner === "string") update.owner = msg.payload.owner;
-          if (typeof msg.payload.repo === "string") update.repo = msg.payload.repo;
-          if (typeof msg.payload.branch === "string") update.branch = msg.payload.branch;
+          if (typeof msg.payload.owner === "string")
+            update.owner = msg.payload.owner;
+          if (typeof msg.payload.repo === "string")
+            update.repo = msg.payload.repo;
+          if (typeof msg.payload.branch === "string")
+            update.branch = msg.payload.branch;
           if (typeof msg.payload.folder === "string") {
-            const folderResult = normalizeFolderForStorage(msg.payload.folder);
+            const folderResult = normalizeFolderForStorage(
+              msg.payload.folder
+            );
             if (folderResult.ok) update.folder = folderResult.storage;
-            else deps.send({ type: "ERROR", payload: { message: folderResult.message } });
+            else
+              deps.send({
+                type: "ERROR",
+                payload: { message: folderResult.message }
+              });
           }
-          if (typeof msg.payload.filename === "string") update.filename = msg.payload.filename.trim();
-          if (typeof msg.payload.commitMessage === "string") update.commitMessage = msg.payload.commitMessage;
+          if (typeof msg.payload.filename === "string")
+            update.filename = msg.payload.filename.trim();
+          if (typeof msg.payload.commitMessage === "string")
+            update.commitMessage = msg.payload.commitMessage;
           if (msg.payload.scope === "all" || msg.payload.scope === "selected" || msg.payload.scope === "typography") {
             update.scope = msg.payload.scope;
           }
-          if (typeof msg.payload.collection === "string") update.collection = msg.payload.collection;
-          if (typeof msg.payload.mode === "string") update.mode = msg.payload.mode;
-          if (typeof msg.payload.styleDictionary === "boolean") update.styleDictionary = msg.payload.styleDictionary;
-          if (typeof msg.payload.flatTokens === "boolean") update.flatTokens = msg.payload.flatTokens;
-          if (typeof msg.payload.createPr === "boolean") update.createPr = msg.payload.createPr;
-          if (typeof msg.payload.prBase === "string") update.prBase = msg.payload.prBase;
-          if (typeof msg.payload.prTitle === "string") update.prTitle = msg.payload.prTitle;
-          if (typeof msg.payload.prBody === "string") update.prBody = msg.payload.prBody;
+          if (typeof msg.payload.collection === "string")
+            update.collection = msg.payload.collection;
+          if (typeof msg.payload.mode === "string")
+            update.mode = msg.payload.mode;
+          if (typeof msg.payload.styleDictionary === "boolean")
+            update.styleDictionary = msg.payload.styleDictionary;
+          if (typeof msg.payload.flatTokens === "boolean")
+            update.flatTokens = msg.payload.flatTokens;
+          if (typeof msg.payload.createPr === "boolean")
+            update.createPr = msg.payload.createPr;
+          if (typeof msg.payload.prBase === "string")
+            update.prBase = msg.payload.prBase;
+          if (typeof msg.payload.prTitle === "string")
+            update.prTitle = msg.payload.prTitle;
+          if (typeof msg.payload.prBody === "string")
+            update.prBody = msg.payload.prBody;
           await mergeSelected(update);
           return true;
         }
@@ -3715,14 +3794,33 @@
           const page = Number.isFinite(msg.payload.page) ? Number(msg.payload.page) : 1;
           const force = !!msg.payload.force;
           if (!ghToken) {
-            deps.send({ type: "GITHUB_BRANCHES_ERROR", payload: { owner, repo, status: 401, message: "No token" } });
+            deps.send({
+              type: "GITHUB_BRANCHES_ERROR",
+              payload: {
+                owner,
+                repo,
+                status: 401,
+                message: "No token"
+              }
+            });
             return true;
           }
-          const res = await ghListBranches(ghToken, owner, repo, page, force);
+          const res = await ghListBranches(
+            ghToken,
+            owner,
+            repo,
+            page,
+            force
+          );
           if (res.ok) {
             deps.send({ type: "GITHUB_BRANCHES", payload: res });
             if (page === 1 && res.defaultBranch) {
-              await mergeSelected({ owner, repo, branch: res.defaultBranch, prBase: res.defaultBranch });
+              await mergeSelected({
+                owner,
+                repo,
+                branch: res.defaultBranch,
+                prBase: res.defaultBranch
+              });
             }
           } else {
             deps.send({ type: "GITHUB_BRANCHES_ERROR", payload: res });
@@ -3735,31 +3833,86 @@
           const branch = String(msg.payload.branch || "");
           const pathRaw = String(msg.payload.path || "");
           if (!ghToken) {
-            deps.send({ type: "GITHUB_FOLDER_LIST_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 401, message: "No token" } });
+            deps.send({
+              type: "GITHUB_FOLDER_LIST_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 401,
+                message: "No token"
+              }
+            });
             return true;
           }
           const normalizedPath = normalizeFolderForStorage(pathRaw);
           if (!normalizedPath.ok) {
-            deps.send({ type: "GITHUB_FOLDER_LIST_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: normalizedPath.message } });
+            deps.send({
+              type: "GITHUB_FOLDER_LIST_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 400,
+                message: normalizedPath.message
+              }
+            });
             return true;
           }
-          const commitPathResult = folderStorageToCommitPath(normalizedPath.storage);
+          const commitPathResult = folderStorageToCommitPath(
+            normalizedPath.storage
+          );
           if (!commitPathResult.ok) {
-            deps.send({ type: "GITHUB_FOLDER_LIST_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: commitPathResult.message } });
+            deps.send({
+              type: "GITHUB_FOLDER_LIST_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 400,
+                message: commitPathResult.message
+              }
+            });
             return true;
           }
           const folderPath = commitPathResult.path;
           if (folderPath) {
-            const collision = await ensureFolderPathWritable(ghToken, owner, repo, branch, folderPath);
+            const collision = await ensureFolderPathWritable(
+              ghToken,
+              owner,
+              repo,
+              branch,
+              folderPath
+            );
             if (!collision.ok) {
               deps.send({
                 type: "GITHUB_FOLDER_LIST_RESULT",
-                payload: { ok: false, owner, repo, branch, path: folderPath, status: collision.status, message: collision.message }
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch,
+                  path: folderPath,
+                  status: collision.status,
+                  message: collision.message
+                }
               });
               return true;
             }
           }
-          const res = await ghListDirs(ghToken, owner, repo, branch, commitPathResult.path);
+          const res = await ghListDirs(
+            ghToken,
+            owner,
+            repo,
+            branch,
+            commitPathResult.path
+          );
           if (res.ok) {
             deps.send({
               type: "GITHUB_FOLDER_LIST_RESULT",
@@ -3769,14 +3922,27 @@
                 repo,
                 branch,
                 path: res.path,
-                entries: res.dirs.map((d) => ({ type: "dir", name: d.name, path: d.path })),
+                entries: res.dirs.map((d) => ({
+                  type: "dir",
+                  name: d.name,
+                  path: d.path
+                })),
                 rate: res.rate
               }
             });
           } else {
             deps.send({
               type: "GITHUB_FOLDER_LIST_RESULT",
-              payload: { ok: false, owner, repo, branch, path: res.path, status: res.status, message: res.message, rate: res.rate }
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: res.path,
+                status: res.status,
+                message: res.message,
+                rate: res.rate
+              }
             });
           }
           return true;
@@ -3785,27 +3951,84 @@
           const owner = String(msg.payload.owner || "");
           const repo = String(msg.payload.repo || "");
           const branch = String(msg.payload.branch || "");
-          const folderPathRaw = String(msg.payload.folderPath || msg.payload.path || "").trim();
+          const folderPathRaw = String(
+            msg.payload.folderPath || msg.payload.path || ""
+          ).trim();
           if (!ghToken) {
-            deps.send({ type: "GITHUB_CREATE_FOLDER_RESULT", payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 401, message: "No token" } });
+            deps.send({
+              type: "GITHUB_CREATE_FOLDER_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                folderPath: folderPathRaw,
+                status: 401,
+                message: "No token"
+              }
+            });
             return true;
           }
           const folderNormalized = normalizeFolderForStorage(folderPathRaw);
           if (!folderNormalized.ok) {
-            deps.send({ type: "GITHUB_CREATE_FOLDER_RESULT", payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: folderNormalized.message } });
+            deps.send({
+              type: "GITHUB_CREATE_FOLDER_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                folderPath: folderPathRaw,
+                status: 400,
+                message: folderNormalized.message
+              }
+            });
             return true;
           }
-          const folderCommit = folderStorageToCommitPath(folderNormalized.storage);
+          const folderCommit = folderStorageToCommitPath(
+            folderNormalized.storage
+          );
           if (!folderCommit.ok) {
-            deps.send({ type: "GITHUB_CREATE_FOLDER_RESULT", payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: folderCommit.message } });
+            deps.send({
+              type: "GITHUB_CREATE_FOLDER_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                folderPath: folderPathRaw,
+                status: 400,
+                message: folderCommit.message
+              }
+            });
             return true;
           }
           if (!folderCommit.path) {
-            deps.send({ type: "GITHUB_CREATE_FOLDER_RESULT", payload: { ok: false, owner, repo, branch, folderPath: folderPathRaw, status: 400, message: "GitHub: Choose a subfolder name." } });
+            deps.send({
+              type: "GITHUB_CREATE_FOLDER_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                folderPath: folderPathRaw,
+                status: 400,
+                message: "GitHub: Choose a subfolder name."
+              }
+            });
             return true;
           }
-          const res = await ghEnsureFolder(ghToken, owner, repo, branch, folderCommit.path);
-          deps.send({ type: "GITHUB_CREATE_FOLDER_RESULT", payload: res });
+          const res = await ghEnsureFolder(
+            ghToken,
+            owner,
+            repo,
+            branch,
+            folderCommit.path
+          );
+          deps.send({
+            type: "GITHUB_CREATE_FOLDER_RESULT",
+            payload: res
+          });
           return true;
         }
         case "GITHUB_CREATE_BRANCH": {
@@ -3814,18 +4037,49 @@
           const baseBranch = String(msg.payload.baseBranch || "");
           const newBranch = String(msg.payload.newBranch || "");
           if (!ghToken) {
-            deps.send({ type: "GITHUB_CREATE_BRANCH_RESULT", payload: { ok: false, owner, repo, baseBranch, newBranch, status: 401, message: "No token" } });
+            deps.send({
+              type: "GITHUB_CREATE_BRANCH_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                baseBranch,
+                newBranch,
+                status: 401,
+                message: "No token"
+              }
+            });
             return true;
           }
           if (!owner || !repo || !baseBranch || !newBranch) {
-            deps.send({ type: "GITHUB_CREATE_BRANCH_RESULT", payload: { ok: false, owner, repo, baseBranch, newBranch, status: 400, message: "Missing owner/repo/base/new" } });
+            deps.send({
+              type: "GITHUB_CREATE_BRANCH_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                baseBranch,
+                newBranch,
+                status: 400,
+                message: "Missing owner/repo/base/new"
+              }
+            });
             return true;
           }
-          const res = await ghCreateBranch(ghToken, owner, repo, newBranch, baseBranch);
+          const res = await ghCreateBranch(
+            ghToken,
+            owner,
+            repo,
+            newBranch,
+            baseBranch
+          );
           if (res.ok) {
             await mergeSelected({ owner, repo, branch: newBranch });
           }
-          deps.send({ type: "GITHUB_CREATE_BRANCH_RESULT", payload: res });
+          deps.send({
+            type: "GITHUB_CREATE_BRANCH_RESULT",
+            payload: res
+          });
           return true;
         }
         case "GITHUB_FETCH_TOKENS": {
@@ -3835,39 +4089,117 @@
           const pathRaw = String(msg.payload.path || "");
           const allowHex = !!msg.payload.allowHexStrings;
           if (!ghToken) {
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 401, message: "No token" } });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 401,
+                message: "No token"
+              }
+            });
             return true;
           }
           if (!owner || !repo || !branch || !pathRaw.trim()) {
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: "Missing owner/repo/branch/path" } });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 400,
+                message: "Missing owner/repo/branch/path"
+              }
+            });
             return true;
           }
           const normalizedPath = normalizeFolderForStorage(pathRaw);
           if (!normalizedPath.ok) {
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: normalizedPath.message } });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 400,
+                message: normalizedPath.message
+              }
+            });
             return true;
           }
-          const commitPathResult = folderStorageToCommitPath(normalizedPath.storage);
+          const commitPathResult = folderStorageToCommitPath(
+            normalizedPath.storage
+          );
           if (!commitPathResult.ok) {
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: { ok: false, owner, repo, branch, path: pathRaw, status: 400, message: commitPathResult.message } });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path: pathRaw,
+                status: 400,
+                message: commitPathResult.message
+              }
+            });
             return true;
           }
           const path = commitPathResult.path;
-          const res = await ghGetFileContents(ghToken, owner, repo, branch, path);
+          const res = await ghGetFileContents(
+            ghToken,
+            owner,
+            repo,
+            branch,
+            path
+          );
           if (!res.ok) {
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: res });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: res
+            });
             if (res.samlRequired) {
-              deps.send({ type: "ERROR", payload: { message: "GitHub: SSO required for this repository. Authorize your PAT and try again." } });
+              deps.send({
+                type: "ERROR",
+                payload: {
+                  message: "GitHub: SSO required for this repository. Authorize your PAT and try again."
+                }
+              });
             }
             return true;
           }
           try {
             const json = JSON.parse(res.contentText || "{}");
             const contexts = Array.isArray(msg.payload.contexts) ? msg.payload.contexts.map((c) => String(c)) : [];
-            const summary = await deps.importDtcg(json, { allowHexStrings: allowHex, contexts });
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: { ok: true, owner, repo, branch, path, json } });
-            deps.send({ type: "INFO", payload: { message: `Imported tokens from ${owner}/${repo}@${branch}:${path}` } });
-            deps.send({ type: "IMPORT_SUMMARY", payload: { summary, timestamp: Date.now(), source: "github" } });
+            const summary = await deps.importDtcg(json, {
+              allowHexStrings: allowHex,
+              contexts
+            });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: { ok: true, owner, repo, branch, path, json }
+            });
+            deps.send({
+              type: "INFO",
+              payload: {
+                message: `Imported tokens from ${owner}/${repo}@${branch}:${path}`
+              }
+            });
+            deps.send({
+              type: "IMPORT_SUMMARY",
+              payload: {
+                summary,
+                timestamp: Date.now(),
+                source: "github"
+              }
+            });
             const snap = await deps.snapshotCollectionsForUi();
             const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
             const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
@@ -3890,11 +4222,30 @@
                 githubRememberPref: githubRememberPrefVal
               }
             });
-            deps.send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
+            deps.send({
+              type: "RAW_COLLECTIONS_TEXT",
+              payload: { text: snap.rawText }
+            });
           } catch (err) {
             const msgText = (err == null ? void 0 : err.message) || "Invalid JSON";
-            deps.send({ type: "GITHUB_FETCH_TOKENS_RESULT", payload: { ok: false, owner, repo, branch, path, status: 422, message: msgText } });
-            deps.send({ type: "ERROR", payload: { message: `GitHub import failed: ${msgText}` } });
+            deps.send({
+              type: "GITHUB_FETCH_TOKENS_RESULT",
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch,
+                path,
+                status: 422,
+                message: msgText
+              }
+            });
+            deps.send({
+              type: "ERROR",
+              payload: {
+                message: `GitHub import failed: ${msgText}`
+              }
+            });
           }
           return true;
         }
@@ -3906,23 +4257,50 @@
           const flatTokens = !!msg.payload.flatTokens;
           try {
             if (scope === "all") {
-              const all = await deps.exportDtcg({ format: "single", styleDictionary, flatTokens });
-              deps.send({ type: "GITHUB_EXPORT_FILES_RESULT", payload: { files: all.files } });
+              const all = await deps.exportDtcg({
+                format: "single",
+                styleDictionary,
+                flatTokens
+              });
+              deps.send({
+                type: "GITHUB_EXPORT_FILES_RESULT",
+                payload: { files: all.files }
+              });
             } else if (scope === "typography") {
-              const typo = await deps.exportDtcg({ format: "typography" });
-              deps.send({ type: "GITHUB_EXPORT_FILES_RESULT", payload: { files: typo.files } });
+              const typo = await deps.exportDtcg({
+                format: "typography"
+              });
+              deps.send({
+                type: "GITHUB_EXPORT_FILES_RESULT",
+                payload: { files: typo.files }
+              });
             } else {
               if (!collection || !mode) {
-                deps.send({ type: "GITHUB_EXPORT_FILES_RESULT", payload: { files: [] } });
-                deps.send({ type: "ERROR", payload: { message: "GitHub: choose collection and mode before exporting." } });
+                deps.send({
+                  type: "GITHUB_EXPORT_FILES_RESULT",
+                  payload: { files: [] }
+                });
+                deps.send({
+                  type: "ERROR",
+                  payload: {
+                    message: "GitHub: choose collection and mode before exporting."
+                  }
+                });
                 return true;
               }
-              const per = await deps.exportDtcg({ format: "perMode", styleDictionary, flatTokens });
+              const per = await deps.exportDtcg({
+                format: "perMode",
+                styleDictionary,
+                flatTokens
+              });
               const prettyExact = `${collection} - ${mode}.json`;
               const prettyLoose = `${collection} - ${mode}`;
               const legacy1 = `${collection}_mode=${mode}`;
               const legacy2 = `${collection}/mode=${mode}`;
-              const legacy3 = deps.safeKeyFromCollectionAndMode(collection, mode);
+              const legacy3 = deps.safeKeyFromCollectionAndMode(
+                collection,
+                mode
+              );
               let picked = per.files.find((f) => {
                 const n = String((f == null ? void 0 : f.name) || "");
                 return n === prettyExact || n === prettyLoose || n.includes(`${collection} - ${mode}`);
@@ -3934,12 +4312,23 @@
                 });
               }
               const files = picked ? [picked] : per.files;
-              deps.send({ type: "GITHUB_EXPORT_FILES_RESULT", payload: { files } });
+              deps.send({
+                type: "GITHUB_EXPORT_FILES_RESULT",
+                payload: { files }
+              });
             }
           } catch (err) {
             const msgText = (err == null ? void 0 : err.message) || "Failed to export";
-            deps.send({ type: "ERROR", payload: { message: `GitHub export failed: ${msgText}` } });
-            deps.send({ type: "GITHUB_EXPORT_FILES_RESULT", payload: { files: [] } });
+            deps.send({
+              type: "ERROR",
+              payload: {
+                message: `GitHub export failed: ${msgText}`
+              }
+            });
+            deps.send({
+              type: "GITHUB_EXPORT_FILES_RESULT",
+              payload: { files: [] }
+            });
           }
           return true;
         }
@@ -3963,7 +4352,9 @@
           const selectionCollection = collection || (typeof storedSelection.collection === "string" ? storedSelection.collection : "");
           const selectionMode = mode || (typeof storedSelection.mode === "string" ? storedSelection.mode : "");
           const filenameCandidate = typeof msg.payload.filename === "string" ? msg.payload.filename : typeof storedSelection.filename === "string" ? storedSelection.filename : void 0;
-          const filenameCheck = validateGithubFilename(filenameCandidate != null ? filenameCandidate : DEFAULT_GITHUB_FILENAME);
+          const filenameCheck = validateGithubFilename(
+            filenameCandidate != null ? filenameCandidate : DEFAULT_GITHUB_FILENAME
+          );
           if (!filenameCheck.ok) {
             deps.send({
               type: "GITHUB_COMMIT_RESULT",
@@ -3984,21 +4375,48 @@
           if (!ghToken) {
             deps.send({
               type: "GITHUB_COMMIT_RESULT",
-              payload: { ok: false, owner, repo, branch: baseBranch, status: 401, message: "No token", folder: folderRaw || "", filename: filenameToCommit }
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch: baseBranch,
+                status: 401,
+                message: "No token",
+                folder: folderRaw || "",
+                filename: filenameToCommit
+              }
             });
             return true;
           }
           if (!owner || !repo || !baseBranch) {
             deps.send({
               type: "GITHUB_COMMIT_RESULT",
-              payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: "Missing owner/repo/branch", folder: folderRaw || "", filename: filenameToCommit }
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch: baseBranch,
+                status: 400,
+                message: "Missing owner/repo/branch",
+                folder: folderRaw || "",
+                filename: filenameToCommit
+              }
             });
             return true;
           }
           if (!commitMessage) {
             deps.send({
               type: "GITHUB_COMMIT_RESULT",
-              payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: "Empty commit message", folder: folderRaw || "", filename: filenameToCommit }
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch: baseBranch,
+                status: 400,
+                message: "Empty commit message",
+                folder: folderRaw || "",
+                filename: filenameToCommit
+              }
             });
             return true;
           }
@@ -4006,16 +4424,40 @@
           if (!folderInfo.ok) {
             deps.send({
               type: "GITHUB_COMMIT_RESULT",
-              payload: { ok: false, owner, repo, branch: baseBranch, status: 400, message: folderInfo.message, folder: folderRaw || "", filename: filenameToCommit }
+              payload: {
+                ok: false,
+                owner,
+                repo,
+                branch: baseBranch,
+                status: 400,
+                message: folderInfo.message,
+                folder: folderRaw || "",
+                filename: filenameToCommit
+              }
             });
             return true;
           }
           if (folderInfo.path) {
-            const folderCheck = await ensureFolderPathWritable(ghToken, owner, repo, baseBranch, folderInfo.path);
+            const folderCheck = await ensureFolderPathWritable(
+              ghToken,
+              owner,
+              repo,
+              baseBranch,
+              folderInfo.path
+            );
             if (!folderCheck.ok) {
               deps.send({
                 type: "GITHUB_COMMIT_RESULT",
-                payload: { ok: false, owner, repo, branch: baseBranch, status: folderCheck.status, message: folderCheck.message, folder: folderInfo.storage, filename: filenameToCommit }
+                payload: {
+                  ok: false,
+                  owner,
+                  repo,
+                  branch: baseBranch,
+                  status: folderCheck.status,
+                  message: folderCheck.message,
+                  folder: folderInfo.storage,
+                  filename: filenameToCommit
+                }
               });
               return true;
             }
@@ -4070,17 +4512,26 @@
             prTitle: createPr ? prTitle : void 0,
             prBody: createPr ? prBody : void 0
           };
-          if (selectionCollection) selectionState.collection = selectionCollection;
+          if (selectionCollection)
+            selectionState.collection = selectionCollection;
           if (selectionMode) selectionState.mode = selectionMode;
           await mergeSelected(selectionState);
           try {
             const files = [];
             if (scope === "all") {
-              const all = await deps.exportDtcg({ format: "single", styleDictionary, flatTokens });
-              for (const f of all.files) files.push({ name: f.name, json: f.json });
+              const all = await deps.exportDtcg({
+                format: "single",
+                styleDictionary,
+                flatTokens
+              });
+              for (const f of all.files)
+                files.push({ name: f.name, json: f.json });
             } else if (scope === "typography") {
-              const typo = await deps.exportDtcg({ format: "typography" });
-              for (const f of typo.files) files.push({ name: f.name, json: f.json });
+              const typo = await deps.exportDtcg({
+                format: "typography"
+              });
+              for (const f of typo.files)
+                files.push({ name: f.name, json: f.json });
             } else {
               if (!selectionCollection || !selectionMode) {
                 deps.send({
@@ -4099,8 +4550,16 @@
                 });
                 return true;
               }
-              const per = await deps.exportDtcg({ format: "perMode", styleDictionary, flatTokens });
-              const picked = pickPerModeFile(per.files, selectionCollection, selectionMode);
+              const per = await deps.exportDtcg({
+                format: "perMode",
+                styleDictionary,
+                flatTokens
+              });
+              const picked = pickPerModeFile(
+                per.files,
+                selectionCollection,
+                selectionMode
+              );
               if (!picked) {
                 const available = per.files.map((f) => f.name).join(", ");
                 deps.send({
@@ -4142,58 +4601,28 @@
             let exportLooksEmpty = files.length === 0 || files.every((f) => isPlainEmptyObject(f.json));
             if (exportLooksEmpty) {
               if (scope === "typography") {
-                if (selectionCollection && selectionMode) {
-                  deps.send({
-                    type: "INFO",
-                    payload: {
-                      message: `GitHub export warning: typography.json is empty (no local text styles). Using "${selectionCollection}" / "${selectionMode}" instead.`
-                    }
-                  });
-                  const per = await deps.exportDtcg({ format: "perMode", styleDictionary, flatTokens });
-                  const picked = pickPerModeFile(per.files, selectionCollection, selectionMode);
-                  if (!picked) {
-                    const available = per.files.map((f) => f.name).join(", ");
-                    deps.send({
-                      type: "GITHUB_COMMIT_RESULT",
-                      payload: {
-                        ok: false,
-                        owner,
-                        repo,
-                        branch: baseBranch,
-                        status: 404,
-                        message: `No export found for "${selectionCollection}" / "${selectionMode}". Available: [${available}]`,
-                        folder: folderStorageValue,
-                        filename: filenameToCommit,
-                        fullPath: fullPathForCommit
-                      }
-                    });
-                    return true;
+                const warningMessage = "GitHub export warning: typography.json is empty (no local text styles). Nothing to commit.";
+                deps.send({
+                  type: "GITHUB_COMMIT_RESULT",
+                  payload: {
+                    ok: false,
+                    owner,
+                    repo,
+                    branch: baseBranch,
+                    status: 412,
+                    message: warningMessage,
+                    folder: folderStorageValue,
+                    filename: filenameToCommit,
+                    fullPath: fullPathForCommit
                   }
-                  files.length = 0;
-                  files.push({ name: picked.name, json: picked.json });
-                  scope = "selected";
-                  exportLooksEmpty = files.length === 0 || files.every((f) => isPlainEmptyObject(f.json));
-                } else {
-                  deps.send({ type: "INFO", payload: { message: "GitHub export warning: typography.json is empty (no local text styles)." } });
-                  deps.send({
-                    type: "GITHUB_COMMIT_RESULT",
-                    payload: {
-                      ok: false,
-                      owner,
-                      repo,
-                      branch: baseBranch,
-                      status: 412,
-                      message: "Typography export produced an empty tokens file. Add local text styles or change export scope.",
-                      folder: folderStorageValue,
-                      filename: filenameToCommit,
-                      fullPath: fullPathForCommit
-                    }
-                  });
-                  return true;
-                }
+                });
+                return true;
               }
               if (exportLooksEmpty && scope === "selected") {
-                const diag = await deps.analyzeSelectionState(selectionCollection, selectionMode);
+                const diag = await deps.analyzeSelectionState(
+                  selectionCollection,
+                  selectionMode
+                );
                 const tail = diag.ok ? `Found ${diag.variableCount} variable(s) in "${selectionCollection}", but ${(_b = diag.variablesWithValues) != null ? _b : 0} with a value in "${selectionMode}".` : diag.message || "No values present.";
                 deps.send({
                   type: "GITHUB_COMMIT_RESULT",
@@ -4261,7 +4690,10 @@
                   const record = value;
                   const sortedKeys = Object.keys(record).sort();
                   const canonical = {};
-                  for (const key of sortedKeys) canonical[key] = canonicalizeJson(record[key]);
+                  for (const key of sortedKeys)
+                    canonical[key] = canonicalizeJson(
+                      record[key]
+                    );
                   return canonical;
                 }
               }
@@ -4269,17 +4701,26 @@
             };
             const contentsMatch = (existing, nextContent) => {
               if (existing === nextContent) return true;
-              if (normalizeForCompare(existing) === normalizeForCompare(nextContent)) return true;
+              if (normalizeForCompare(existing) === normalizeForCompare(nextContent))
+                return true;
               const existingJson = tryParseJson(existing);
               const nextJson = tryParseJson(nextContent);
               if (existingJson !== void 0 && nextJson !== void 0) {
-                return JSON.stringify(canonicalizeJson(existingJson)) === JSON.stringify(canonicalizeJson(nextJson));
+                return JSON.stringify(
+                  canonicalizeJson(existingJson)
+                ) === JSON.stringify(canonicalizeJson(nextJson));
               }
               return false;
             };
             let allFilesIdentical = commitFiles.length > 0;
             for (const file of commitFiles) {
-              const current = await ghGetFileContents(ghToken, owner, repo, baseBranch, file.path);
+              const current = await ghGetFileContents(
+                ghToken,
+                owner,
+                repo,
+                baseBranch,
+                file.path
+              );
               if (!current.ok) {
                 if (current.status === 404) {
                   allFilesIdentical = false;
@@ -4311,7 +4752,14 @@
               });
               return true;
             }
-            const commitRes = await ghCommitFiles(ghToken, owner, repo, baseBranch, commitMessage, commitFiles);
+            const commitRes = await ghCommitFiles(
+              ghToken,
+              owner,
+              repo,
+              baseBranch,
+              commitMessage,
+              commitFiles
+            );
             if (!commitRes.ok) {
               const looksLikeFastForwardRace = commitRes.status === 422 && typeof commitRes.message === "string" && /not a fast forward/i.test(commitRes.message);
               if (looksLikeFastForwardRace) {
@@ -4340,17 +4788,27 @@
                   fullPath: fullPathForCommit
                 })
               });
-              deps.send({ type: "ERROR", payload: { message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}` } });
+              deps.send({
+                type: "ERROR",
+                payload: {
+                  message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}`
+                }
+              });
               return true;
             }
             let prResult;
             if (createPr) {
-              prResult = await ghCreatePullRequest(ghToken, owner, repo, {
-                title: prTitle,
-                head: baseBranch,
-                base: prBaseBranch,
-                body: prBody
-              });
+              prResult = await ghCreatePullRequest(
+                ghToken,
+                owner,
+                repo,
+                {
+                  title: prTitle,
+                  head: baseBranch,
+                  base: prBaseBranch,
+                  body: prBody
+                }
+              );
             }
             const commitOkPayload = {
               ok: true,
@@ -4364,17 +4822,46 @@
               commitUrl: commitRes.commitUrl,
               treeUrl: commitRes.treeUrl,
               rate: commitRes.rate,
-              createdPr: prResult && prResult.ok ? { number: prResult.number, url: prResult.url, base: prResult.base, head: prResult.head } : void 0
+              createdPr: prResult && prResult.ok ? {
+                number: prResult.number,
+                url: prResult.url,
+                base: prResult.base,
+                head: prResult.head
+              } : void 0
             };
-            deps.send({ type: "GITHUB_COMMIT_RESULT", payload: commitOkPayload });
-            deps.send({ type: "INFO", payload: { message: `Committed ${commitFiles.length} file(s) to ${owner}/${repo}@${baseBranch}` } });
+            deps.send({
+              type: "GITHUB_COMMIT_RESULT",
+              payload: commitOkPayload
+            });
+            deps.send({
+              type: "INFO",
+              payload: {
+                message: `Committed ${commitFiles.length} file(s) to ${owner}/${repo}@${baseBranch}`
+              }
+            });
             if (createPr) {
               if (prResult && prResult.ok) {
-                deps.send({ type: "GITHUB_PR_RESULT", payload: prResult });
-                deps.send({ type: "INFO", payload: { message: `PR created: ${prResult.url}` } });
+                deps.send({
+                  type: "GITHUB_PR_RESULT",
+                  payload: prResult
+                });
+                deps.send({
+                  type: "INFO",
+                  payload: {
+                    message: `PR created: ${prResult.url}`
+                  }
+                });
               } else if (prResult) {
-                deps.send({ type: "GITHUB_PR_RESULT", payload: prResult });
-                deps.send({ type: "ERROR", payload: { message: `GitHub: PR creation failed (${prResult.status}): ${prResult.message}` } });
+                deps.send({
+                  type: "GITHUB_PR_RESULT",
+                  payload: prResult
+                });
+                deps.send({
+                  type: "ERROR",
+                  payload: {
+                    message: `GitHub: PR creation failed (${prResult.status}): ${prResult.message}`
+                  }
+                });
               }
             }
           } catch (e) {
