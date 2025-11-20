@@ -1058,6 +1058,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
   }
 
   if (msg.type === 'COLLECTIONS_DATA') {
+    githubUi.onCollectionsData();
     populateCollections({ collections: msg.payload.collections });
     if (exportAllChk) exportAllChk.checked = !!msg.payload.exportAllPref;
     if (styleDictionaryChk && typeof msg.payload.styleDictionaryPref === 'boolean') {
