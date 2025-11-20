@@ -5135,11 +5135,33 @@
           variable.id,
           variable.name,
           variable.variableCollectionId,
-          variable.resolvedType
+          variable.resolvedType,
+          serializeVariableValues(variable.valuesByMode)
         );
       }
     }
     return signatures.join("|");
+  }
+  function serializeVariableValues(values) {
+    if (!values) return "";
+    const parts = [];
+    const modeIds = Object.keys(values).sort();
+    for (let mi = 0; mi < modeIds.length; mi++) {
+      const modeId = modeIds[mi];
+      parts.push(modeId, formatVariableValue(values[modeId]));
+    }
+    return parts.join("|");
+  }
+  function formatVariableValue(value) {
+    if (value === null || typeof value === "undefined") return "null";
+    if (typeof value === "number" || typeof value === "boolean")
+      return String(value);
+    if (typeof value === "string") return value;
+    try {
+      return JSON.stringify(value);
+    } catch (e) {
+      return "[unserializable]";
+    }
   }
   async function variableGraphLikelyChanged() {
     try {

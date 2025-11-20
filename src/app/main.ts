@@ -258,12 +258,38 @@ async function computeVariableCollectionsSignature(): Promise<string | null> {
                 variable.id,
                 variable.name,
                 variable.variableCollectionId,
-                variable.resolvedType
+                variable.resolvedType,
+                serializeVariableValues(variable.valuesByMode)
             );
         }
     }
 
     return signatures.join("|");
+}
+
+function serializeVariableValues(
+    values: Record<string, unknown> | undefined
+): string {
+    if (!values) return "";
+    const parts: string[] = [];
+    const modeIds = Object.keys(values).sort();
+    for (let mi = 0; mi < modeIds.length; mi++) {
+        const modeId = modeIds[mi];
+        parts.push(modeId, formatVariableValue(values[modeId]));
+    }
+    return parts.join("|");
+}
+
+function formatVariableValue(value: unknown): string {
+    if (value === null || typeof value === "undefined") return "null";
+    if (typeof value === "number" || typeof value === "boolean")
+        return String(value);
+    if (typeof value === "string") return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return "[unserializable]";
+    }
 }
 
 async function variableGraphLikelyChanged(): Promise<boolean> {
