@@ -25,16 +25,28 @@
     const initial = typeof raw === "string" ? raw : DEFAULT_GITHUB_FILENAME;
     const trimmed = initial.trim();
     if (!trimmed) {
-      return { ok: false, message: "GitHub: Enter a filename (e.g., tokens.json)." };
+      return {
+        ok: false,
+        message: "GitHub: Enter a filename (e.g., tokens.json)."
+      };
     }
     if (trimmed === "." || trimmed === "..") {
-      return { ok: false, message: 'GitHub: Filename cannot be "." or "..".' };
+      return {
+        ok: false,
+        message: 'GitHub: Filename cannot be "." or "..".'
+      };
     }
     if (trimmed.length > MAX_FILENAME_LENGTH) {
-      return { ok: false, message: `GitHub: Filename must be ${MAX_FILENAME_LENGTH} characters or fewer.` };
+      return {
+        ok: false,
+        message: `GitHub: Filename must be ${MAX_FILENAME_LENGTH} characters or fewer.`
+      };
     }
     if (INVALID_FILENAME_CHARS.test(trimmed)) {
-      return { ok: false, message: 'GitHub: Filename contains unsupported characters like / \\ : * ? " < > |.' };
+      return {
+        ok: false,
+        message: 'GitHub: Filename contains unsupported characters like / \\ : * ? " < > |.'
+      };
     }
     if (!/\.json$/i.test(trimmed)) {
       return { ok: false, message: "GitHub: Filename must end with .json." };

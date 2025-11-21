@@ -96,8 +96,8 @@ function clamp01(x: number): number {
     return x;
 }
 function clamp01Array(v: number[]): number[] {
-    var out: number[] = [];
-    var i = 0;
+    const out: number[] = [];
+    let i = 0;
     for (i = 0; i < v.length; i++) out.push(clamp01(v[i]));
     return out;
 }
@@ -111,8 +111,8 @@ function srgbDecode(encoded: number): number {
     if (encoded <= 0.04045) return encoded / 12.92;
     return Math.pow((encoded + 0.055) / 1.055, 2.4);
 }
-var p3Encode = srgbEncode;
-var p3Decode = srgbDecode;
+const p3Encode = srgbEncode;
+const p3Decode = srgbDecode;
 
 function mul3(m: number[][], v: number[]): number[] {
     return [
@@ -178,21 +178,21 @@ function convertRgbSpace(
     dst: "srgb" | "display-p3"
 ): number[] {
     if (src === dst) return clamp01Array(rgb);
-    var lin = decode(src, clamp01Array(rgb));
-    var xyz: number[] =
+    const lin = decode(src, clamp01Array(rgb));
+    const xyz: number[] =
         src === "srgb" ? mul3(M_SRGB_TO_XYZ, lin) : mul3(M_P3_TO_XYZ, lin);
-    var linDst: number[] =
+    const linDst: number[] =
         dst === "srgb" ? mul3(M_XYZ_TO_SRGB, xyz) : mul3(M_XYZ_TO_P3, xyz);
-    var enc = encode(dst, linDst);
+    const enc = encode(dst, linDst);
     return clamp01Array(enc);
 }
 
 function srgbToHex6(rgb: number[]): string {
-    var r = Math.round(clamp01(rgb[0]) * 255);
-    var g = Math.round(clamp01(rgb[1]) * 255);
-    var b = Math.round(clamp01(rgb[2]) * 255);
+    const r = Math.round(clamp01(rgb[0]) * 255);
+    const g = Math.round(clamp01(rgb[1]) * 255);
+    const b = Math.round(clamp01(rgb[2]) * 255);
     function to2(n: number): string {
-        var s = n.toString(16);
+        const s = n.toString(16);
         return s.length === 1 ? "0" + s : s;
     }
     return "#" + to2(r) + to2(g) + to2(b);
@@ -203,12 +203,12 @@ function srgbToHex8(rgba: {
     b: number;
     a: number;
 }): string {
-    var r = Math.round(clamp01(rgba.r) * 255);
-    var g = Math.round(clamp01(rgba.g) * 255);
-    var b = Math.round(clamp01(rgba.b) * 255);
-    var a = Math.round(clamp01(rgba.a) * 255);
+    const r = Math.round(clamp01(rgba.r) * 255);
+    const g = Math.round(clamp01(rgba.g) * 255);
+    const b = Math.round(clamp01(rgba.b) * 255);
+    const a = Math.round(clamp01(rgba.a) * 255);
     function to2(n: number): string {
-        var s = n.toString(16);
+        const s = n.toString(16);
         return s.length === 1 ? "0" + s : s;
     }
     return "#" + to2(r) + to2(g) + to2(b) + to2(a);
@@ -236,25 +236,25 @@ export function parseHexToSrgbRGBA(hex: string): {
     b: number;
     a: number;
 } {
-    var s = hex;
+    let s = hex;
     if (s.length > 0 && s.charAt(0) === "#") s = s.substring(1);
 
-    var i = 0;
+    let i = 0;
     for (i = 0; i < s.length; i++) {
         if (!isHexCharCode(s.charCodeAt(i)))
             throw new Error("Invalid hex color: " + hex);
     }
 
-    var r = 0,
+    let r = 0,
         g = 0,
         b = 0,
         a = 255;
 
     if (s.length === 3 || s.length === 4) {
-        var rNib = s.charCodeAt(0);
-        var gNib = s.charCodeAt(1);
-        var bNib = s.charCodeAt(2);
-        var aNib = s.length === 4 ? s.charCodeAt(3) : 102;
+        const rNib = s.charCodeAt(0);
+        const gNib = s.charCodeAt(1);
+        const bNib = s.charCodeAt(2);
+        const aNib = s.length === 4 ? s.charCodeAt(3) : 102;
         r = hexPairToByte(rNib, rNib);
         g = hexPairToByte(gNib, gNib);
         b = hexPairToByte(bNib, bNib);
@@ -289,14 +289,14 @@ export function dtcgToFigmaRGBA(
     value: ColorValue,
     docProfile: DocumentProfile | string
 ): { r: number; g: number; b: number; a: number } {
-    var alpha = typeof value.alpha === "number" ? value.alpha : 1;
-    var dst = docProfileToSpaceKey(docProfile);
+    const alpha = typeof value.alpha === "number" ? value.alpha : 1;
+    const dst = docProfileToSpaceKey(docProfile);
 
-    var comps = value.components;
+    const comps = value.components;
     if (comps && comps.length >= 3) {
-        var space = value.colorSpace;
+        const space = value.colorSpace;
         if (space === "srgb" || space === "display-p3") {
-            var converted = convertRgbSpace(
+            const converted = convertRgbSpace(
                 [comps[0], comps[1], comps[2]],
                 space,
                 dst
@@ -316,12 +316,12 @@ export function dtcgToFigmaRGBA(
     }
 
     if (value.hex && typeof value.hex === "string") {
-        var fromHex = parseHexToSrgbRGBA(value.hex);
-        var a =
+        const fromHex = parseHexToSrgbRGBA(value.hex);
+        const a =
             typeof value.alpha === "number" ? clamp01(value.alpha) : fromHex.a;
         if (dst === "srgb")
             return { r: fromHex.r, g: fromHex.g, b: fromHex.b, a: a };
-        var toDst = convertRgbSpace(
+        const toDst = convertRgbSpace(
             [fromHex.r, fromHex.g, fromHex.b],
             "srgb",
             dst
@@ -337,16 +337,16 @@ export function figmaRGBAToDtcg(
     rgba: { r: number; g: number; b: number; a: number },
     docProfile: DocumentProfile | string
 ): ColorValue {
-    var src = docProfileToSpaceKey(docProfile);
-    var rgb = [clamp01(rgba.r), clamp01(rgba.g), clamp01(rgba.b)];
-    var a = clamp01(rgba.a);
+    const src = docProfileToSpaceKey(docProfile);
+    const rgb = [clamp01(rgba.r), clamp01(rgba.g), clamp01(rgba.b)];
+    const a = clamp01(rgba.a);
 
-    var colorSpace: "srgb" | "display-p3" = src;
-    var components: [number, number, number] = [rgb[0], rgb[1], rgb[2]];
+    const colorSpace: "srgb" | "display-p3" = src;
+    const components: [number, number, number] = [rgb[0], rgb[1], rgb[2]];
 
-    var srgbRgb =
+    const srgbRgb =
         src === "srgb" ? rgb : convertRgbSpace(rgb, "display-p3", "srgb");
-    var hex = srgbToHex6(srgbRgb);
+    const hex = srgbToHex6(srgbRgb);
 
     return {
         colorSpace: colorSpace,
@@ -371,7 +371,7 @@ export function figmaToSrgb(
     b: number,
     a: number
 ): ColorValue {
-    var comps: [number, number, number] = [clamp01(r), clamp01(g), clamp01(b)];
+    const comps: [number, number, number] = [clamp01(r), clamp01(g), clamp01(b)];
     return { colorSpace: "srgb", components: comps, alpha: clamp01(a) };
 }
 
@@ -423,8 +423,8 @@ export function colorValueToHexString(value: ColorValue): string {
     return baseHex;
 }
 export function hexToDtcgColor(hex: string): ColorValue {
-    var rgba = parseHexToSrgbRGBA(hex);
-    var comps: [number, number, number] = [rgba.r, rgba.g, rgba.b];
+    const rgba = parseHexToSrgbRGBA(hex);
+    const comps: [number, number, number] = [rgba.r, rgba.g, rgba.b];
     return {
         colorSpace: "srgb",
         components: comps,

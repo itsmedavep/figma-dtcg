@@ -1108,7 +1108,7 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                         : msg.payload.scope === "typography"
                         ? "typography"
                         : "selected";
-                let scope: GithubScope = requestedScope;
+                const scope: GithubScope = requestedScope;
                 const collection = String(msg.payload.collection || "");
                 const mode = String(msg.payload.mode || "");
                 const styleDictionary = !!msg.payload.styleDictionary;
@@ -1416,7 +1416,7 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                         typeof v === "object" &&
                         !Array.isArray(v) &&
                         Object.keys(v).length === 0;
-                    let exportLooksEmpty =
+                    const exportLooksEmpty =
                         files.length === 0 ||
                         files.every((f) => isPlainEmptyObject(f.json));
 

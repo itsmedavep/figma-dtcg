@@ -3,7 +3,7 @@
 // - Mirrors plugin state via postMessage so the UI can function offline
 // - Provides guarded DOM helpers to survive partial renders or optional features
 
-import type { PluginToUi, UiToPlugin, ImportSummary } from "./messages";
+import type { PluginToUi } from "./messages";
 import "./ui.css";
 import { createGithubUi } from "./github/ui";
 
@@ -12,21 +12,8 @@ import { createGithubUi } from "./github/ui";
  * ----------------------------------------------------- */
 import { uiElements, initDomElements } from "./ui/dom";
 import { log, postToPlugin, prettyJson, copyElText } from "./ui/utils";
-import { appState, ImportScopeModalState } from "./ui/state";
-import {
-    readImportPreference,
-    writeImportPreference,
-    removeImportPreference,
-    readImportLog,
-    writeImportLog,
-    normalizeContextList,
-    contextsEqual,
-    ImportContextOption,
-    ImportPreference,
-    ImportLogEntry,
-    IMPORT_PREF_KEY,
-    IMPORT_LOG_KEY,
-} from "./ui/storage";
+import { appState } from "./ui/state";
+import { readImportPreference, readImportLog } from "./ui/storage";
 import {
     renderImportPreferenceSummary,
     renderImportLog,
@@ -38,14 +25,11 @@ import {
 } from "./ui/features/import";
 import {
     prettyExportName,
-    supportsFilePicker,
     beginPendingSave,
     finishPendingSave,
     triggerJsonDownload,
 } from "./ui/features/export";
 import {
-    postResize,
-    queueResize,
     endResize,
     cancelResize,
     handleResizeMove,
