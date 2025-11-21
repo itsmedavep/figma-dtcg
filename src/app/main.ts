@@ -80,10 +80,10 @@ let pollInterval: number | undefined;
 function startPolling() {
   if (pollInterval) return;
   
-  // Poll every 2 seconds for variable changes
+  // Poll every 500ms for variable changes
   pollInterval = setInterval(() => {
     broadcastLocalCollections({ force: false, silent: true }).catch(err => console.error(err));
-  }, 2000);
+  }, 500);
 
   // Listen for style changes (immediate)
   figma.on('documentchange', (event) => {

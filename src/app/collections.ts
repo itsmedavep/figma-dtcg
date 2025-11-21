@@ -31,6 +31,11 @@ export async function snapshotCollectionsForUi(): Promise<{
   }
 
   const locals: VariableCollection[] = await figma.variables.getLocalVariableCollectionsAsync();
+  const allVars = await figma.variables.getLocalVariablesAsync();
+  const varsById = new Map<string, Variable>();
+  for (const v of allVars) {
+    varsById.set(v.id, v);
+  }
 
   const out: Array<{
     id: string;
@@ -55,18 +60,17 @@ export async function snapshotCollectionsForUi(): Promise<{
 
     for (let vi = 0; vi < c.variableIds.length; vi++) {
       const varId = c.variableIds[vi];
-      const v = await figma.variables.getVariableByIdAsync(varId);
+      const v = varsById.get(varId);
       if (!v) continue;
       varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
 
-      // Capture values for change detection
-      const values: string[] = [];
-      for (const m of c.modes) {
-        const val = v.valuesByMode[m.modeId];
-        // JSON.stringify handles primitives and VariableAlias objects safely for signature comparison
-        values.push(JSON.stringify(val));
-      }
-      varLines.push(`    - ${v.name} [${v.resolvedType}] = ${values.join(', ')}`);
+      // Capture values for change detection (internal use only, not logged)
+      // const values: string[] = [];
+      // for (const m of c.modes) {
+      //   const val = v.valuesByMode[m.modeId];
+      //   values.push(JSON.stringify(val));
+      // }
+      varLines.push(`    - ${v.name} [${v.resolvedType}]`);
     }
 
     out.push({ id: c.id, name: c.name, modes: modes, variables: varsList });

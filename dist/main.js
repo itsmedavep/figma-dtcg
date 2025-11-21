@@ -35,6 +35,11 @@
       };
     }
     const locals = await figma.variables.getLocalVariableCollectionsAsync();
+    const allVars = await figma.variables.getLocalVariablesAsync();
+    const varsById = /* @__PURE__ */ new Map();
+    for (const v of allVars) {
+      varsById.set(v.id, v);
+    }
     const out = [];
     const rawLines = [];
     for (let i = 0; i < locals.length; i++) {
@@ -49,15 +54,10 @@
       const varLines = [];
       for (let vi = 0; vi < c.variableIds.length; vi++) {
         const varId = c.variableIds[vi];
-        const v = await figma.variables.getVariableByIdAsync(varId);
+        const v = varsById.get(varId);
         if (!v) continue;
         varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
-        const values = [];
-        for (const m of c.modes) {
-          const val = v.valuesByMode[m.modeId];
-          values.push(JSON.stringify(val));
-        }
-        varLines.push(`    - ${v.name} [${v.resolvedType}] = ${values.join(", ")}`);
+        varLines.push(`    - ${v.name} [${v.resolvedType}]`);
       }
       out.push({ id: c.id, name: c.name, modes, variables: varsList });
       rawLines.push("Collection: " + c.name + " (" + c.id + ")");
@@ -1284,9 +1284,13 @@
         }
       }
       if (!resolvedType || unresolved) {
-        logWarn(`Skipped token \u201C${token.path.join("/")}\u201D \u2014 could not resolve alias type.`);
-        invalidTokens.add(token);
-        continue;
+        if (declaredType) {
+          resolvedType = declaredType;
+        } else {
+          logWarn(`Skipped token \u201C${token.path.join("/")}\u201D \u2014 could not resolve alias type and no $type declared.`);
+          invalidTokens.add(token);
+          continue;
+        }
       }
       if (declaredType && declaredType !== resolvedType) {
         logWarn(`Token \u201C${token.path.join("/")}\u201D declared $type ${declaredType} but resolves to ${resolvedType}; using resolved type.`);
@@ -1550,6 +1554,7 @@
             variableID: v2.id
           };
           if (isAliasValue(mv)) {
+            perContext[ctx].alias = { type: "VARIABLE_ALIAS", id: mv.id };
             const target = variablesById.get(mv.id) || await variablesApi.getVariableByIdAsync(mv.id);
             if (target && !variablesById.has(target.id)) variablesById.set(target.id, target);
             if (target) {
@@ -5012,7 +5017,7 @@
     if (pollInterval) return;
     pollInterval = setInterval(() => {
       broadcastLocalCollections({ force: false, silent: true }).catch((err) => console.error(err));
-    }, 2e3);
+    }, 500);
     figma.on("documentchange", (event) => {
       const styleChanges = event.documentChanges.filter(
         (c) => c.type === "STYLE_CREATE" || c.type === "STYLE_DELETE" || c.type === "STYLE_PROPERTY_CHANGE"
