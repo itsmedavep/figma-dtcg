@@ -17,7 +17,6 @@ import {
     type DocumentProfile,
     isValidDtcgColorValueObject, // kept for bucketing parity
     normalizeDtcgColorValue,
-    isDtcgColorInUnitRange, // kept because tokenHasDirectValue already uses it; harmless to retain
     isDtcgColorShapeValid,
     isColorSpaceRepresentableInDocument,
 } from "../core/color";

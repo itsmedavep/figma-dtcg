@@ -175,8 +175,8 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         }
     }
 
-    if (typeof figma.getLocalTextStyles === "function") {
-        const textStyles = figma.getLocalTextStyles();
+    if (typeof figma.getLocalTextStylesAsync === "function") {
+        const textStyles = await figma.getLocalTextStylesAsync();
         const defaultCollection = "typography";
         const defaultMode = "Mode 1";
         for (const style of textStyles) {

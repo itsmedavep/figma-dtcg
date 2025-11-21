@@ -3,7 +3,7 @@
 // - Handles persistence so the iframe can reload without losing settings
 // - Wraps GitHub flows with retries and gentle error surfaces
 
-import type { UiToPlugin, PluginToUi, GithubScope } from "./messages";
+import type { UiToPlugin, PluginToUi } from "./messages";
 import {
     snapshotCollectionsForUi,
     analyzeSelectionState,

@@ -113,7 +113,9 @@
     let ghIsAuthed = false;
     let ghTokenExpiresAt = null;
     let ghRememberPref = true;
-    let filenameValidation = validateGithubFilename(DEFAULT_GITHUB_FILENAME);
+    let filenameValidation = validateGithubFilename(
+      DEFAULT_GITHUB_FILENAME
+    );
     let currentOwner = "";
     let currentRepo = "";
     let desiredBranch = null;
@@ -148,10 +150,14 @@
         "gh-import-status--success",
         "gh-import-status--error"
       );
-      if (kind === "ready") ghImportStatusEl.classList.add("gh-import-status--ready");
-      else if (kind === "progress") ghImportStatusEl.classList.add("gh-import-status--progress");
-      else if (kind === "success") ghImportStatusEl.classList.add("gh-import-status--success");
-      else if (kind === "error") ghImportStatusEl.classList.add("gh-import-status--error");
+      if (kind === "ready")
+        ghImportStatusEl.classList.add("gh-import-status--ready");
+      else if (kind === "progress")
+        ghImportStatusEl.classList.add("gh-import-status--progress");
+      else if (kind === "success")
+        ghImportStatusEl.classList.add("gh-import-status--success");
+      else if (kind === "error")
+        ghImportStatusEl.classList.add("gh-import-status--error");
     }
     function pickCollectionSelect() {
       return deps.getCollectionSelect();
@@ -163,16 +169,24 @@
       return deps.getAllowHexCheckbox();
     }
     function pickStyleDictionaryCheckbox() {
-      if (!styleDictionaryCheckbox) styleDictionaryCheckbox = deps.getStyleDictionaryCheckbox();
+      if (!styleDictionaryCheckbox)
+        styleDictionaryCheckbox = deps.getStyleDictionaryCheckbox();
       return styleDictionaryCheckbox;
     }
     function pickFlatTokensCheckbox() {
-      if (!flatTokensCheckbox) flatTokensCheckbox = deps.getFlatTokensCheckbox();
+      if (!flatTokensCheckbox)
+        flatTokensCheckbox = deps.getFlatTokensCheckbox();
       return flatTokensCheckbox;
     }
     function findTokenInput() {
       if (!doc) return null;
-      return doc.getElementById("githubTokenInput") || doc.getElementById("ghTokenInput") || doc.getElementById("githubPatInput") || doc.querySelector('input[name="githubToken"]') || doc.querySelector('input[type="password"]');
+      return doc.getElementById(
+        "githubTokenInput"
+      ) || doc.getElementById("ghTokenInput") || doc.getElementById("githubPatInput") || doc.querySelector(
+        'input[name="githubToken"]'
+      ) || doc.querySelector(
+        'input[type="password"]'
+      );
     }
     function readPatFromUi() {
       if (!ghTokenInput) ghTokenInput = findTokenInput();
@@ -188,14 +202,21 @@
       }
       updateGhStatusUi();
       if (persist) {
-        deps.postToPlugin({ type: "SAVE_PREFS", payload: { githubRememberToken: ghRememberPref } });
+        deps.postToPlugin({
+          type: "SAVE_PREFS",
+          payload: { githubRememberToken: ghRememberPref }
+        });
       }
     }
     function ensureGhStatusElements() {
       if (!doc) return;
-      if (!ghAuthStatusEl) ghAuthStatusEl = doc.getElementById("ghAuthStatus");
+      if (!ghAuthStatusEl)
+        ghAuthStatusEl = doc.getElementById("ghAuthStatus");
       if (!ghTokenMetaEl) ghTokenMetaEl = doc.getElementById("ghTokenMeta");
-      if (!ghLogoutBtn) ghLogoutBtn = doc.getElementById("ghLogoutBtn");
+      if (!ghLogoutBtn)
+        ghLogoutBtn = doc.getElementById(
+          "ghLogoutBtn"
+        );
     }
     function formatTimeLeft(expInput) {
       const exp = typeof expInput === "number" ? expInput : Date.parse(expInput);
@@ -204,7 +225,9 @@
       const ms = exp - now;
       if (ms <= 0) return "expired";
       const days = Math.floor(ms / (24 * 60 * 60 * 1e3));
-      const hours = Math.floor(ms % (24 * 60 * 60 * 1e3) / (60 * 60 * 1e3));
+      const hours = Math.floor(
+        ms % (24 * 60 * 60 * 1e3) / (60 * 60 * 1e3)
+      );
       if (days > 0) return `${days}d ${hours}h left`;
       const mins = Math.floor(ms % (60 * 60 * 1e3) / (60 * 1e3));
       if (hours > 0) return `${hours}h ${mins}m left`;
@@ -253,9 +276,6 @@
         ghRememberChk.checked = ghRememberPref;
       }
     }
-    function setGitHubDisabledStates() {
-      updateGhStatusUi();
-    }
     function showNewBranchRow(show) {
       if (!ghNewBranchRow) return;
       ghNewBranchRow.style.display = show ? "flex" : "none";
@@ -277,14 +297,17 @@
       if (refocusBtn && ghNewBranchBtn) ghNewBranchBtn.focus();
     }
     function requestNewBranchCreation() {
-      if (!ghCreateBranchConfirmBtn || ghCreateBranchConfirmBtn.disabled) return;
+      if (!ghCreateBranchConfirmBtn || ghCreateBranchConfirmBtn.disabled)
+        return;
       if (!currentOwner || !currentRepo) {
         deps.log("Pick a repository before creating a branch.");
         return;
       }
       const baseBranch = defaultBranchFromApi || "";
       if (!baseBranch) {
-        deps.log("GitHub: Unable to determine the repository default branch. Refresh branches first.");
+        deps.log(
+          "GitHub: Unable to determine the repository default branch. Refresh branches first."
+        );
         return;
       }
       const newBranch = ((ghNewBranchName == null ? void 0 : ghNewBranchName.value) || "").trim();
@@ -294,7 +317,9 @@
         return;
       }
       if (newBranch === baseBranch) {
-        deps.log("Enter a branch name that differs from the source branch.");
+        deps.log(
+          "Enter a branch name that differs from the source branch."
+        );
         if (ghNewBranchName) ghNewBranchName.focus();
         return;
       }
@@ -302,7 +327,12 @@
       deps.log(`GitHub: creating ${newBranch} from ${baseBranch}\u2026`);
       deps.postToPlugin({
         type: "GITHUB_CREATE_BRANCH",
-        payload: { owner: currentOwner, repo: currentRepo, baseBranch, newBranch }
+        payload: {
+          owner: currentOwner,
+          repo: currentRepo,
+          baseBranch,
+          newBranch
+        }
       });
     }
     function revalidateBranchesIfStale(forceLog = false) {
@@ -310,7 +340,8 @@
       if (!currentOwner || !currentRepo) return;
       const stale = Date.now() - lastBranchesFetchedAtMs > BRANCH_TTL_MS;
       if (!stale) {
-        if (forceLog) deps.log("Branches are up to date (no refresh needed).");
+        if (forceLog)
+          deps.log("Branches are up to date (no refresh needed).");
         return;
       }
       desiredBranch = desiredBranch || null;
@@ -371,12 +402,15 @@
       const items = getBranchMenuItems();
       branchHighlightIndex = index;
       for (let i = 0; i < items.length; i++) {
-        if (i === branchHighlightIndex) items[i].setAttribute("data-active", "1");
+        if (i === branchHighlightIndex)
+          items[i].setAttribute("data-active", "1");
         else items[i].removeAttribute("data-active");
       }
       if (scrollIntoView && branchHighlightIndex >= 0 && branchHighlightIndex < items.length) {
         try {
-          items[branchHighlightIndex].scrollIntoView({ block: "nearest" });
+          items[branchHighlightIndex].scrollIntoView({
+            block: "nearest"
+          });
         } catch (e) {
         }
       }
@@ -390,7 +424,8 @@
         else if (index >= items.length) index = 0;
         const item = items[index];
         if (!item) continue;
-        if (item.dataset.selectable === "1" && item.getAttribute("aria-disabled") !== "true") return index;
+        if (item.dataset.selectable === "1" && item.getAttribute("aria-disabled") !== "true")
+          return index;
       }
       return -1;
     }
@@ -434,13 +469,17 @@
       if (branchMenuVisible) {
         ghBranchMenu.hidden = false;
         ghBranchMenu.setAttribute("data-open", "1");
-        if (ghBranchToggleBtn) ghBranchToggleBtn.setAttribute("aria-expanded", "true");
-        if (ghBranchInput) ghBranchInput.setAttribute("aria-expanded", "true");
+        if (ghBranchToggleBtn)
+          ghBranchToggleBtn.setAttribute("aria-expanded", "true");
+        if (ghBranchInput)
+          ghBranchInput.setAttribute("aria-expanded", "true");
       } else {
         ghBranchMenu.hidden = true;
         ghBranchMenu.removeAttribute("data-open");
-        if (ghBranchToggleBtn) ghBranchToggleBtn.setAttribute("aria-expanded", "false");
-        if (ghBranchInput) ghBranchInput.setAttribute("aria-expanded", "false");
+        if (ghBranchToggleBtn)
+          ghBranchToggleBtn.setAttribute("aria-expanded", "false");
+        if (ghBranchInput)
+          ghBranchInput.setAttribute("aria-expanded", "false");
         setBranchHighlight(-1, false);
       }
     }
@@ -457,7 +496,8 @@
     }
     function renderOptions() {
       if (!ghBranchMenu) return;
-      while (ghBranchMenu.firstChild) ghBranchMenu.removeChild(ghBranchMenu.firstChild);
+      while (ghBranchMenu.firstChild)
+        ghBranchMenu.removeChild(ghBranchMenu.firstChild);
       const slice = filteredBranches.slice(0, renderCount);
       if (slice.length > 0) {
         for (let i = 0; i < slice.length; i++) {
@@ -468,7 +508,8 @@
           item.dataset.selectable = "1";
           item.setAttribute("role", "option");
           item.textContent = name;
-          if (i === branchHighlightIndex) item.setAttribute("data-active", "1");
+          if (i === branchHighlightIndex)
+            item.setAttribute("data-active", "1");
           ghBranchMenu.appendChild(item);
         }
       } else {
@@ -512,7 +553,9 @@
       const isSelected = !!desiredBranch && raw === desiredBranch;
       const isDefaultShown = !desiredBranch && !!defaultBranchFromApi && raw === defaultBranchFromApi;
       const effectiveQuery = isSelected || isDefaultShown ? "" : q;
-      filteredBranches = effectiveQuery ? allBranches.filter((n) => n.toLowerCase().includes(effectiveQuery)) : [...allBranches];
+      filteredBranches = effectiveQuery ? allBranches.filter(
+        (n) => n.toLowerCase().includes(effectiveQuery)
+      ) : [...allBranches];
       renderCount = Math.min(RENDER_STEP, filteredBranches.length);
       renderOptions();
       updateBranchCount();
@@ -528,7 +571,10 @@
       const value = (rawValue || "").trim();
       if (!ghBranchInput) return "noop";
       if (value === "__more__") {
-        renderCount = Math.min(renderCount + RENDER_STEP, filteredBranches.length);
+        renderCount = Math.min(
+          renderCount + RENDER_STEP,
+          filteredBranches.length
+        );
         renderOptions();
         updateBranchCount();
         ghBranchInput.value = branchLastQuery;
@@ -562,14 +608,12 @@
       isFetchingBranches = true;
       deps.postToPlugin({
         type: "GITHUB_FETCH_BRANCHES",
-        payload: { owner: currentOwner, repo: currentRepo, page: loadedPages + 1 }
+        payload: {
+          owner: currentOwner,
+          repo: currentRepo,
+          page: loadedPages + 1
+        }
       });
-    }
-    function onBranchChange() {
-      if (!ghBranchInput) return;
-      const result = processBranchSelection(ghBranchInput.value, false);
-      if (result === "selected") closeBranchMenu();
-      else if (result === "more" || result === "fetch") syncBranchHighlightAfterRender();
     }
     function normalizeFolderInput(raw) {
       const trimmed = raw.trim();
@@ -584,7 +628,8 @@
     }
     function normalizeFolderPickerPath(raw) {
       const trimmed = (raw || "").trim();
-      if (!trimmed || trimmed === "/" || trimmed === "./" || trimmed === ".") return "";
+      if (!trimmed || trimmed === "/" || trimmed === "./" || trimmed === ".")
+        return "";
       const collapsed = trimmed.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
       return collapsed.replace(/^\/+/, "").replace(/\/+$/, "");
     }
@@ -616,11 +661,6 @@
       if (result.ok) setFilenameError(null);
       else setFilenameError(result.message);
     }
-    function getCurrentFilename() {
-      if (filenameValidation.ok) return filenameValidation.filename;
-      const raw = ghFilenameInput ? ghFilenameInput.value : "";
-      return raw.trim() || DEFAULT_GITHUB_FILENAME;
-    }
     function formatDestinationForLog(folderRaw, filename) {
       const normalized = normalizeFolderInput(folderRaw || "");
       const folderDisplay = normalized.display || "/";
@@ -639,7 +679,12 @@
         });
         deps.postToPlugin({
           type: "GITHUB_FOLDER_LIST",
-          payload: { owner: currentOwner, repo: currentRepo, branch: getCurrentBranch(), path: req.path }
+          payload: {
+            owner: currentOwner,
+            repo: currentRepo,
+            branch: getCurrentBranch(),
+            path: req.path
+          }
         });
       });
     }
@@ -663,7 +708,9 @@
       folderPickerOverlay.setAttribute("aria-hidden", "false");
       folderPickerIsOpen = true;
       updateFolderPickerTitle(ref);
-      const startNormalized = normalizeFolderInput((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
+      const startNormalized = normalizeFolderInput(
+        (ghFolderInput == null ? void 0 : ghFolderInput.value) || ""
+      );
       const startPath = startNormalized.payload === "/" ? "" : startNormalized.payload;
       setFolderPickerPath(startPath, true);
       win == null ? void 0 : win.setTimeout(() => {
@@ -680,7 +727,12 @@
       folderPickerCurrentPath = "";
       folderPickerRefreshNonce++;
       if (folderPickerListEl) {
-        folderPickerListEl.replaceChildren(createFolderPickerRow("Loading\u2026", { muted: true, disabled: true }));
+        folderPickerListEl.replaceChildren(
+          createFolderPickerRow("Loading\u2026", {
+            muted: true,
+            disabled: true
+          })
+        );
       }
       if (folderPickerLastFocus && (doc == null ? void 0 : doc.contains(folderPickerLastFocus))) {
         folderPickerLastFocus.focus();
@@ -715,7 +767,8 @@
     function setFolderPickerPath(raw, refresh = true, syncInput = true) {
       const normalized = normalizeFolderPickerPath(raw);
       folderPickerCurrentPath = normalized;
-      if (syncInput && folderPickerPathInput) folderPickerPathInput.value = normalized;
+      if (syncInput && folderPickerPathInput)
+        folderPickerPathInput.value = normalized;
       if (refresh && folderPickerIsOpen) {
         void refreshFolderPickerList();
       }
@@ -724,7 +777,9 @@
       if (!(folderPickerListEl && folderPickerIsOpen)) return;
       const listEl = folderPickerListEl;
       const requestId = ++folderPickerRefreshNonce;
-      listEl.replaceChildren(createFolderPickerRow("Loading\u2026", { muted: true, disabled: true }));
+      listEl.replaceChildren(
+        createFolderPickerRow("Loading\u2026", { muted: true, disabled: true })
+      );
       const path = folderPickerCurrentPath;
       const res = await listDir(path);
       if (requestId !== folderPickerRefreshNonce) return;
@@ -732,44 +787,64 @@
         const status = typeof res.status === "number" ? res.status : 0;
         if (status === 404) {
           listEl.replaceChildren(
-            createFolderPickerRow("Folder not found. It will be created during export.", { muted: true, disabled: true })
+            createFolderPickerRow(
+              "Folder not found. It will be created during export.",
+              { muted: true, disabled: true }
+            )
           );
           return;
         }
         if (status === 409) {
           listEl.replaceChildren(
-            createFolderPickerRow("Cannot open this path: an existing file blocks the folder.", { muted: true, disabled: true })
+            createFolderPickerRow(
+              "Cannot open this path: an existing file blocks the folder.",
+              { muted: true, disabled: true }
+            )
           );
           return;
         }
         const message = res.message ? res.message : "failed to fetch";
-        listEl.replaceChildren(createFolderPickerRow(`Error: ${message}`, { muted: true, disabled: true }));
+        listEl.replaceChildren(
+          createFolderPickerRow(`Error: ${message}`, {
+            muted: true,
+            disabled: true
+          })
+        );
         return;
       }
       const nodes = [];
       if (path) {
-        nodes.push(createFolderPickerRow(".. (up one level)", {
-          muted: true,
-          onClick: () => {
-            const parentParts = folderPickerCurrentPath.split("/").filter(Boolean);
-            parentParts.pop();
-            setFolderPickerPath(parentParts.join("/"));
-          }
-        }));
+        nodes.push(
+          createFolderPickerRow(".. (up one level)", {
+            muted: true,
+            onClick: () => {
+              const parentParts = folderPickerCurrentPath.split("/").filter(Boolean);
+              parentParts.pop();
+              setFolderPickerPath(parentParts.join("/"));
+            }
+          })
+        );
       }
       const entries = Array.isArray(res.entries) ? res.entries : [];
       const dirs = entries.filter((e) => e.type === "dir").sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       if (dirs.length === 0) {
-        nodes.push(createFolderPickerRow("(no subfolders)", { muted: true, disabled: true }));
+        nodes.push(
+          createFolderPickerRow("(no subfolders)", {
+            muted: true,
+            disabled: true
+          })
+        );
       } else {
         for (const d of dirs) {
           const name = d.name || "";
-          nodes.push(createFolderPickerRow(`${name}/`, {
-            onClick: () => {
-              const next = folderPickerCurrentPath ? `${folderPickerCurrentPath}/${name}` : name;
-              setFolderPickerPath(next);
-            }
-          }));
+          nodes.push(
+            createFolderPickerRow(`${name}/`, {
+              onClick: () => {
+                const next = folderPickerCurrentPath ? `${folderPickerCurrentPath}/${name}` : name;
+                setFolderPickerPath(next);
+              }
+            })
+          );
         }
       }
       listEl.replaceChildren(...nodes);
@@ -803,11 +878,15 @@
             }
           }
           if (matched) {
-            ghRepoSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            ghRepoSelect.dispatchEvent(
+              new Event("change", { bubbles: true })
+            );
           }
         } else {
           ghRepoSelect.selectedIndex = 0;
-          ghRepoSelect.dispatchEvent(new Event("change", { bubbles: true }));
+          ghRepoSelect.dispatchEvent(
+            new Event("change", { bubbles: true })
+          );
         }
       }
     }
@@ -816,7 +895,8 @@
       if (ghBranchInput && !ghBranchInput.disabled) {
         const raw = ghBranchInput.value.trim();
         if (raw && raw !== "__more__" && raw !== "__fetch__") {
-          if (allBranches.includes(raw) || raw === defaultBranchFromApi) return raw;
+          if (allBranches.includes(raw) || raw === defaultBranchFromApi)
+            return raw;
         }
       }
       return defaultBranchFromApi || "";
@@ -869,8 +949,10 @@
       const hasRepo = !!(ghIsAuthed && currentOwner && currentRepo);
       const branch = getCurrentBranch();
       const path = ((ghFetchPathInput == null ? void 0 : ghFetchPathInput.value) || "").trim();
-      if (ghFetchPathInput) ghFetchPathInput.disabled = !(hasRepo && branch) || ghImportInFlight;
-      if (ghFetchTokensBtn) ghFetchTokensBtn.disabled = ghImportInFlight || !(hasRepo && branch && path);
+      if (ghFetchPathInput)
+        ghFetchPathInput.disabled = !(hasRepo && branch) || ghImportInFlight;
+      if (ghFetchTokensBtn)
+        ghFetchTokensBtn.disabled = ghImportInFlight || !(hasRepo && branch && path);
       if (ghImportInFlight) return;
       if (!hasRepo) {
         lastImportTarget = null;
@@ -900,42 +982,94 @@
       doc = context.document;
       win = context.window;
       ghTokenInput = findTokenInput();
-      ghRememberChk = doc.getElementById("githubRememberChk") || doc.getElementById("ghRememberChk");
-      ghConnectBtn = doc.getElementById("githubConnectBtn") || doc.getElementById("ghConnectBtn");
-      ghVerifyBtn = doc.getElementById("githubVerifyBtn") || doc.getElementById("ghVerifyBtn");
-      ghLogoutBtn = doc.getElementById("ghLogoutBtn");
-      ghRepoSelect = doc.getElementById("ghRepoSelect");
-      ghBranchInput = doc.getElementById("ghBranchInput");
-      ghBranchToggleBtn = doc.getElementById("ghBranchToggleBtn");
-      ghBranchMenu = doc.getElementById("ghBranchMenu");
+      ghRememberChk = doc.getElementById(
+        "githubRememberChk"
+      ) || doc.getElementById("ghRememberChk");
+      ghConnectBtn = doc.getElementById(
+        "githubConnectBtn"
+      ) || doc.getElementById("ghConnectBtn");
+      ghVerifyBtn = doc.getElementById(
+        "githubVerifyBtn"
+      ) || doc.getElementById("ghVerifyBtn");
+      ghLogoutBtn = doc.getElementById(
+        "ghLogoutBtn"
+      );
+      ghRepoSelect = doc.getElementById(
+        "ghRepoSelect"
+      );
+      ghBranchInput = doc.getElementById(
+        "ghBranchInput"
+      );
+      ghBranchToggleBtn = doc.getElementById(
+        "ghBranchToggleBtn"
+      );
+      ghBranchMenu = doc.getElementById(
+        "ghBranchMenu"
+      );
       ghBranchCountEl = doc.getElementById("ghBranchCount");
-      ghBranchRefreshBtn = doc.getElementById("ghBranchRefreshBtn");
-      ghNewBranchBtn = doc.getElementById("ghNewBranchBtn");
+      ghBranchRefreshBtn = doc.getElementById(
+        "ghBranchRefreshBtn"
+      );
+      ghNewBranchBtn = doc.getElementById(
+        "ghNewBranchBtn"
+      );
       ghNewBranchRow = doc.getElementById("ghNewBranchRow");
-      ghNewBranchName = doc.getElementById("ghNewBranchName");
-      ghCreateBranchConfirmBtn = doc.getElementById("ghCreateBranchConfirmBtn");
-      ghCancelBranchBtn = doc.getElementById("ghCancelBranchBtn");
-      ghFolderInput = doc.getElementById("ghFolderInput");
+      ghNewBranchName = doc.getElementById(
+        "ghNewBranchName"
+      );
+      ghCreateBranchConfirmBtn = doc.getElementById(
+        "ghCreateBranchConfirmBtn"
+      );
+      ghCancelBranchBtn = doc.getElementById(
+        "ghCancelBranchBtn"
+      );
+      ghFolderInput = doc.getElementById(
+        "ghFolderInput"
+      );
       ghFolderDisplay = doc.getElementById("ghFolderDisplay");
       setGhFolderDisplay((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
-      ghPickFolderBtn = doc.getElementById("ghPickFolderBtn");
-      ghFilenameInput = doc.getElementById("ghFilenameInput");
+      ghPickFolderBtn = doc.getElementById(
+        "ghPickFolderBtn"
+      );
+      ghFilenameInput = doc.getElementById(
+        "ghFilenameInput"
+      );
       ghFilenameErrorEl = doc.getElementById("ghFilenameError");
       if (ghFilenameInput && !ghFilenameInput.value) {
         ghFilenameInput.value = DEFAULT_GITHUB_FILENAME;
       }
       refreshFilenameValidation();
-      ghCommitMsgInput = doc.getElementById("ghCommitMsgInput");
-      ghExportAndCommitBtn = doc.getElementById("ghExportAndCommitBtn");
-      ghCreatePrChk = doc.getElementById("ghCreatePrChk");
+      ghCommitMsgInput = doc.getElementById(
+        "ghCommitMsgInput"
+      );
+      ghExportAndCommitBtn = doc.getElementById(
+        "ghExportAndCommitBtn"
+      );
+      ghCreatePrChk = doc.getElementById(
+        "ghCreatePrChk"
+      );
       ghPrOptionsEl = doc.getElementById("ghPrOptions");
-      ghPrTitleInput = doc.getElementById("ghPrTitleInput");
-      ghPrBodyInput = doc.getElementById("ghPrBodyInput");
-      ghFetchPathInput = doc.getElementById("ghFetchPathInput");
-      ghFetchTokensBtn = doc.getElementById("ghFetchTokensBtn");
-      ghScopeSelected = doc.getElementById("ghScopeSelected");
-      ghScopeAll = doc.getElementById("ghScopeAll");
-      ghScopeTypography = doc.getElementById("ghScopeTypography");
+      ghPrTitleInput = doc.getElementById(
+        "ghPrTitleInput"
+      );
+      ghPrBodyInput = doc.getElementById(
+        "ghPrBodyInput"
+      );
+      ghFetchPathInput = doc.getElementById(
+        "ghFetchPathInput"
+      );
+      ghFetchTokensBtn = doc.getElementById(
+        "ghFetchTokensBtn"
+      );
+      ghScopeSelected = doc.getElementById(
+        "ghScopeSelected"
+      );
+      ghScopeAll = doc.getElementById(
+        "ghScopeAll"
+      );
+      ghScopeTypography = doc.getElementById(
+        "ghScopeTypography"
+      );
       ghImportStatusEl = doc.getElementById("ghImportStatus");
       if (ghBranchInput) {
         ghBranchInput.setAttribute("role", "combobox");
@@ -943,13 +1077,20 @@
         ghBranchInput.setAttribute("aria-expanded", "false");
         ghBranchInput.setAttribute("aria-controls", "ghBranchMenu");
       }
-      if (ghBranchToggleBtn) ghBranchToggleBtn.setAttribute("aria-expanded", "false");
+      if (ghBranchToggleBtn)
+        ghBranchToggleBtn.setAttribute("aria-expanded", "false");
       folderPickerOverlay = doc.getElementById("folderPickerOverlay");
       folderPickerTitleEl = doc.getElementById("folderPickerTitle");
-      folderPickerPathInput = doc.getElementById("folderPickerPath");
-      folderPickerUseBtn = doc.getElementById("folderPickerUseBtn");
+      folderPickerPathInput = doc.getElementById(
+        "folderPickerPath"
+      );
+      folderPickerUseBtn = doc.getElementById(
+        "folderPickerUseBtn"
+      );
       folderPickerListEl = doc.getElementById("folderPickerList");
-      folderPickerCancelBtn = doc.getElementById("folderPickerCancelBtn");
+      folderPickerCancelBtn = doc.getElementById(
+        "folderPickerCancelBtn"
+      );
       if (ghRememberChk) {
         ghRememberChk.checked = ghRememberPref;
         ghRememberChk.addEventListener("change", () => {
@@ -957,9 +1098,12 @@
         });
       }
       ensureGhStatusElements();
-      if (ghConnectBtn) ghConnectBtn.addEventListener("click", onGitHubConnectClick);
-      if (ghVerifyBtn) ghVerifyBtn.addEventListener("click", onGitHubVerifyClick);
-      if (ghLogoutBtn) ghLogoutBtn.addEventListener("click", onGitHubLogoutClick);
+      if (ghConnectBtn)
+        ghConnectBtn.addEventListener("click", onGitHubConnectClick);
+      if (ghVerifyBtn)
+        ghVerifyBtn.addEventListener("click", onGitHubVerifyClick);
+      if (ghLogoutBtn)
+        ghLogoutBtn.addEventListener("click", onGitHubLogoutClick);
       if (ghRepoSelect && ghBranchInput) {
         let lastRepoKey = "";
         ghRepoSelect.addEventListener("change", () => {
@@ -973,7 +1117,10 @@
           updateExportCommitEnabled();
           updateFetchButtonEnabled();
           lastBranchesFetchedAtMs = 0;
-          deps.postToPlugin({ type: "GITHUB_SELECT_REPO", payload: { owner: currentOwner, repo: currentRepo } });
+          deps.postToPlugin({
+            type: "GITHUB_SELECT_REPO",
+            payload: { owner: currentOwner, repo: currentRepo }
+          });
           desiredBranch = null;
           defaultBranchFromApi = void 0;
           loadedPages = 0;
@@ -987,7 +1134,9 @@
             branchLastQuery = "";
             branchInputPristine = true;
           }
-          if (ghBranchMenu) while (ghBranchMenu.firstChild) ghBranchMenu.removeChild(ghBranchMenu.firstChild);
+          if (ghBranchMenu)
+            while (ghBranchMenu.firstChild)
+              ghBranchMenu.removeChild(ghBranchMenu.firstChild);
           closeBranchMenu();
           setBranchDisabled(true, "Loading branches\u2026");
           updateBranchCount();
@@ -995,11 +1144,17 @@
           setGhFolderDisplay("");
           cancelNewBranchFlow(false);
           if (currentOwner && currentRepo) {
-            deps.log(`GitHub: loading branches for ${currentOwner}/${currentRepo}\u2026`);
+            deps.log(
+              `GitHub: loading branches for ${currentOwner}/${currentRepo}\u2026`
+            );
             isFetchingBranches = true;
             deps.postToPlugin({
               type: "GITHUB_FETCH_BRANCHES",
-              payload: { owner: currentOwner, repo: currentRepo, page: 1 }
+              payload: {
+                owner: currentOwner,
+                repo: currentRepo,
+                page: 1
+              }
             });
           }
           updateExportCommitEnabled();
@@ -1044,7 +1199,10 @@
               if (item && item.dataset.selectable === "1") {
                 const value = item.getAttribute("data-value") || "";
                 if (value) {
-                  const result = processBranchSelection(value, true);
+                  const result = processBranchSelection(
+                    value,
+                    true
+                  );
                   if (result === "selected") closeBranchMenu();
                   else if (result === "more" || result === "fetch") {
                     syncBranchHighlightAfterRender();
@@ -1053,9 +1211,13 @@
                 }
               }
             } else {
-              const result = processBranchSelection(ghBranchInput.value, false);
+              const result = processBranchSelection(
+                ghBranchInput.value,
+                false
+              );
               if (result === "selected") closeBranchMenu();
-              else if (result === "more" || result === "fetch") syncBranchHighlightAfterRender();
+              else if (result === "more" || result === "fetch")
+                syncBranchHighlightAfterRender();
             }
             revalidateBranchesIfStale(true);
             e.preventDefault();
@@ -1069,9 +1231,13 @@
           }
         });
         ghBranchInput.addEventListener("change", () => {
-          const result = processBranchSelection(ghBranchInput.value, false);
+          const result = processBranchSelection(
+            ghBranchInput.value,
+            false
+          );
           if (result === "selected") closeBranchMenu();
-          else if (result === "more" || result === "fetch") syncBranchHighlightAfterRender();
+          else if (result === "more" || result === "fetch")
+            syncBranchHighlightAfterRender();
         });
       }
       if (ghBranchToggleBtn) {
@@ -1081,9 +1247,11 @@
             closeBranchMenu();
             return;
           }
-          if (!ghBranchMenu || !ghBranchMenu.childElementCount) renderOptions();
+          if (!ghBranchMenu || !ghBranchMenu.childElementCount)
+            renderOptions();
           openBranchMenu();
-          if (ghBranchInput && (doc == null ? void 0 : doc.activeElement) !== ghBranchInput) ghBranchInput.focus();
+          if (ghBranchInput && (doc == null ? void 0 : doc.activeElement) !== ghBranchInput)
+            ghBranchInput.focus();
         });
       }
       if (ghBranchMenu) {
@@ -1114,7 +1282,8 @@
           if (!target) return;
           if (ghBranchMenu && ghBranchMenu.contains(target)) return;
           if (ghBranchInput && target === ghBranchInput) return;
-          if (ghBranchToggleBtn && ghBranchToggleBtn.contains(target)) return;
+          if (ghBranchToggleBtn && ghBranchToggleBtn.contains(target))
+            return;
           closeBranchMenu();
         });
         doc.addEventListener("focusin", (event) => {
@@ -1126,7 +1295,8 @@
           }
           if (ghBranchMenu && ghBranchMenu.contains(target)) return;
           if (ghBranchInput && target === ghBranchInput) return;
-          if (ghBranchToggleBtn && ghBranchToggleBtn.contains(target)) return;
+          if (ghBranchToggleBtn && ghBranchToggleBtn.contains(target))
+            return;
           closeBranchMenu();
         });
       }
@@ -1174,12 +1344,16 @@
         });
       }
       if (folderPickerCancelBtn) {
-        folderPickerCancelBtn.addEventListener("click", () => closeFolderPicker());
+        folderPickerCancelBtn.addEventListener(
+          "click",
+          () => closeFolderPicker()
+        );
       }
       let folderPickerPathDebounce;
       if (folderPickerPathInput) {
         folderPickerPathInput.addEventListener("input", () => {
-          if (folderPickerPathDebounce) win == null ? void 0 : win.clearTimeout(folderPickerPathDebounce);
+          if (folderPickerPathDebounce)
+            win == null ? void 0 : win.clearTimeout(folderPickerPathDebounce);
           const value = folderPickerPathInput.value;
           folderPickerPathDebounce = win == null ? void 0 : win.setTimeout(() => {
             setFolderPickerPath(value, true, false);
@@ -1205,11 +1379,17 @@
           setGhFolderDisplay(normalized.display);
           deps.postToPlugin({
             type: "GITHUB_SET_FOLDER",
-            payload: { owner: currentOwner, repo: currentRepo, folder: normalized.payload }
+            payload: {
+              owner: currentOwner,
+              repo: currentRepo,
+              folder: normalized.payload
+            }
           });
           persistGhState({ folder: normalized.payload });
           closeFolderPicker();
-          deps.log(`Folder selected: ${normalized.display === "/" ? "(repo root)" : normalized.display}`);
+          deps.log(
+            `Folder selected: ${normalized.display === "/" ? "(repo root)" : normalized.display}`
+          );
           updateExportCommitEnabled();
           updateFetchButtonEnabled();
         });
@@ -1217,16 +1397,23 @@
       if (ghCommitMsgInput) {
         ghCommitMsgInput.addEventListener("input", () => {
           updateExportCommitEnabled();
-          persistGhState({ commitMessage: ghCommitMsgInput.value || "" });
+          persistGhState({
+            commitMessage: ghCommitMsgInput.value || ""
+          });
         });
       }
       if (ghFilenameInput) {
         ghFilenameInput.addEventListener("input", () => {
           refreshFilenameValidation();
-          persistGhState({ filename: (ghFilenameInput.value || "").trim() });
+          persistGhState({
+            filename: (ghFilenameInput.value || "").trim()
+          });
           updateExportCommitEnabled();
         });
-        ghFilenameInput.addEventListener("blur", () => refreshFilenameValidation());
+        ghFilenameInput.addEventListener(
+          "blur",
+          () => refreshFilenameValidation()
+        );
       }
       if (ghScopeSelected) {
         ghScopeSelected.addEventListener("change", () => {
@@ -1255,15 +1442,19 @@
             persistGhState({ scope: "typography" });
             requestCollectionsRefresh();
           }
-          if (ghPrOptionsEl) ghPrOptionsEl.style.display = (ghCreatePrChk == null ? void 0 : ghCreatePrChk.checked) ? "flex" : "none";
+          if (ghPrOptionsEl)
+            ghPrOptionsEl.style.display = (ghCreatePrChk == null ? void 0 : ghCreatePrChk.checked) ? "flex" : "none";
           updateExportCommitEnabled();
         });
       }
       if (ghCreatePrChk) {
         ghCreatePrChk.addEventListener("change", () => {
           const on = !!ghCreatePrChk.checked;
-          if (ghPrOptionsEl) ghPrOptionsEl.style.display = on ? "flex" : "none";
-          const save = { createPr: on };
+          if (ghPrOptionsEl)
+            ghPrOptionsEl.style.display = on ? "flex" : "none";
+          const save = {
+            createPr: on
+          };
           if (on) save.prBase = getPrBaseBranch();
           persistGhState(save);
           updateExportCommitEnabled();
@@ -1279,7 +1470,11 @@
           persistGhState({ prBody: ghPrBodyInput.value });
         });
       }
-      if (ghFetchPathInput) ghFetchPathInput.addEventListener("input", updateFetchButtonEnabled);
+      if (ghFetchPathInput)
+        ghFetchPathInput.addEventListener(
+          "input",
+          updateFetchButtonEnabled
+        );
       if (ghFetchTokensBtn) {
         ghFetchTokensBtn.addEventListener("click", () => {
           var _a;
@@ -1294,14 +1489,18 @@
             return;
           }
           if (!path) {
-            deps.log("Enter a path to fetch (e.g., tokens/tokens.json).");
+            deps.log(
+              "Enter a path to fetch (e.g., tokens/tokens.json)."
+            );
             return;
           }
           ghImportInFlight = true;
           lastImportTarget = { branch, path };
           setImportStatus("progress", `Fetching ${path} from ${branch}\u2026`);
           updateFetchButtonEnabled();
-          deps.log(`GitHub: fetching ${path} from ${currentOwner}/${currentRepo}@${branch}\u2026`);
+          deps.log(
+            `GitHub: fetching ${path} from ${currentOwner}/${currentRepo}@${branch}\u2026`
+          );
           const allowHex = !!((_a = pickAllowHexCheckbox()) == null ? void 0 : _a.checked);
           const contexts = deps.getImportContexts();
           const payload = {
@@ -1316,7 +1515,9 @@
           };
           deps.postToPlugin(payload);
           if (contexts.length > 0) {
-            deps.log(`GitHub: importing ${contexts.length} selected mode(s) based on current scope.`);
+            deps.log(
+              `GitHub: importing ${contexts.length} selected mode(s) based on current scope.`
+            );
           }
         });
       }
@@ -1329,13 +1530,19 @@
           const selectedCollection = collectionSelect ? collectionSelect.value || "" : "";
           const selectedMode = modeSelect ? modeSelect.value || "" : "";
           const commitMessage = ((ghCommitMsgInput == null ? void 0 : ghCommitMsgInput.value) || "Update tokens from Figma").trim();
-          const normalizedFolder = normalizeFolderInput((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
+          const normalizedFolder = normalizeFolderInput(
+            (ghFolderInput == null ? void 0 : ghFolderInput.value) || ""
+          );
           refreshFilenameValidation();
           if (scope === "selected") {
             if (!selectedCollection || !selectedMode) {
-              deps.log("Pick a collection and a mode before exporting.");
-              if (!selectedCollection && collectionSelect) collectionSelect.focus();
-              else if (!selectedMode && modeSelect) modeSelect.focus();
+              deps.log(
+                "Pick a collection and a mode before exporting."
+              );
+              if (!selectedCollection && collectionSelect)
+                collectionSelect.focus();
+              else if (!selectedMode && modeSelect)
+                modeSelect.focus();
               updateExportCommitEnabled();
               return;
             }
@@ -1356,9 +1563,16 @@
           setGhFolderDisplay(normalizedFolder.display);
           deps.postToPlugin({
             type: "GITHUB_SET_FOLDER",
-            payload: { owner: currentOwner, repo: currentRepo, folder: normalizedFolder.payload }
+            payload: {
+              owner: currentOwner,
+              repo: currentRepo,
+              folder: normalizedFolder.payload
+            }
           });
-          persistGhState({ folder: normalizedFolder.payload, filename: filenameToUse });
+          persistGhState({
+            folder: normalizedFolder.payload,
+            filename: filenameToUse
+          });
           const createPr = !!(ghCreatePrChk && ghCreatePrChk.checked);
           const payload = {
             type: "GITHUB_EXPORT_AND_COMMIT",
@@ -1375,7 +1589,8 @@
               createPr
             }
           };
-          if (selectedCollection) payload.payload.collection = selectedCollection;
+          if (selectedCollection)
+            payload.payload.collection = selectedCollection;
           if (selectedMode) payload.payload.mode = selectedMode;
           if (createPr) {
             payload.payload.prBase = getPrBaseBranch();
@@ -1383,9 +1598,16 @@
             payload.payload.prBody = (ghPrBodyInput == null ? void 0 : ghPrBodyInput.value) || "";
           }
           const scopeLabel = scope === "all" ? "all collections" : scope === "typography" ? "typography" : "selected mode";
-          const summaryTarget = formatDestinationForLog(normalizedFolder.payload, filenameToUse);
-          deps.log(`GitHub: Export summary \u2192 ${summaryTarget} (${scopeLabel})`);
-          deps.log(createPr ? "Export, Commit & PR requested\u2026" : "Export & Commit requested\u2026");
+          const summaryTarget = formatDestinationForLog(
+            normalizedFolder.payload,
+            filenameToUse
+          );
+          deps.log(
+            `GitHub: Export summary \u2192 ${summaryTarget} (${scopeLabel})`
+          );
+          deps.log(
+            createPr ? "Export, Commit & PR requested\u2026" : "Export & Commit requested\u2026"
+          );
           deps.postToPlugin(payload);
         });
       }
@@ -1405,7 +1627,10 @@
       }
       const remember = !!(ghRememberChk && ghRememberChk.checked);
       deps.log("GitHub: Verifying token\u2026");
-      deps.postToPlugin({ type: "GITHUB_SET_TOKEN", payload: { token: tokenRaw, remember } });
+      deps.postToPlugin({
+        type: "GITHUB_SET_TOKEN",
+        payload: { token: tokenRaw, remember }
+      });
     }
     function onGitHubVerifyClick() {
       onGitHubConnectClick();
@@ -1431,7 +1656,9 @@
         branchLastQuery = "";
         branchInputPristine = true;
       }
-      if (ghBranchMenu) while (ghBranchMenu.firstChild) ghBranchMenu.removeChild(ghBranchMenu.firstChild);
+      if (ghBranchMenu)
+        while (ghBranchMenu.firstChild)
+          ghBranchMenu.removeChild(ghBranchMenu.firstChild);
       closeBranchMenu();
       setBranchDisabled(true, "Pick a repository first\u2026");
       updateBranchCount();
@@ -1492,8 +1719,10 @@
         }
         if (typeof p.scope === "string") {
           if (p.scope === "all" && ghScopeAll) ghScopeAll.checked = true;
-          if (p.scope === "selected" && ghScopeSelected) ghScopeSelected.checked = true;
-          if (p.scope === "typography" && ghScopeTypography) ghScopeTypography.checked = true;
+          if (p.scope === "selected" && ghScopeSelected)
+            ghScopeSelected.checked = true;
+          if (p.scope === "typography" && ghScopeTypography)
+            ghScopeTypography.checked = true;
         }
         const styleDictChk = pickStyleDictionaryCheckbox();
         if (styleDictChk && typeof p.styleDictionary === "boolean") {
@@ -1505,10 +1734,13 @@
         }
         if (typeof p.createPr === "boolean" && ghCreatePrChk) {
           ghCreatePrChk.checked = p.createPr;
-          if (ghPrOptionsEl) ghPrOptionsEl.style.display = p.createPr ? "flex" : "none";
+          if (ghPrOptionsEl)
+            ghPrOptionsEl.style.display = p.createPr ? "flex" : "none";
         }
-        if (typeof p.prTitle === "string" && ghPrTitleInput) ghPrTitleInput.value = p.prTitle;
-        if (typeof p.prBody === "string" && ghPrBodyInput) ghPrBodyInput.value = p.prBody;
+        if (typeof p.prTitle === "string" && ghPrTitleInput)
+          ghPrTitleInput.value = p.prTitle;
+        if (typeof p.prBody === "string" && ghPrBodyInput)
+          ghPrBodyInput.value = p.prBody;
         updateExportCommitEnabled();
         updateFetchButtonEnabled();
         return true;
@@ -1535,10 +1767,14 @@
         updateFolderControlsEnabled();
         const rate = pl.rate;
         if (rate && typeof rate.remaining === "number" && rate.remaining <= 3 && typeof rate.resetEpochSec === "number") {
-          const t = new Date(rate.resetEpochSec * 1e3).toLocaleTimeString();
+          const t = new Date(
+            rate.resetEpochSec * 1e3
+          ).toLocaleTimeString();
           deps.log(`GitHub: near rate limit; resets ~${t}`);
         }
-        deps.log(`Loaded ${names.length} branches (page ${loadedPages}) for ${repo}${hasMorePages ? "\u2026" : ""}`);
+        deps.log(
+          `Loaded ${names.length} branches (page ${loadedPages}) for ${repo}${hasMorePages ? "\u2026" : ""}`
+        );
         return true;
       }
       if (msg.type === "GITHUB_BRANCHES_ERROR") {
@@ -1549,17 +1785,25 @@
         isFetchingBranches = false;
         setBranchDisabled(false);
         updateFolderControlsEnabled();
-        deps.log(`Branch load failed (status ${pl.status}): ${pl.message || "unknown error"}`);
-        if (pl.samlRequired) deps.log("This org requires SSO. Open the repo in your browser and authorize SSO for your token.");
+        deps.log(
+          `Branch load failed (status ${pl.status}): ${pl.message || "unknown error"}`
+        );
+        if (pl.samlRequired)
+          deps.log(
+            "This org requires SSO. Open the repo in your browser and authorize SSO for your token."
+          );
         if (pl.rate && typeof pl.rate.resetEpochSec === "number") {
-          const t = new Date(pl.rate.resetEpochSec * 1e3).toLocaleTimeString();
+          const t = new Date(
+            pl.rate.resetEpochSec * 1e3
+          ).toLocaleTimeString();
           deps.log(`Rate limit issue; resets ~${t}`);
         }
         return true;
       }
       if (msg.type === "GITHUB_CREATE_BRANCH_RESULT") {
         const pl = msg.payload || {};
-        if (ghCreateBranchConfirmBtn) ghCreateBranchConfirmBtn.disabled = false;
+        if (ghCreateBranchConfirmBtn)
+          ghCreateBranchConfirmBtn.disabled = false;
         if (typeof pl.ok !== "boolean") return true;
         if (pl.ok) {
           const baseBranch = String(pl.baseBranch || "");
@@ -1569,7 +1813,9 @@
             const s = new Set(allBranches);
             if (!s.has(newBranch)) {
               s.add(newBranch);
-              allBranches = Array.from(s).sort((a, b) => a.localeCompare(b));
+              allBranches = Array.from(s).sort(
+                (a, b) => a.localeCompare(b)
+              );
             }
             desiredBranch = newBranch;
             if (ghBranchInput) {
@@ -1583,7 +1829,9 @@
           showNewBranchRow(false);
           if (ghNewBranchName) ghNewBranchName.value = "";
           if (url) {
-            deps.log(`Branch created: ${newBranch} (from ${baseBranch})`);
+            deps.log(
+              `Branch created: ${newBranch} (from ${baseBranch})`
+            );
             const logEl = deps.getLogElement();
             if (logEl && doc) {
               const wrap = doc.createElement("div");
@@ -1596,7 +1844,9 @@
               logEl.scrollTop = logEl.scrollHeight;
             }
           } else {
-            deps.log(`Branch created: ${newBranch} (from ${baseBranch})`);
+            deps.log(
+              `Branch created: ${newBranch} (from ${baseBranch})`
+            );
           }
           return true;
         }
@@ -1604,18 +1854,28 @@
         const message = pl.message || "unknown error";
         deps.log(`Create branch failed (status ${status}): ${message}`);
         if (pl.samlRequired) {
-          deps.log("This org requires SSO. Open the repo in your browser and authorize SSO for your token.");
+          deps.log(
+            "This org requires SSO. Open the repo in your browser and authorize SSO for your token."
+          );
         } else if (status === 403) {
           if (pl.noPushPermission) {
-            deps.log("You do not have push permission to this repository. Ask a maintainer for write access.");
+            deps.log(
+              "You do not have push permission to this repository. Ask a maintainer for write access."
+            );
           } else {
             deps.log("Likely a token permission issue:");
-            deps.log('\u2022 Classic PAT: add the "repo" scope (or "public_repo" for public repos).');
-            deps.log('\u2022 Fine-grained PAT: grant this repository and set "Contents: Read and write".');
+            deps.log(
+              '\u2022 Classic PAT: add the "repo" scope (or "public_repo" for public repos).'
+            );
+            deps.log(
+              '\u2022 Fine-grained PAT: grant this repository and set "Contents: Read and write".'
+            );
           }
         }
         if (pl.rate && typeof pl.rate.resetEpochSec === "number") {
-          const t = new Date(pl.rate.resetEpochSec * 1e3).toLocaleTimeString();
+          const t = new Date(
+            pl.rate.resetEpochSec * 1e3
+          ).toLocaleTimeString();
           deps.log(`Rate limit issue; resets ~${t}`);
         }
         return true;
@@ -1630,11 +1890,12 @@
           if (folderListWaiters[i].path === path) {
             const waiter = folderListWaiters.splice(i, 1)[0];
             if (ok) waiter.resolve({ ok: true, entries });
-            else waiter.reject({
-              ok: false,
-              message: message || `HTTP ${pl.status || 0}`,
-              status: typeof pl.status === "number" ? pl.status : void 0
-            });
+            else
+              waiter.reject({
+                ok: false,
+                message: message || `HTTP ${pl.status || 0}`,
+                status: typeof pl.status === "number" ? pl.status : void 0
+              });
             break;
           }
         }
@@ -1649,7 +1910,12 @@
           if (folderCreateWaiters[i].folderPath === fp) {
             const waiter = folderCreateWaiters.splice(i, 1)[0];
             if (ok) waiter.resolve({ ok: true });
-            else waiter.reject({ ok: false, message: message || `HTTP ${pl.status || 0}`, status: pl.status });
+            else
+              waiter.reject({
+                ok: false,
+                message: message || `HTTP ${pl.status || 0}`,
+                status: pl.status
+              });
             break;
           }
         }
@@ -1659,7 +1925,10 @@
         if (msg.payload.ok) {
           const url = String(msg.payload.commitUrl || "");
           const branch = msg.payload.branch || "";
-          const destination = formatDestinationForLog(msg.payload.folder, msg.payload.filename);
+          const destination = formatDestinationForLog(
+            msg.payload.folder,
+            msg.payload.filename
+          );
           const committedPath = msg.payload.fullPath || destination;
           deps.log(`Commit succeeded (${branch}): ${url || "(no URL)"}`);
           deps.log(`Committed ${committedPath}`);
@@ -1678,24 +1947,33 @@
           }
           if (msg.payload.createdPr) {
             const pr = msg.payload.createdPr;
-            deps.log(`PR prepared (#${pr.number}) from ${pr.head} \u2192 ${pr.base}`);
+            deps.log(
+              `PR prepared (#${pr.number}) from ${pr.head} \u2192 ${pr.base}`
+            );
           }
         } else {
           const status = typeof msg.payload.status === "number" ? msg.payload.status : 0;
           const message = msg.payload.message || "unknown error";
-          const destination = formatDestinationForLog(msg.payload.folder, msg.payload.filename);
+          const destination = formatDestinationForLog(
+            msg.payload.folder,
+            msg.payload.filename
+          );
           const committedPath = msg.payload.fullPath || destination;
           if (status === 304) {
             deps.log(`Commit skipped: ${message} (${committedPath})`);
           } else {
-            deps.log(`Commit failed (${status}): ${message} (${committedPath})`);
+            deps.log(
+              `Commit failed (${status}): ${message} (${committedPath})`
+            );
           }
         }
         return true;
       }
       if (msg.type === "GITHUB_PR_RESULT") {
         if (msg.payload.ok) {
-          deps.log(`PR created: #${msg.payload.number} (${msg.payload.head} \u2192 ${msg.payload.base})`);
+          deps.log(
+            `PR created: #${msg.payload.number} (${msg.payload.head} \u2192 ${msg.payload.base})`
+          );
           const url = msg.payload.url;
           if (url) {
             const logEl = deps.getLogElement();
@@ -1711,26 +1989,38 @@
             }
           }
         } else {
-          deps.log(`PR creation failed (${msg.payload.status || 0}): ${msg.payload.message || "unknown error"}`);
+          deps.log(
+            `PR creation failed (${msg.payload.status || 0}): ${msg.payload.message || "unknown error"}`
+          );
         }
         return true;
       }
       if (msg.type === "GITHUB_FETCH_TOKENS_RESULT") {
         ghImportInFlight = false;
         if (msg.payload.ok) {
-          deps.log(`Imported tokens from ${msg.payload.path} (${msg.payload.branch})`);
+          deps.log(
+            `Imported tokens from ${msg.payload.path} (${msg.payload.branch})`
+          );
           const branch = String(msg.payload.branch || "");
           const path = String(msg.payload.path || "");
           lastImportTarget = { branch, path };
-          setImportStatus("success", `Imported tokens from ${branch}:${path}.`);
+          setImportStatus(
+            "success",
+            `Imported tokens from ${branch}:${path}.`
+          );
         } else {
-          deps.log(`GitHub fetch failed (${msg.payload.status || 0}): ${msg.payload.message || "unknown error"}`);
+          deps.log(
+            `GitHub fetch failed (${msg.payload.status || 0}): ${msg.payload.message || "unknown error"}`
+          );
           const status = typeof msg.payload.status === "number" ? msg.payload.status : 0;
           const message = msg.payload.message || "Unknown error";
           const branch = String(msg.payload.branch || "");
           const path = String(msg.payload.path || "");
           lastImportTarget = { branch, path };
-          setImportStatus("error", `GitHub import failed (${status}): ${message}`);
+          setImportStatus(
+            "error",
+            `GitHub import failed (${status}): ${message}`
+          );
         }
         updateFetchButtonEnabled();
         return true;
