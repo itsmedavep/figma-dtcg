@@ -59,6 +59,13 @@ export async function snapshotCollectionsForUi(): Promise<{
       modes.push({ id: m.modeId, name: m.name });
     }
 
+    // Include collection metadata in checksum
+    checksumParts.push(`C:${c.id}:${c.name}`);
+    
+    // Include mode metadata in checksum
+    const modeSigs = c.modes.map(m => `${m.modeId}:${m.name}`);
+    checksumParts.push(`M:${modeSigs.join(',')}`);
+
     const varsList: Array<{ id: string; name: string; type: string }> = [];
     const varLines: string[] = [];
 
@@ -75,7 +82,8 @@ export async function snapshotCollectionsForUi(): Promise<{
         values.push(JSON.stringify(val));
       }
       varLines.push(`    - ${v.name} [${v.resolvedType}]`);
-      checksumParts.push(`${v.id}:${values.join(',')}`);
+      // Include variable name and type in checksum
+      checksumParts.push(`V:${v.id}:${v.name}:${v.resolvedType}:${values.join(',')}`);
     }
 
     out.push({ id: c.id, name: c.name, modes: modes, variables: varsList });

@@ -958,8 +958,6 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                             source: "github",
                         },
                     });
-
-                    await deps.broadcastLocalCollections({ force: true });
                 } catch (err) {
                     const msgText = (err as Error)?.message || "Invalid JSON";
                     deps.send({
@@ -980,6 +978,14 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                             message: `GitHub import failed: ${msgText}`,
                         },
                     });
+                    return true;
+                }
+
+                // Refresh UI safely after import
+                try {
+                    await deps.broadcastLocalCollections({ force: true });
+                } catch (e) {
+                    // ignore refresh errors, import succeeded
                 }
                 return true;
             }
