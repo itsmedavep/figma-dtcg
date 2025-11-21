@@ -115,18 +115,7 @@ async function broadcastLocalCollections(
     send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
 }
 
-let pollInterval: number | undefined;
-
 function startPolling() {
-    if (pollInterval) return;
-
-    // Poll every 500ms for variable changes
-    pollInterval = setInterval(() => {
-        broadcastLocalCollections({ force: false, silent: true }).catch((err) =>
-            console.error(err)
-        );
-    }, 500);
-
     // Listen for style changes (immediate)
     figma.on("documentchange", (event) => {
         const styleChanges = event.documentChanges.filter(
@@ -237,6 +226,11 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
 // Refresh the collection snapshot on demand, mirroring the bootstrap payload.
 async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
     await broadcastLocalCollections({ force: true, silent: false });
+}
+
+// Respond to PING by checking for changes silently
+async function handlePing(_msg: UiToPlugin): Promise<void> {
+    await broadcastLocalCollections({ force: false, silent: true });
 }
 
 // Apply an uploaded DTCG payload to the document and broadcast the resulting summary back to the UI.
@@ -453,6 +447,7 @@ async function handlePreviewRequest(msg: UiToPlugin): Promise<void> {
 
 const coreHandlers = new Map<UiToPlugin["type"], Handler>([
     ["UI_READY", handleUiReady],
+    ["PING", handlePing],
     ["FETCH_COLLECTIONS", handleFetchCollections],
     ["IMPORT_DTCG", handleImportDtcg],
     ["EXPORT_DTCG", handleExportDtcg],

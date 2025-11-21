@@ -1722,6 +1722,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setDisabledStates();
     setDrawerOpen(getSavedDrawerOpen());
     postToPlugin({ type: "UI_READY" });
+
+    // Poll for updates (heartbeat)
+    setInterval(() => {
+        postToPlugin({ type: "PING" });
+    }, 500);
 });
 
 /* -------------------------------------------------------

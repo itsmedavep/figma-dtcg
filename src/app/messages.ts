@@ -25,6 +25,7 @@ export interface GithubFolderPayload extends GithubRepoTarget {
 
 export type UiToPlugin =
     | { type: "UI_READY" }
+    | { type: "PING" }
     | { type: "FETCH_COLLECTIONS" }
     | {
           type: "IMPORT_DTCG";

@@ -1812,7 +1812,12 @@
       if (!supportsFilePicker()) return false;
       const handle = await window.showSaveFilePicker({
         suggestedName,
-        types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+        types: [
+          {
+            description: "JSON",
+            accept: { "application/json": [".json"] }
+          }
+        ]
       });
       const writable = await handle.createWritable();
       pendingSave = { writable, name: suggestedName };
@@ -1825,7 +1830,9 @@
   async function finishPendingSave(text) {
     if (!pendingSave) return false;
     try {
-      await pendingSave.writable.write(new Blob([text], { type: "application/json" }));
+      await pendingSave.writable.write(
+        new Blob([text], { type: "application/json" })
+      );
       await pendingSave.writable.close();
       return true;
     } catch (e) {
@@ -1913,7 +1920,10 @@
       return;
     }
     try {
-      (_b = window.localStorage) == null ? void 0 : _b.setItem(IMPORT_PREF_KEY, JSON.stringify(importPreference));
+      (_b = window.localStorage) == null ? void 0 : _b.setItem(
+        IMPORT_PREF_KEY,
+        JSON.stringify(importPreference)
+      );
     } catch (e) {
     }
   }
@@ -1927,7 +1937,8 @@
       if (!parsed || typeof parsed !== "object") return;
       const ctxs = Array.isArray(parsed.contexts) ? normalizeContextList(parsed.contexts) : [];
       const ts = typeof parsed.updatedAt === "number" ? Number(parsed.updatedAt) : Date.now();
-      if (ctxs.length > 0) importPreference = { contexts: ctxs, updatedAt: ts };
+      if (ctxs.length > 0)
+        importPreference = { contexts: ctxs, updatedAt: ts };
     } catch (e) {
       importPreference = null;
     }
@@ -1953,7 +1964,10 @@
     } catch (e) {
     }
     renderImportPreferenceSummary();
-    if (logChange) log("Cleared remembered import selection. Next import will prompt for modes.");
+    if (logChange)
+      log(
+        "Cleared remembered import selection. Next import will prompt for modes."
+      );
   }
   function formatContextList(contexts) {
     const normalized = normalizeContextList(contexts);
@@ -1970,7 +1984,9 @@
       if (!modes.includes(mode)) modes.push(mode);
     }
     const parts = [];
-    const collections = Array.from(grouped.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+    const collections = Array.from(grouped.keys()).sort(
+      (a, b) => a < b ? -1 : a > b ? 1 : 0
+    );
     for (let i = 0; i < collections.length; i++) {
       const coll = collections[i];
       const modes = grouped.get(coll) || [];
@@ -1989,12 +2005,17 @@
     }
     importScopeSummaryEl.hidden = false;
     const when = new Date(importPreference.updatedAt).toLocaleString();
-    importScopeSummaryTextEl.textContent = `Remembered import scope (${when}): ${formatContextList(importPreference.contexts)}.`;
+    importScopeSummaryTextEl.textContent = `Remembered import scope (${when}): ${formatContextList(
+      importPreference.contexts
+    )}.`;
   }
   function saveImportLog() {
     var _a;
     try {
-      (_a = window.localStorage) == null ? void 0 : _a.setItem(IMPORT_LOG_KEY, JSON.stringify(importLogEntries));
+      (_a = window.localStorage) == null ? void 0 : _a.setItem(
+        IMPORT_LOG_KEY,
+        JSON.stringify(importLogEntries)
+      );
     } catch (e) {
     }
   }
@@ -2013,7 +2034,8 @@
         const summary = entry.summary;
         const source = entry.source === "github" ? "github" : entry.source === "local" ? "local" : void 0;
         if (!timestamp || !summary || typeof summary !== "object") continue;
-        if (!Array.isArray(summary.appliedContexts) || !Array.isArray(summary.availableContexts)) continue;
+        if (!Array.isArray(summary.appliedContexts) || !Array.isArray(summary.availableContexts))
+          continue;
         if (!Array.isArray(summary.tokensWithRemovedContexts)) {
           summary.tokensWithRemovedContexts = [];
         }
@@ -2048,7 +2070,9 @@
       const header = document.createElement("div");
       header.className = "import-skip-log-entry-header";
       const label = entry.source === "github" ? "GitHub import" : "Manual import";
-      header.textContent = `${label} \u2022 ${new Date(entry.timestamp).toLocaleString()}`;
+      header.textContent = `${label} \u2022 ${new Date(
+        entry.timestamp
+      ).toLocaleString()}`;
       container.appendChild(header);
       const stats = document.createElement("div");
       stats.className = "import-skip-log-entry-stats";
@@ -2068,7 +2092,9 @@
       if (entry.summary.skippedContexts.length > 0) {
         const skippedLine = document.createElement("div");
         skippedLine.className = "import-skip-log-entry-contexts";
-        skippedLine.textContent = "Skipped modes: " + formatContextList(entry.summary.skippedContexts.map((s) => s.context));
+        skippedLine.textContent = "Skipped modes: " + formatContextList(
+          entry.summary.skippedContexts.map((s) => s.context)
+        );
         container.appendChild(skippedLine);
       }
       if (entry.summary.missingRequestedContexts.length > 0) {
@@ -2086,7 +2112,10 @@
       if (entry.summary.tokensWithRemovedContexts.length > 0) {
         const tokenList = document.createElement("ul");
         tokenList.className = "import-skip-log-token-list";
-        const maxTokens = Math.min(entry.summary.tokensWithRemovedContexts.length, 10);
+        const maxTokens = Math.min(
+          entry.summary.tokensWithRemovedContexts.length,
+          10
+        );
         for (let t = 0; t < maxTokens; t++) {
           const tok = entry.summary.tokensWithRemovedContexts[t];
           const li = document.createElement("li");
@@ -2156,13 +2185,21 @@
     }
     visit(root, []);
     const options = [];
-    const collections = Array.from(grouped.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+    const collections = Array.from(grouped.keys()).sort(
+      (a, b) => a < b ? -1 : a > b ? 1 : 0
+    );
     for (let i = 0; i < collections.length; i++) {
       const collection = collections[i];
-      const modes = Array.from(grouped.get(collection) || []).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+      const modes = Array.from(grouped.get(collection) || []).sort(
+        (a, b) => a < b ? -1 : a > b ? 1 : 0
+      );
       for (let j = 0; j < modes.length; j++) {
         const mode = modes[j];
-        options.push({ context: `${collection}/${mode}`, collection, mode });
+        options.push({
+          context: `${collection}/${mode}`,
+          collection,
+          mode
+        });
       }
     }
     return options;
@@ -2203,10 +2240,13 @@
     for (let i = 0; i < opts.options.length; i++) {
       const option = opts.options[i];
       const list = grouped.get(option.collection) || [];
-      if (!grouped.has(option.collection)) grouped.set(option.collection, list);
+      if (!grouped.has(option.collection))
+        grouped.set(option.collection, list);
       list.push(option);
     }
-    const collections = Array.from(grouped.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+    const collections = Array.from(grouped.keys()).sort(
+      (a, b) => a < b ? -1 : a > b ? 1 : 0
+    );
     importScopeModalState = {
       options: opts.options,
       collections,
@@ -2218,7 +2258,8 @@
     for (let i = 0; i < opts.initialSelection.length; i++) {
       const ctx = opts.initialSelection[i];
       const match = opts.options.find((opt) => opt.context === ctx);
-      if (match) initialSelectionsByCollection.set(match.collection, match.context);
+      if (match)
+        initialSelectionsByCollection.set(match.collection, match.context);
     }
     for (let i = 0; i < collections.length; i++) {
       const collection = collections[i];
@@ -2227,7 +2268,9 @@
       const heading = document.createElement("h3");
       heading.textContent = collection;
       groupEl.appendChild(heading);
-      const modes = (grouped.get(collection) || []).sort((a, b) => a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0);
+      const modes = (grouped.get(collection) || []).sort(
+        (a, b) => a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0
+      );
       const defaultContext = initialSelectionsByCollection.get(collection) || ((_a = modes[0]) == null ? void 0 : _a.context) || null;
       const radioName = `importScopeMode_${i}`;
       for (let j = 0; j < modes.length; j++) {
@@ -2254,7 +2297,8 @@
       }
       importScopeBody.appendChild(groupEl);
     }
-    if (importScopeRememberChk) importScopeRememberChk.checked = opts.rememberInitially;
+    if (importScopeRememberChk)
+      importScopeRememberChk.checked = opts.rememberInitially;
     if (importScopeMissingEl) {
       if (opts.missingPreferred.length > 0) {
         importScopeMissingEl.hidden = false;
@@ -2287,7 +2331,17 @@
   }
   function performImport(json, allowHex, contexts) {
     const normalized = normalizeContextList(contexts);
-    const payload = normalized.length > 0 ? { type: "IMPORT_DTCG", payload: { json, allowHexStrings: allowHex, contexts: normalized } } : { type: "IMPORT_DTCG", payload: { json, allowHexStrings: allowHex } };
+    const payload = normalized.length > 0 ? {
+      type: "IMPORT_DTCG",
+      payload: {
+        json,
+        allowHexStrings: allowHex,
+        contexts: normalized
+      }
+    } : {
+      type: "IMPORT_DTCG",
+      payload: { json, allowHexStrings: allowHex }
+    };
     postToPlugin(payload);
     lastImportSelection = normalized.slice();
     const label = normalized.length > 0 ? formatContextList(normalized) : "all contexts";
@@ -2303,7 +2357,8 @@
     for (let i = 0; i < options.length; i++) {
       const option = options[i];
       const list = grouped.get(option.collection) || [];
-      if (!grouped.has(option.collection)) grouped.set(option.collection, list);
+      if (!grouped.has(option.collection))
+        grouped.set(option.collection, list);
       list.push(option);
     }
     const availableSet = new Set(options.map((opt) => opt.context));
@@ -2316,7 +2371,10 @@
         if (availableSet.has(ctx)) {
           const match = options.find((opt) => opt.context === ctx);
           if (match) {
-            initialSelectionsByCollection.set(match.collection, match.context);
+            initialSelectionsByCollection.set(
+              match.collection,
+              match.context
+            );
             rememberInitially = true;
           }
         } else {
@@ -2324,12 +2382,17 @@
         }
       }
     }
-    const collections = Array.from(grouped.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+    const collections = Array.from(grouped.keys()).sort(
+      (a, b) => a < b ? -1 : a > b ? 1 : 0
+    );
     for (let i = 0; i < collections.length; i++) {
       const collection = collections[i];
       if (!initialSelectionsByCollection.has(collection)) {
-        const modes = (grouped.get(collection) || []).sort((a, b) => a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0);
-        if (modes.length > 0) initialSelectionsByCollection.set(collection, modes[0].context);
+        const modes = (grouped.get(collection) || []).sort(
+          (a, b) => a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : 0
+        );
+        if (modes.length > 0)
+          initialSelectionsByCollection.set(collection, modes[0].context);
       }
     }
     const initialSelection = collections.map((collection) => initialSelectionsByCollection.get(collection)).filter((ctx) => typeof ctx === "string");
@@ -2354,7 +2417,8 @@
     });
   }
   function getPreferredImportContexts() {
-    if (importPreference && importPreference.contexts.length > 0) return importPreference.contexts.slice();
+    if (importPreference && importPreference.contexts.length > 0)
+      return importPreference.contexts.slice();
     if (lastImportSelection.length > 0) return lastImportSelection.slice();
     return [];
   }
@@ -2550,7 +2614,8 @@
     const collection = collectionSelect.value || "";
     const mode = modeSelect.value || "";
     if (!collection || !mode) {
-      if (w3cPreviewEl) w3cPreviewEl.textContent = "{ /* select a collection & mode to preview */ }";
+      if (w3cPreviewEl)
+        w3cPreviewEl.textContent = "{ /* select a collection & mode to preview */ }";
       return;
     }
     const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
@@ -2585,7 +2650,11 @@
       } else {
         lastImportSelection = [];
       }
-      addImportLogEntry({ timestamp: msg.payload.timestamp, source: msg.payload.source, summary });
+      addImportLogEntry({
+        timestamp: msg.payload.timestamp,
+        source: msg.payload.source,
+        summary
+      });
       renderImportPreferenceSummary();
       return;
     }
@@ -2619,7 +2688,9 @@
           log("Export ready.");
           return;
         }
-        log("Could not write via file picker; falling back to download links.");
+        log(
+          "Could not write via file picker; falling back to download links."
+        );
       }
       setDrawerOpen(true);
       for (let k = 0; k < files.length; k++) {
@@ -2648,7 +2719,8 @@
       const displayName = prettyExportName(msg.payload.name);
       const header = `/* ${displayName} */
 `;
-      if (w3cPreviewEl) w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
+      if (w3cPreviewEl)
+        w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
       return;
     }
     if (msg.type === "COLLECTIONS_DATA") {
@@ -2665,7 +2737,8 @@
         allowHexChk.checked = !!msg.payload.allowHexPref;
       }
       if (typeof msg.payload.githubRememberPref === "boolean") {
-        if (githubRememberChk) githubRememberChk.checked = msg.payload.githubRememberPref;
+        if (githubRememberChk)
+          githubRememberChk.checked = msg.payload.githubRememberPref;
       }
       const last = msg.payload.last;
       applyLastSelection(last);
@@ -2682,41 +2755,84 @@
     if (typeof document === "undefined") return;
     logEl = document.getElementById("log");
     rawEl = document.getElementById("raw");
-    exportAllChk = document.getElementById("exportAllChk");
-    collectionSelect = document.getElementById("collectionSelect");
-    modeSelect = document.getElementById("modeSelect");
+    exportAllChk = document.getElementById(
+      "exportAllChk"
+    );
+    collectionSelect = document.getElementById(
+      "collectionSelect"
+    );
+    modeSelect = document.getElementById(
+      "modeSelect"
+    );
     fileInput = document.getElementById("file");
-    importBtn = document.getElementById("importBtn");
-    exportBtn = document.getElementById("exportBtn");
-    exportTypographyBtn = document.getElementById("exportTypographyBtn");
+    importBtn = document.getElementById(
+      "importBtn"
+    );
+    exportBtn = document.getElementById(
+      "exportBtn"
+    );
+    exportTypographyBtn = document.getElementById(
+      "exportTypographyBtn"
+    );
     exportPickers = document.getElementById("exportPickers");
-    refreshBtn = document.getElementById("refreshBtn");
+    refreshBtn = document.getElementById(
+      "refreshBtn"
+    );
     shellEl = document.querySelector(".shell");
-    drawerToggleBtn = document.getElementById("drawerToggleBtn");
+    drawerToggleBtn = document.getElementById(
+      "drawerToggleBtn"
+    );
     resizeHandleEl = document.getElementById("resizeHandle");
     w3cPreviewEl = document.getElementById("w3cPreview");
-    copyRawBtn = document.getElementById("copyRawBtn");
-    copyW3cBtn = document.getElementById("copyW3cBtn");
-    copyLogBtn = document.getElementById("copyLogBtn");
-    allowHexChk = document.getElementById("allowHexChk");
-    styleDictionaryChk = document.getElementById("styleDictionaryChk");
-    flatTokensChk = document.getElementById("flatTokensChk");
-    githubRememberChk = document.getElementById("githubRememberChk");
+    copyRawBtn = document.getElementById(
+      "copyRawBtn"
+    );
+    copyW3cBtn = document.getElementById(
+      "copyW3cBtn"
+    );
+    copyLogBtn = document.getElementById(
+      "copyLogBtn"
+    );
+    allowHexChk = document.getElementById(
+      "allowHexChk"
+    );
+    styleDictionaryChk = document.getElementById(
+      "styleDictionaryChk"
+    );
+    flatTokensChk = document.getElementById(
+      "flatTokensChk"
+    );
+    githubRememberChk = document.getElementById(
+      "githubRememberChk"
+    );
     if (allowHexChk) {
       allowHexChk.checked = true;
       allowHexChk.addEventListener("change", () => {
-        postToPlugin({ type: "SAVE_PREFS", payload: { allowHexStrings: !!allowHexChk.checked } });
+        postToPlugin({
+          type: "SAVE_PREFS",
+          payload: { allowHexStrings: !!allowHexChk.checked }
+        });
       });
     }
     importScopeOverlay = document.getElementById("importScopeOverlay");
     importScopeBody = document.getElementById("importScopeBody");
-    importScopeConfirmBtn = document.getElementById("importScopeConfirmBtn");
-    importScopeCancelBtn = document.getElementById("importScopeCancelBtn");
-    importScopeRememberChk = document.getElementById("importScopeRememberChk");
+    importScopeConfirmBtn = document.getElementById(
+      "importScopeConfirmBtn"
+    );
+    importScopeCancelBtn = document.getElementById(
+      "importScopeCancelBtn"
+    );
+    importScopeRememberChk = document.getElementById(
+      "importScopeRememberChk"
+    );
     importScopeMissingEl = document.getElementById("importScopeMissingNotice");
     importScopeSummaryEl = document.getElementById("importScopeSummary");
-    importScopeSummaryTextEl = document.getElementById("importScopeSummaryText");
-    importScopeClearBtn = document.getElementById("importScopeClearBtn");
+    importScopeSummaryTextEl = document.getElementById(
+      "importScopeSummaryText"
+    );
+    importScopeClearBtn = document.getElementById(
+      "importScopeClearBtn"
+    );
     importSkipLogListEl = document.getElementById("importSkipLogList");
     importSkipLogEmptyEl = document.getElementById("importSkipLogEmpty");
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -2731,7 +2847,10 @@
     renderImportPreferenceSummary();
     renderImportLog();
     if (importScopeClearBtn) {
-      importScopeClearBtn.addEventListener("click", () => clearImportPreference(true));
+      importScopeClearBtn.addEventListener(
+        "click",
+        () => clearImportPreference(true)
+      );
     }
     if (importScopeConfirmBtn) {
       importScopeConfirmBtn.addEventListener("click", () => {
@@ -2754,7 +2873,10 @@
       });
     }
     if (importScopeCancelBtn) {
-      importScopeCancelBtn.addEventListener("click", () => closeImportScopeModal());
+      importScopeCancelBtn.addEventListener(
+        "click",
+        () => closeImportScopeModal()
+      );
     }
     if (importScopeOverlay) {
       importScopeOverlay.addEventListener("click", (ev) => {
@@ -2762,52 +2884,67 @@
       });
     }
     if (resizeHandleEl) {
-      resizeHandleEl.addEventListener("pointerdown", (event) => {
-        if (event.button !== 0 && event.pointerType === "mouse") return;
-        if (resizeTracking) return;
-        event.preventDefault();
-        resizeTracking = {
-          pointerId: event.pointerId,
-          startX: event.clientX,
-          startY: event.clientY,
-          startWidth: window.innerWidth,
-          startHeight: window.innerHeight
-        };
-        try {
-          resizeHandleEl.setPointerCapture(event.pointerId);
-        } catch (e) {
+      resizeHandleEl.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (event.button !== 0 && event.pointerType === "mouse") return;
+          if (resizeTracking) return;
+          event.preventDefault();
+          resizeTracking = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            startWidth: window.innerWidth,
+            startHeight: window.innerHeight
+          };
+          try {
+            resizeHandleEl.setPointerCapture(event.pointerId);
+          } catch (e) {
+          }
+          window.addEventListener("pointermove", handleResizeMove, true);
+          window.addEventListener("pointerup", endResize, true);
+          window.addEventListener("pointercancel", cancelResize, true);
         }
-        window.addEventListener("pointermove", handleResizeMove, true);
-        window.addEventListener("pointerup", endResize, true);
-        window.addEventListener("pointercancel", cancelResize, true);
-      });
+      );
     }
     githubUi.attach({ document, window });
     if (fileInput) fileInput.addEventListener("change", setDisabledStates);
     if (exportAllChk) {
       exportAllChk.addEventListener("change", () => {
         setDisabledStates();
-        postToPlugin({ type: "SAVE_PREFS", payload: { exportAll: !!exportAllChk.checked } });
+        postToPlugin({
+          type: "SAVE_PREFS",
+          payload: { exportAll: !!exportAllChk.checked }
+        });
         githubUi.onSelectionChange();
       });
     }
     if (styleDictionaryChk) {
       styleDictionaryChk.addEventListener("change", () => {
-        postToPlugin({ type: "SAVE_PREFS", payload: { styleDictionary: !!styleDictionaryChk.checked } });
+        postToPlugin({
+          type: "SAVE_PREFS",
+          payload: { styleDictionary: !!styleDictionaryChk.checked }
+        });
         requestPreviewForCurrent();
         githubUi.onSelectionChange();
       });
     }
     if (flatTokensChk) {
       flatTokensChk.addEventListener("change", () => {
-        postToPlugin({ type: "SAVE_PREFS", payload: { flatTokens: !!flatTokensChk.checked } });
+        postToPlugin({
+          type: "SAVE_PREFS",
+          payload: { flatTokens: !!flatTokensChk.checked }
+        });
         requestPreviewForCurrent();
         githubUi.onSelectionChange();
       });
     }
     if (githubRememberChk) {
       githubRememberChk.addEventListener("change", () => {
-        postToPlugin({ type: "SAVE_PREFS", payload: { githubRememberToken: !!githubRememberChk.checked } });
+        postToPlugin({
+          type: "SAVE_PREFS",
+          payload: { githubRememberToken: !!githubRememberChk.checked }
+        });
       });
     }
     if (refreshBtn) {
@@ -2827,7 +2964,9 @@
             const text = String(reader.result);
             const json = JSON.parse(text);
             if (!json || typeof json !== "object" || json instanceof Array) {
-              log("Invalid JSON structure for tokens (expected an object).");
+              log(
+                "Invalid JSON structure for tokens (expected an object)."
+              );
               return;
             }
             const allowHex = !!(allowHexChk && allowHexChk.checked);
@@ -2856,11 +2995,16 @@
             return;
           }
         }
-        const suggestedName = exportAll ? "tokens.json" : prettyExportName(`${(_a = payload.collection) != null ? _a : "Tokens"}_mode=${(_b = payload.mode) != null ? _b : "Mode 1"}.tokens.json`);
+        const suggestedName = exportAll ? "tokens.json" : prettyExportName(
+          `${(_a = payload.collection) != null ? _a : "Tokens"}_mode=${(_b = payload.mode) != null ? _b : "Mode 1"}.tokens.json`
+        );
         await beginPendingSave(suggestedName);
         postToPlugin({ type: "EXPORT_DTCG", payload });
         if (exportAll) log("Export all requested.");
-        else log(`Export requested for "${payload.collection || ""}" / "${payload.mode || ""}".`);
+        else
+          log(
+            `Export requested for "${payload.collection || ""}" / "${payload.mode || ""}".`
+          );
       });
     }
     if (exportTypographyBtn) {
@@ -2880,7 +3024,13 @@
       collectionSelect.addEventListener("change", () => {
         onCollectionChange();
         if (collectionSelect && modeSelect) {
-          postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+          postToPlugin({
+            type: "SAVE_LAST",
+            payload: {
+              collection: collectionSelect.value,
+              mode: modeSelect.value
+            }
+          });
           requestPreviewForCurrent();
         }
         githubUi.onSelectionChange();
@@ -2889,31 +3039,49 @@
     if (modeSelect) {
       modeSelect.addEventListener("change", () => {
         if (collectionSelect && modeSelect) {
-          postToPlugin({ type: "SAVE_LAST", payload: { collection: collectionSelect.value, mode: modeSelect.value } });
+          postToPlugin({
+            type: "SAVE_LAST",
+            payload: {
+              collection: collectionSelect.value,
+              mode: modeSelect.value
+            }
+          });
         }
         setDisabledStates();
         requestPreviewForCurrent();
         githubUi.onSelectionChange();
       });
     }
-    if (copyRawBtn) copyRawBtn.addEventListener(
-      "click",
-      () => copyElText(document.getElementById("raw"), "Raw Figma Collections")
-    );
-    if (copyW3cBtn) copyW3cBtn.addEventListener(
-      "click",
-      () => copyElText(document.getElementById("w3cPreview"), "W3C Preview")
-    );
-    if (copyLogBtn) copyLogBtn.addEventListener(
-      "click",
-      () => copyElText(document.getElementById("log"), "Log")
-    );
+    if (copyRawBtn)
+      copyRawBtn.addEventListener(
+        "click",
+        () => copyElText(
+          document.getElementById("raw"),
+          "Raw Figma Collections"
+        )
+      );
+    if (copyW3cBtn)
+      copyW3cBtn.addEventListener(
+        "click",
+        () => copyElText(
+          document.getElementById("w3cPreview"),
+          "W3C Preview"
+        )
+      );
+    if (copyLogBtn)
+      copyLogBtn.addEventListener(
+        "click",
+        () => copyElText(document.getElementById("log"), "Log")
+      );
     githubUi.onSelectionChange();
     autoFitOnce();
     if (rawEl) rawEl.textContent = "Loading variable collections\u2026";
     setDisabledStates();
     setDrawerOpen(getSavedDrawerOpen());
     postToPlugin({ type: "UI_READY" });
+    setInterval(() => {
+      postToPlugin({ type: "PING" });
+    }, 500);
   });
   function setDrawerOpen(open) {
     if (shellEl) {
