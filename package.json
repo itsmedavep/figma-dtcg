@@ -1,15 +1,15 @@
 {
-  "name": "figma-dtcg-starter",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "build": "node esbuild.config.mjs",
-    "watch": "node esbuild.config.mjs --watch",
-    "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@figma/plugin-typings": "^1.100.1",
-    "esbuild": "^0.25.9",
-    "typescript": "^5.5.4"
-  }
+    "name": "figma-dtcg-starter",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "build": "node esbuild.config.mjs",
+        "watch": "node esbuild.config.mjs --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "@figma/plugin-typings": "^1.100.1",
+        "esbuild": "^0.25.9",
+        "typescript": "^5.5.4"
+    }
 }

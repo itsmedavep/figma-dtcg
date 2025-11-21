@@ -1,16 +1,12 @@
 {
-  "name": "DTCG Import/Export",
-  "id": "com.example.dtcg-starter",
-  "api": "1.0.0",
-  "main": "dist/main.js",
-  "ui": "dist/ui.html",
-  "editorType": [
-    "figma"
-  ],
-  "documentAccess": "current",
-  "networkAccess": {
-    "allowedDomains": [
-      "https://api.github.com"
-    ]
-  }
+    "name": "DTCG Import/Export",
+    "id": "com.example.dtcg-starter",
+    "api": "1.0.0",
+    "main": "dist/main.js",
+    "ui": "dist/ui.html",
+    "editorType": ["figma"],
+    "documentAccess": "current",
+    "networkAccess": {
+        "allowedDomains": ["https://api.github.com"]
+    }
 }
