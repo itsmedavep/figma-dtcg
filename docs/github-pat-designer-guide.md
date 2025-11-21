@@ -7,6 +7,7 @@ This walkthrough explains how to create a Personal Access Token so the Figma plu
 ---
 
 ## 1. Open your GitHub settings
+
 1. Sign in to [github.com](https://github.com) in your browser.
 2. Click your profile picture in the top-right corner.
 3. Choose **Settings** from the menu.
@@ -16,6 +17,7 @@ This walkthrough explains how to create a Personal Access Token so the Figma plu
 ---
 
 ## 2. Go to Developer settings
+
 1. Inside Settings, look at the sidebar on the left.
 2. Scroll all the way to the bottom.
 3. Click **Developer settings**.
@@ -25,6 +27,7 @@ This walkthrough explains how to create a Personal Access Token so the Figma plu
 ---
 
 ## 3. Start generating a new fine-grained token
+
 1. In Developer settings, select **Personal access tokens**.
 2. Choose **Fine-grained tokens**. (These tokens are safer because you can limit them to one repository.)
 3. Click **Generate new token**.
@@ -34,6 +37,7 @@ This walkthrough explains how to create a Personal Access Token so the Figma plu
 ---
 
 ## 4. Give the token a name and limit where it works
+
 When the form opens, fill out the top section:
 
 1. **Token name** – pick something clear like `Figma plugin` so you remember what it is for.
@@ -45,10 +49,11 @@ When the form opens, fill out the top section:
 ---
 
 ## 5. Give the token the right permissions and create it
+
 Scroll down to the **Repository permissions** area. Turn on the following:
 
-- **Contents → Read and Write** (allows the plugin to send files back to GitHub)
-- **Metadata → Read** (lets the plugin see branch names and other basic info)
+-   **Contents → Read and Write** (allows the plugin to send files back to GitHub)
+-   **Metadata → Read** (lets the plugin see branch names and other basic info)
 
 Leave other sections at their default "No access" setting unless your team needs more.
 
@@ -61,6 +66,7 @@ Finally, click **Generate token** at the very bottom.
 ---
 
 ## 6. Copy the token and store it safely
+
 1. GitHub will show the new token once. Click the **copy** button right away.
 2. Paste it into the Figma plugin when it asks for your GitHub PAT.
 3. Save the token somewhere secure (for example, your team password manager) so you can reuse it until it expires.
@@ -70,14 +76,16 @@ Finally, click **Generate token** at the very bottom.
 ---
 
 ## 7. Test the connection in the plugin
+
 1. Open the Figma plugin and go to the GitHub tab.
 2. Paste the token into the PAT field, choose whether to let the plugin remember it, and click **Connect**.
 3. Watch the status line—on success it reports that you are authenticated and shows whether the token will be remembered on this device.【F:src/app/ui.html†L1051-L1069】【F:src/app/github/ui.ts†L247-L280】【F:src/app/github/ui.ts†L1467-L1475】
 
 If the test fails, double-check that:
-- You chose the correct repository when creating the token.
-- The token still has time left before expiration.
-- Contents permission is set to **Read and Write**.
+
+-   You chose the correct repository when creating the token.
+-   The token still has time left before expiration.
+-   Contents permission is set to **Read and Write**.
 
 ---
 
@@ -95,4 +103,5 @@ Absolutely. Go back to **Settings → Developer settings → Personal access tok
 ---
 
 ### Need more help?
+
 Share this guide with your design teammates, or contact your developer partner if you run into account restrictions (for example, if your organization limits who can create tokens).
