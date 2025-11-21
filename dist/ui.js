@@ -823,8 +823,8 @@
       updateExportCommitEnabled();
     }
     function updateExportCommitEnabled() {
-      const collectionSelect2 = pickCollectionSelect();
-      const modeSelect2 = pickModeSelect();
+      const collectionSelect = pickCollectionSelect();
+      const modeSelect = pickModeSelect();
       const hasRepo = !!(currentOwner && currentRepo);
       const br = getCurrentBranch();
       const commitMsg = ((ghCommitMsgInput == null ? void 0 : ghCommitMsgInput.value) || "").trim();
@@ -833,7 +833,7 @@
       const folderRaw = ghFolderInput ? ghFolderInput.value.trim() : "";
       const hasFolder = normalizeFolderInput(folderRaw).display.length > 0;
       const hasFilename = filenameValidation.ok;
-      const hasSelection = scopeAll || scopeTypography ? true : !!(collectionSelect2 && collectionSelect2.value && modeSelect2 && modeSelect2.value);
+      const hasSelection = scopeAll || scopeTypography ? true : !!(collectionSelect && collectionSelect.value && modeSelect && modeSelect.value);
       let ready = !!(ghIsAuthed && hasRepo && br && commitMsg && hasSelection && hasFolder && hasFilename);
       if (ghCollectionsRefreshing) {
         ready = false;
@@ -1311,19 +1311,19 @@
       if (ghExportAndCommitBtn) {
         ghExportAndCommitBtn.addEventListener("click", () => {
           var _a, _b;
-          const collectionSelect2 = pickCollectionSelect();
-          const modeSelect2 = pickModeSelect();
+          const collectionSelect = pickCollectionSelect();
+          const modeSelect = pickModeSelect();
           const scope = ghScopeAll && ghScopeAll.checked ? "all" : ghScopeTypography && ghScopeTypography.checked ? "typography" : "selected";
-          const selectedCollection = collectionSelect2 ? collectionSelect2.value || "" : "";
-          const selectedMode = modeSelect2 ? modeSelect2.value || "" : "";
+          const selectedCollection = collectionSelect ? collectionSelect.value || "" : "";
+          const selectedMode = modeSelect ? modeSelect.value || "" : "";
           const commitMessage = ((ghCommitMsgInput == null ? void 0 : ghCommitMsgInput.value) || "Update tokens from Figma").trim();
           const normalizedFolder = normalizeFolderInput((ghFolderInput == null ? void 0 : ghFolderInput.value) || "");
           refreshFilenameValidation();
           if (scope === "selected") {
             if (!selectedCollection || !selectedMode) {
               deps.log("Pick a collection and a mode before exporting.");
-              if (!selectedCollection && collectionSelect2) collectionSelect2.focus();
-              else if (!selectedMode && modeSelect2) modeSelect2.focus();
+              if (!selectedCollection && collectionSelect) collectionSelect.focus();
+              else if (!selectedMode && modeSelect) modeSelect.focus();
               updateExportCommitEnabled();
               return;
             }
@@ -1572,16 +1572,16 @@
           if (ghNewBranchName) ghNewBranchName.value = "";
           if (url) {
             deps.log(`Branch created: ${newBranch} (from ${baseBranch})`);
-            const logEl2 = deps.getLogElement();
-            if (logEl2 && doc) {
+            const logEl = deps.getLogElement();
+            if (logEl && doc) {
               const wrap = doc.createElement("div");
               const a = doc.createElement("a");
               a.href = url;
               a.target = "_blank";
               a.textContent = "View on GitHub";
               wrap.appendChild(a);
-              logEl2.appendChild(wrap);
-              logEl2.scrollTop = logEl2.scrollHeight;
+              logEl.appendChild(wrap);
+              logEl.scrollTop = logEl.scrollHeight;
             }
           } else {
             deps.log(`Branch created: ${newBranch} (from ${baseBranch})`);
@@ -1652,16 +1652,16 @@
           deps.log(`Commit succeeded (${branch}): ${url || "(no URL)"}`);
           deps.log(`Committed ${committedPath}`);
           if (url) {
-            const logEl2 = deps.getLogElement();
-            if (logEl2 && doc) {
+            const logEl = deps.getLogElement();
+            if (logEl && doc) {
               const wrap = doc.createElement("div");
               const a = doc.createElement("a");
               a.href = url;
               a.target = "_blank";
               a.textContent = "View commit";
               wrap.appendChild(a);
-              logEl2.appendChild(wrap);
-              logEl2.scrollTop = logEl2.scrollHeight;
+              logEl.appendChild(wrap);
+              logEl.scrollTop = logEl.scrollHeight;
             }
           }
           if (msg.payload.createdPr) {
@@ -1686,16 +1686,16 @@
           deps.log(`PR created: #${msg.payload.number} (${msg.payload.head} \u2192 ${msg.payload.base})`);
           const url = msg.payload.url;
           if (url) {
-            const logEl2 = deps.getLogElement();
-            if (logEl2 && doc) {
+            const logEl = deps.getLogElement();
+            if (logEl && doc) {
               const wrap = doc.createElement("div");
               const a = doc.createElement("a");
               a.href = url;
               a.target = "_blank";
               a.textContent = "View PR";
               wrap.appendChild(a);
-              logEl2.appendChild(wrap);
-              logEl2.scrollTop = logEl2.scrollHeight;
+              logEl.appendChild(wrap);
+              logEl.scrollTop = logEl.scrollHeight;
             }
           }
         } else {
@@ -1744,123 +1744,143 @@
     };
   }
 
-  // src/app/ui.ts
-  var logEl = null;
-  var rawEl = null;
-  var exportAllChk = null;
-  var collectionSelect = null;
-  var modeSelect = null;
-  var fileInput = null;
-  var importBtn = null;
-  var exportBtn = null;
-  var exportTypographyBtn = null;
-  var exportPickers = null;
-  var refreshBtn = null;
-  var shellEl = null;
-  var drawerToggleBtn = null;
-  var resizeHandleEl = null;
-  var w3cPreviewEl = null;
-  var copyRawBtn = null;
-  var copyW3cBtn = null;
-  var copyLogBtn = null;
-  var allowHexChk = null;
-  var styleDictionaryChk = null;
-  var flatTokensChk = null;
-  var githubRememberChk = null;
-  var importScopeOverlay = null;
-  var importScopeBody = null;
-  var importScopeConfirmBtn = null;
-  var importScopeCancelBtn = null;
-  var importScopeRememberChk = null;
-  var importScopeMissingEl = null;
-  var importScopeSummaryEl = null;
-  var importScopeSummaryTextEl = null;
-  var importScopeClearBtn = null;
-  var importSkipLogListEl = null;
-  var importSkipLogEmptyEl = null;
-  var IMPORT_PREF_KEY = "dtcg.importPreference.v1";
-  var IMPORT_LOG_KEY = "dtcg.importLog.v1";
-  var importPreference = null;
-  var importLogEntries = [];
-  var importScopeModalState = null;
-  var lastImportSelection = [];
-  var systemDarkMode = false;
-  function applyTheme() {
-    const effective = systemDarkMode ? "dark" : "light";
-    if (effective === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
+  // src/app/ui/dom.ts
+  var uiElements = {
+    logEl: null,
+    rawEl: null,
+    exportAllChk: null,
+    collectionSelect: null,
+    modeSelect: null,
+    fileInput: null,
+    importBtn: null,
+    exportBtn: null,
+    exportTypographyBtn: null,
+    exportPickers: null,
+    refreshBtn: null,
+    shellEl: null,
+    drawerToggleBtn: null,
+    resizeHandleEl: null,
+    w3cPreviewEl: null,
+    copyRawBtn: null,
+    copyW3cBtn: null,
+    copyLogBtn: null,
+    allowHexChk: null,
+    styleDictionaryChk: null,
+    flatTokensChk: null,
+    githubRememberChk: null,
+    importScopeOverlay: null,
+    importScopeBody: null,
+    importScopeConfirmBtn: null,
+    importScopeCancelBtn: null,
+    importScopeRememberChk: null,
+    importScopeMissingEl: null,
+    importScopeSummaryEl: null,
+    importScopeSummaryTextEl: null,
+    importScopeClearBtn: null,
+    importSkipLogListEl: null,
+    importSkipLogEmptyEl: null
+  };
+  function initDomElements() {
+    if (typeof document === "undefined") return;
+    uiElements.logEl = document.getElementById("log");
+    uiElements.rawEl = document.getElementById("raw");
+    uiElements.exportAllChk = document.getElementById(
+      "exportAllChk"
+    );
+    uiElements.collectionSelect = document.getElementById(
+      "collectionSelect"
+    );
+    uiElements.modeSelect = document.getElementById(
+      "modeSelect"
+    );
+    uiElements.fileInput = document.getElementById(
+      "file"
+    );
+    uiElements.importBtn = document.getElementById(
+      "importBtn"
+    );
+    uiElements.exportBtn = document.getElementById(
+      "exportBtn"
+    );
+    uiElements.exportTypographyBtn = document.getElementById(
+      "exportTypographyBtn"
+    );
+    uiElements.exportPickers = document.getElementById("exportPickers");
+    uiElements.refreshBtn = document.getElementById(
+      "refreshBtn"
+    );
+    uiElements.shellEl = document.querySelector(".shell");
+    uiElements.drawerToggleBtn = document.getElementById(
+      "drawerToggleBtn"
+    );
+    uiElements.resizeHandleEl = document.getElementById("resizeHandle");
+    uiElements.w3cPreviewEl = document.getElementById(
+      "w3cPreview"
+    );
+    uiElements.copyRawBtn = document.getElementById(
+      "copyRawBtn"
+    );
+    uiElements.copyW3cBtn = document.getElementById(
+      "copyW3cBtn"
+    );
+    uiElements.copyLogBtn = document.getElementById(
+      "copyLogBtn"
+    );
+    uiElements.allowHexChk = document.getElementById(
+      "allowHexChk"
+    );
+    uiElements.styleDictionaryChk = document.getElementById(
+      "styleDictionaryChk"
+    );
+    uiElements.flatTokensChk = document.getElementById(
+      "flatTokensChk"
+    );
+    uiElements.githubRememberChk = document.getElementById(
+      "githubRememberChk"
+    );
+    uiElements.importScopeOverlay = document.getElementById("importScopeOverlay");
+    uiElements.importScopeBody = document.getElementById("importScopeBody");
+    uiElements.importScopeConfirmBtn = document.getElementById(
+      "importScopeConfirmBtn"
+    );
+    uiElements.importScopeCancelBtn = document.getElementById(
+      "importScopeCancelBtn"
+    );
+    uiElements.importScopeRememberChk = document.getElementById(
+      "importScopeRememberChk"
+    );
+    uiElements.importScopeMissingEl = document.getElementById(
+      "importScopeMissingNotice"
+    );
+    uiElements.importScopeSummaryEl = document.getElementById("importScopeSummary");
+    uiElements.importScopeSummaryTextEl = document.getElementById(
+      "importScopeSummaryText"
+    );
+    uiElements.importScopeClearBtn = document.getElementById(
+      "importScopeClearBtn"
+    );
+    uiElements.importSkipLogListEl = document.getElementById("importSkipLogList");
+    uiElements.importSkipLogEmptyEl = document.getElementById("importSkipLogEmpty");
+  }
+
+  // src/app/ui/utils.ts
+  function log(msg) {
+    const t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
+    const line = document.createElement("div");
+    line.textContent = "[" + t + "] " + msg;
+    if (uiElements.logEl) {
+      uiElements.logEl.appendChild(line);
+      uiElements.logEl.scrollTop = uiElements.logEl.scrollHeight;
     }
   }
-  function prettyExportName(original) {
-    const name = original && typeof original === "string" ? original : "tokens.json";
-    const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
-    if (m) {
-      const collection = m[1].trim();
-      const mode = m[2].trim();
-      return `${collection} - ${mode}.json`;
-    }
-    return name.endsWith(".json") ? name : name + ".json";
+  function postToPlugin(message) {
+    parent.postMessage({ pluginMessage: message }, "*");
   }
-  var pendingSave = null;
-  function supportsFilePicker() {
-    return typeof window.showSaveFilePicker === "function";
-  }
-  async function beginPendingSave(suggestedName) {
+  function prettyJson(obj) {
     try {
-      if (!supportsFilePicker()) return false;
-      const handle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [
-          {
-            description: "JSON",
-            accept: { "application/json": [".json"] }
-          }
-        ]
-      });
-      const writable = await handle.createWritable();
-      pendingSave = { writable, name: suggestedName };
-      return true;
+      return JSON.stringify(obj, null, 2);
     } catch (e) {
-      pendingSave = null;
-      return false;
-    }
-  }
-  async function finishPendingSave(text) {
-    if (!pendingSave) return false;
-    try {
-      await pendingSave.writable.write(
-        new Blob([text], { type: "application/json" })
-      );
-      await pendingSave.writable.close();
-      return true;
-    } catch (e) {
-      try {
-        await pendingSave.writable.close();
-      } catch (e2) {
-      }
-      return false;
-    } finally {
-      pendingSave = null;
-    }
-  }
-  function triggerJsonDownload(filename, text) {
-    try {
-      const blob = new Blob([text], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.style.position = "absolute";
-      a.style.left = "-9999px";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-        a.remove();
-      }, 0);
-    } catch (e) {
+      return String(obj);
     }
   }
   function copyElText(el, label) {
@@ -1891,6 +1911,27 @@
       log(`Could not copy ${label}.`);
     }
   }
+
+  // src/app/ui/state.ts
+  var appState = {
+    importPreference: null,
+    importLogEntries: [],
+    importScopeModalState: null,
+    lastImportSelection: [],
+    systemDarkMode: false,
+    // Export state
+    pendingSave: null,
+    // Resize state
+    resizeTracking: null,
+    resizeQueued: null,
+    resizeRaf: 0,
+    // Collections state
+    currentCollections: []
+  };
+
+  // src/app/ui/storage.ts
+  var IMPORT_PREF_KEY = "dtcg.importPreference.v1";
+  var IMPORT_LOG_KEY = "dtcg.importLog.v1";
   function normalizeContextList(list) {
     var _a;
     const seen = /* @__PURE__ */ new Set();
@@ -1910,65 +1951,80 @@
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
     return true;
   }
-  function saveImportPreference() {
-    var _a, _b;
-    if (!importPreference || importPreference.contexts.length === 0) {
-      try {
-        (_a = window.localStorage) == null ? void 0 : _a.removeItem(IMPORT_PREF_KEY);
-      } catch (e) {
-      }
-      return;
-    }
-    try {
-      (_b = window.localStorage) == null ? void 0 : _b.setItem(
-        IMPORT_PREF_KEY,
-        JSON.stringify(importPreference)
-      );
-    } catch (e) {
-    }
-  }
-  function loadImportPreference() {
+  function readImportPreference() {
     var _a;
-    importPreference = null;
     try {
       const raw = (_a = window.localStorage) == null ? void 0 : _a.getItem(IMPORT_PREF_KEY);
-      if (!raw) return;
+      if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return;
+      if (!parsed || typeof parsed !== "object") return null;
       const ctxs = Array.isArray(parsed.contexts) ? normalizeContextList(parsed.contexts) : [];
       const ts = typeof parsed.updatedAt === "number" ? Number(parsed.updatedAt) : Date.now();
-      if (ctxs.length > 0)
-        importPreference = { contexts: ctxs, updatedAt: ts };
+      if (ctxs.length > 0) return { contexts: ctxs, updatedAt: ts };
     } catch (e) {
-      importPreference = null;
     }
+    return null;
   }
-  function setImportPreference(contexts) {
-    const normalized = normalizeContextList(contexts);
-    if (normalized.length === 0) {
-      clearImportPreference(false);
-      return;
-    }
-    const same = importPreference && contextsEqual(importPreference.contexts, normalized);
-    importPreference = { contexts: normalized, updatedAt: Date.now() };
-    saveImportPreference();
-    renderImportPreferenceSummary();
-    if (!same) log("Remembered import selection for future imports.");
-  }
-  function clearImportPreference(logChange) {
+  function writeImportPreference(pref) {
     var _a;
-    if (!importPreference) return;
-    importPreference = null;
+    try {
+      (_a = window.localStorage) == null ? void 0 : _a.setItem(IMPORT_PREF_KEY, JSON.stringify(pref));
+    } catch (e) {
+    }
+  }
+  function removeImportPreference() {
+    var _a;
     try {
       (_a = window.localStorage) == null ? void 0 : _a.removeItem(IMPORT_PREF_KEY);
     } catch (e) {
     }
-    renderImportPreferenceSummary();
-    if (logChange)
-      log(
-        "Cleared remembered import selection. Next import will prompt for modes."
-      );
   }
+  function readImportLog() {
+    var _a;
+    try {
+      const raw = (_a = window.localStorage) == null ? void 0 : _a.getItem(IMPORT_LOG_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      const entries = [];
+      for (let i = 0; i < parsed.length; i++) {
+        const entry = parsed[i];
+        if (!entry || typeof entry !== "object") continue;
+        const timestamp = typeof entry.timestamp === "number" ? Number(entry.timestamp) : null;
+        const summary = entry.summary;
+        const source = entry.source === "github" ? "github" : entry.source === "local" ? "local" : void 0;
+        if (!timestamp || !summary || typeof summary !== "object") continue;
+        if (!Array.isArray(summary.appliedContexts) || !Array.isArray(summary.availableContexts))
+          continue;
+        if (!Array.isArray(summary.tokensWithRemovedContexts)) {
+          summary.tokensWithRemovedContexts = [];
+        }
+        if (!Array.isArray(summary.skippedContexts)) {
+          summary.skippedContexts = [];
+        }
+        if (!Array.isArray(summary.missingRequestedContexts)) {
+          summary.missingRequestedContexts = [];
+        }
+        if (typeof summary.createdStyles !== "number" || !isFinite(summary.createdStyles)) {
+          summary.createdStyles = 0;
+        }
+        entries.push({ timestamp, summary, source });
+      }
+      entries.sort((a, b) => a.timestamp - b.timestamp);
+      return entries;
+    } catch (e) {
+      return [];
+    }
+  }
+  function writeImportLog(entries) {
+    var _a;
+    try {
+      (_a = window.localStorage) == null ? void 0 : _a.setItem(IMPORT_LOG_KEY, JSON.stringify(entries));
+    } catch (e) {
+    }
+  }
+
+  // src/app/ui/features/import.ts
   function formatContextList(contexts) {
     const normalized = normalizeContextList(contexts);
     if (normalized.length === 0) return "All contexts";
@@ -1996,75 +2052,34 @@
     return parts.join("; ");
   }
   function renderImportPreferenceSummary() {
-    if (!importScopeSummaryEl || !importScopeSummaryTextEl) return;
-    const hasPref = !!importPreference && importPreference.contexts.length > 0;
-    if (importScopeClearBtn) importScopeClearBtn.disabled = !hasPref;
+    if (!uiElements.importScopeSummaryEl || !uiElements.importScopeSummaryTextEl)
+      return;
+    const hasPref = !!appState.importPreference && appState.importPreference.contexts.length > 0;
+    if (uiElements.importScopeClearBtn)
+      uiElements.importScopeClearBtn.disabled = !hasPref;
     if (!hasPref) {
-      importScopeSummaryEl.hidden = true;
+      uiElements.importScopeSummaryEl.hidden = true;
       return;
     }
-    importScopeSummaryEl.hidden = false;
-    const when = new Date(importPreference.updatedAt).toLocaleString();
-    importScopeSummaryTextEl.textContent = `Remembered import scope (${when}): ${formatContextList(
-      importPreference.contexts
+    uiElements.importScopeSummaryEl.hidden = false;
+    const when = new Date(
+      appState.importPreference.updatedAt
+    ).toLocaleString();
+    uiElements.importScopeSummaryTextEl.textContent = `Remembered import scope (${when}): ${formatContextList(
+      appState.importPreference.contexts
     )}.`;
   }
-  function saveImportLog() {
-    var _a;
-    try {
-      (_a = window.localStorage) == null ? void 0 : _a.setItem(
-        IMPORT_LOG_KEY,
-        JSON.stringify(importLogEntries)
-      );
-    } catch (e) {
-    }
-  }
-  function loadImportLog() {
-    var _a;
-    importLogEntries = [];
-    try {
-      const raw = (_a = window.localStorage) == null ? void 0 : _a.getItem(IMPORT_LOG_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      for (let i = 0; i < parsed.length; i++) {
-        const entry = parsed[i];
-        if (!entry || typeof entry !== "object") continue;
-        const timestamp = typeof entry.timestamp === "number" ? Number(entry.timestamp) : null;
-        const summary = entry.summary;
-        const source = entry.source === "github" ? "github" : entry.source === "local" ? "local" : void 0;
-        if (!timestamp || !summary || typeof summary !== "object") continue;
-        if (!Array.isArray(summary.appliedContexts) || !Array.isArray(summary.availableContexts))
-          continue;
-        if (!Array.isArray(summary.tokensWithRemovedContexts)) {
-          summary.tokensWithRemovedContexts = [];
-        }
-        if (!Array.isArray(summary.skippedContexts)) {
-          summary.skippedContexts = [];
-        }
-        if (!Array.isArray(summary.missingRequestedContexts)) {
-          summary.missingRequestedContexts = [];
-        }
-        if (typeof summary.createdStyles !== "number" || !isFinite(summary.createdStyles)) {
-          summary.createdStyles = 0;
-        }
-        importLogEntries.push({ timestamp, summary, source });
-      }
-      importLogEntries.sort((a, b) => a.timestamp - b.timestamp);
-    } catch (e) {
-      importLogEntries = [];
-    }
-  }
   function renderImportLog() {
-    if (!(importSkipLogListEl && importSkipLogEmptyEl)) return;
-    importSkipLogListEl.innerHTML = "";
-    if (!importLogEntries || importLogEntries.length === 0) {
-      importSkipLogEmptyEl.hidden = false;
+    if (!(uiElements.importSkipLogListEl && uiElements.importSkipLogEmptyEl))
+      return;
+    uiElements.importSkipLogListEl.innerHTML = "";
+    if (!appState.importLogEntries || appState.importLogEntries.length === 0) {
+      uiElements.importSkipLogEmptyEl.hidden = false;
       return;
     }
-    importSkipLogEmptyEl.hidden = true;
-    for (let idx = importLogEntries.length - 1; idx >= 0; idx--) {
-      const entry = importLogEntries[idx];
+    uiElements.importSkipLogEmptyEl.hidden = true;
+    for (let idx = appState.importLogEntries.length - 1; idx >= 0; idx--) {
+      const entry = appState.importLogEntries[idx];
       const container = document.createElement("div");
       container.className = "import-skip-log-entry";
       const header = document.createElement("div");
@@ -2131,22 +2146,46 @@
         }
         container.appendChild(tokenList);
       }
-      if (entry.summary.skippedContexts.length > 0 && importPreference && importPreference.contexts.length > 0) {
+      if (entry.summary.skippedContexts.length > 0 && appState.importPreference && appState.importPreference.contexts.length > 0) {
         const tip = document.createElement("div");
         tip.className = "import-skip-log-entry-note";
         tip.textContent = "Tip: Clear the remembered import selection to restore skipped modes.";
         container.appendChild(tip);
       }
-      importSkipLogListEl.appendChild(container);
+      uiElements.importSkipLogListEl.appendChild(container);
     }
   }
   function addImportLogEntry(entry) {
-    importLogEntries.push(entry);
-    if (importLogEntries.length > 10) {
-      importLogEntries = importLogEntries.slice(importLogEntries.length - 10);
+    appState.importLogEntries.push(entry);
+    if (appState.importLogEntries.length > 10) {
+      appState.importLogEntries = appState.importLogEntries.slice(
+        appState.importLogEntries.length - 10
+      );
     }
-    saveImportLog();
+    writeImportLog(appState.importLogEntries);
     renderImportLog();
+  }
+  function setImportPreference(contexts) {
+    const normalized = normalizeContextList(contexts);
+    if (normalized.length === 0) {
+      clearImportPreference(false);
+      return;
+    }
+    const same = appState.importPreference && contextsEqual(appState.importPreference.contexts, normalized);
+    appState.importPreference = { contexts: normalized, updatedAt: Date.now() };
+    writeImportPreference(appState.importPreference);
+    renderImportPreferenceSummary();
+    if (!same) log("Remembered import selection for future imports.");
+  }
+  function clearImportPreference(logChange) {
+    if (!appState.importPreference) return;
+    appState.importPreference = null;
+    removeImportPreference();
+    renderImportPreferenceSummary();
+    if (logChange)
+      log(
+        "Cleared remembered import selection. Next import will prompt for modes."
+      );
   }
   function collectContextsFromJson(root) {
     const grouped = /* @__PURE__ */ new Map();
@@ -2205,8 +2244,8 @@
     return options;
   }
   function updateImportScopeConfirmState() {
-    if (!importScopeModalState) return;
-    const state = importScopeModalState;
+    if (!appState.importScopeModalState) return;
+    const state = appState.importScopeModalState;
     let allCollectionsSelected = true;
     for (let i = 0; i < state.collections.length; i++) {
       const collection = state.collections[i];
@@ -2216,10 +2255,10 @@
         break;
       }
     }
-    if (importScopeConfirmBtn) {
-      importScopeConfirmBtn.disabled = !allCollectionsSelected;
+    if (uiElements.importScopeConfirmBtn) {
+      uiElements.importScopeConfirmBtn.disabled = !allCollectionsSelected;
       const label = state.collections.length > 1 ? "Import selected modes" : "Import selected mode";
-      importScopeConfirmBtn.textContent = label;
+      uiElements.importScopeConfirmBtn.textContent = label;
     }
   }
   var importScopeKeyListenerAttached = false;
@@ -2231,11 +2270,11 @@
   }
   function openImportScopeModal(opts) {
     var _a;
-    if (!importScopeOverlay || !importScopeBody || !importScopeConfirmBtn || !importScopeCancelBtn) {
+    if (!uiElements.importScopeOverlay || !uiElements.importScopeBody || !uiElements.importScopeConfirmBtn || !uiElements.importScopeCancelBtn) {
       opts.onConfirm(opts.initialSelection, opts.rememberInitially);
       return;
     }
-    importScopeBody.innerHTML = "";
+    uiElements.importScopeBody.innerHTML = "";
     const grouped = /* @__PURE__ */ new Map();
     for (let i = 0; i < opts.options.length; i++) {
       const option = opts.options[i];
@@ -2247,7 +2286,7 @@
     const collections = Array.from(grouped.keys()).sort(
       (a, b) => a < b ? -1 : a > b ? 1 : 0
     );
-    importScopeModalState = {
+    appState.importScopeModalState = {
       options: opts.options,
       collections,
       inputs: [],
@@ -2283,10 +2322,17 @@
         radio.value = opt.context;
         radio.checked = defaultContext === opt.context;
         radio.addEventListener("change", updateImportScopeConfirmState);
-        importScopeModalState.inputs.push(radio);
-        const list = importScopeModalState.inputsByCollection.get(collection) || [];
-        if (!importScopeModalState.inputsByCollection.has(collection)) {
-          importScopeModalState.inputsByCollection.set(collection, list);
+        appState.importScopeModalState.inputs.push(radio);
+        const list = appState.importScopeModalState.inputsByCollection.get(
+          collection
+        ) || [];
+        if (!appState.importScopeModalState.inputsByCollection.has(
+          collection
+        )) {
+          appState.importScopeModalState.inputsByCollection.set(
+            collection,
+            list
+          );
         }
         list.push(radio);
         const span = document.createElement("span");
@@ -2295,39 +2341,40 @@
         label.appendChild(span);
         groupEl.appendChild(label);
       }
-      importScopeBody.appendChild(groupEl);
+      uiElements.importScopeBody.appendChild(groupEl);
     }
-    if (importScopeRememberChk)
-      importScopeRememberChk.checked = opts.rememberInitially;
-    if (importScopeMissingEl) {
+    if (uiElements.importScopeRememberChk)
+      uiElements.importScopeRememberChk.checked = opts.rememberInitially;
+    if (uiElements.importScopeMissingEl) {
       if (opts.missingPreferred.length > 0) {
-        importScopeMissingEl.hidden = false;
-        importScopeMissingEl.textContent = "Previously remembered modes not present in this file: " + formatContextList(opts.missingPreferred);
+        uiElements.importScopeMissingEl.hidden = false;
+        uiElements.importScopeMissingEl.textContent = "Previously remembered modes not present in this file: " + formatContextList(opts.missingPreferred);
       } else {
-        importScopeMissingEl.hidden = true;
-        importScopeMissingEl.textContent = "";
+        uiElements.importScopeMissingEl.hidden = true;
+        uiElements.importScopeMissingEl.textContent = "";
       }
     }
     updateImportScopeConfirmState();
-    importScopeOverlay.hidden = false;
-    importScopeOverlay.classList.add("is-open");
-    importScopeOverlay.setAttribute("aria-hidden", "false");
+    uiElements.importScopeOverlay.hidden = false;
+    uiElements.importScopeOverlay.classList.add("is-open");
+    uiElements.importScopeOverlay.setAttribute("aria-hidden", "false");
     if (!importScopeKeyListenerAttached) {
       window.addEventListener("keydown", handleImportScopeKeydown, true);
       importScopeKeyListenerAttached = true;
     }
-    if (importScopeConfirmBtn) importScopeConfirmBtn.focus();
+    if (uiElements.importScopeConfirmBtn)
+      uiElements.importScopeConfirmBtn.focus();
   }
   function closeImportScopeModal() {
-    if (!importScopeOverlay) return;
-    importScopeOverlay.classList.remove("is-open");
-    importScopeOverlay.hidden = true;
-    importScopeOverlay.setAttribute("aria-hidden", "true");
+    if (!uiElements.importScopeOverlay) return;
+    uiElements.importScopeOverlay.classList.remove("is-open");
+    uiElements.importScopeOverlay.hidden = true;
+    uiElements.importScopeOverlay.setAttribute("aria-hidden", "true");
     if (importScopeKeyListenerAttached) {
       window.removeEventListener("keydown", handleImportScopeKeydown, true);
       importScopeKeyListenerAttached = false;
     }
-    importScopeModalState = null;
+    appState.importScopeModalState = null;
   }
   function performImport(json, allowHex, contexts) {
     const normalized = normalizeContextList(contexts);
@@ -2343,7 +2390,7 @@
       payload: { json, allowHexStrings: allowHex }
     };
     postToPlugin(payload);
-    lastImportSelection = normalized.slice();
+    appState.lastImportSelection = normalized.slice();
     const label = normalized.length > 0 ? formatContextList(normalized) : "all contexts";
     log(`Import requested (${label}).`);
   }
@@ -2365,9 +2412,9 @@
     const missingPreferred = [];
     let rememberInitially = false;
     const initialSelectionsByCollection = /* @__PURE__ */ new Map();
-    if (importPreference && importPreference.contexts.length > 0) {
-      for (let i = 0; i < importPreference.contexts.length; i++) {
-        const ctx = importPreference.contexts[i];
+    if (appState.importPreference && appState.importPreference.contexts.length > 0) {
+      for (let i = 0; i < appState.importPreference.contexts.length; i++) {
+        const ctx = appState.importPreference.contexts[i];
         if (availableSet.has(ctx)) {
           const match = options.find((opt) => opt.context === ctx);
           if (match) {
@@ -2411,70 +2458,148 @@
       missingPreferred,
       onConfirm: (selected, remember) => {
         if (remember) setImportPreference(selected);
-        else if (importPreference) clearImportPreference(true);
+        else if (appState.importPreference) clearImportPreference(true);
         performImport(json, allowHex, selected);
       }
     });
   }
   function getPreferredImportContexts() {
-    if (importPreference && importPreference.contexts.length > 0)
-      return importPreference.contexts.slice();
-    if (lastImportSelection.length > 0) return lastImportSelection.slice();
+    if (appState.importPreference && appState.importPreference.contexts.length > 0)
+      return appState.importPreference.contexts.slice();
+    if (appState.lastImportSelection.length > 0)
+      return appState.lastImportSelection.slice();
     return [];
   }
+
+  // src/app/ui/features/export.ts
+  function prettyExportName(original) {
+    const name = original && typeof original === "string" ? original : "tokens.json";
+    const m = name.match(/^(.*)_mode=(.*)\.tokens\.json$/);
+    if (m) {
+      const collection = m[1].trim();
+      const mode = m[2].trim();
+      return `${collection} - ${mode}.json`;
+    }
+    return name.endsWith(".json") ? name : name + ".json";
+  }
+  function supportsFilePicker() {
+    return typeof window.showSaveFilePicker === "function";
+  }
+  async function beginPendingSave(suggestedName) {
+    try {
+      if (!supportsFilePicker()) return false;
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [
+          {
+            description: "JSON",
+            accept: { "application/json": [".json"] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      appState.pendingSave = { writable, name: suggestedName };
+      return true;
+    } catch (e) {
+      appState.pendingSave = null;
+      return false;
+    }
+  }
+  async function finishPendingSave(text) {
+    if (!appState.pendingSave) return false;
+    try {
+      await appState.pendingSave.writable.write(
+        new Blob([text], { type: "application/json" })
+      );
+      await appState.pendingSave.writable.close();
+      return true;
+    } catch (e) {
+      try {
+        await appState.pendingSave.writable.close();
+      } catch (e2) {
+      }
+      return false;
+    } finally {
+      appState.pendingSave = null;
+    }
+  }
+  function triggerJsonDownload(filename, text) {
+    try {
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.style.position = "absolute";
+      a.style.left = "-9999px";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 0);
+    } catch (e) {
+    }
+  }
+
+  // src/app/ui/features/resize.ts
   function postResize(width, height) {
     const w = Math.max(720, Math.min(1600, Math.floor(width)));
     const h = Math.max(420, Math.min(1200, Math.floor(height)));
     postToPlugin({ type: "UI_RESIZE", payload: { width: w, height: h } });
   }
-  var resizeTracking = null;
-  var resizeQueued = null;
-  var resizeRaf = 0;
   function queueResize(width, height) {
-    resizeQueued = { width, height };
-    if (resizeRaf !== 0) return;
-    resizeRaf = window.requestAnimationFrame(() => {
-      resizeRaf = 0;
-      if (!resizeQueued) return;
-      postResize(resizeQueued.width, resizeQueued.height);
-      resizeQueued = null;
+    appState.resizeQueued = { width, height };
+    if (appState.resizeRaf !== 0) return;
+    appState.resizeRaf = window.requestAnimationFrame(() => {
+      appState.resizeRaf = 0;
+      if (!appState.resizeQueued) return;
+      postResize(appState.resizeQueued.width, appState.resizeQueued.height);
+      appState.resizeQueued = null;
     });
   }
   function applyResizeDelta(ev) {
-    if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
-    const dx = ev.clientX - resizeTracking.startX;
-    const dy = ev.clientY - resizeTracking.startY;
-    const nextW = resizeTracking.startWidth + dx;
-    const nextH = resizeTracking.startHeight + dy;
+    if (!appState.resizeTracking || ev.pointerId !== appState.resizeTracking.pointerId)
+      return;
+    const dx = ev.clientX - appState.resizeTracking.startX;
+    const dy = ev.clientY - appState.resizeTracking.startY;
+    const nextW = appState.resizeTracking.startWidth + dx;
+    const nextH = appState.resizeTracking.startHeight + dy;
     queueResize(nextW, nextH);
     ev.preventDefault();
   }
   function endResize(ev) {
-    if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
+    if (!appState.resizeTracking || ev.pointerId !== appState.resizeTracking.pointerId)
+      return;
     applyResizeDelta(ev);
     window.removeEventListener("pointermove", handleResizeMove, true);
     window.removeEventListener("pointerup", endResize, true);
     window.removeEventListener("pointercancel", cancelResize, true);
-    if (resizeHandleEl) {
+    if (uiElements.resizeHandleEl) {
       try {
-        resizeHandleEl.releasePointerCapture(resizeTracking.pointerId);
+        uiElements.resizeHandleEl.releasePointerCapture(
+          appState.resizeTracking.pointerId
+        );
       } catch (e) {
       }
     }
-    resizeTracking = null;
+    appState.resizeTracking = null;
   }
   function cancelResize(ev) {
-    if (!resizeTracking || ev.pointerId !== resizeTracking.pointerId) return;
+    if (!appState.resizeTracking || ev.pointerId !== appState.resizeTracking.pointerId)
+      return;
     window.removeEventListener("pointermove", handleResizeMove, true);
     window.removeEventListener("pointerup", endResize, true);
     window.removeEventListener("pointercancel", cancelResize, true);
-    if (resizeHandleEl) {
+    if (uiElements.resizeHandleEl) {
       try {
-        resizeHandleEl.releasePointerCapture(resizeTracking.pointerId);
+        uiElements.resizeHandleEl.releasePointerCapture(
+          appState.resizeTracking.pointerId
+        );
       } catch (e) {
       }
     }
-    resizeTracking = null;
+    appState.resizeTracking = null;
   }
   function handleResizeMove(ev) {
     applyResizeDelta(ev);
@@ -2495,83 +2620,80 @@
     const needsH = contentH > vh ? contentH : vh;
     if (needsW > vw || needsH > vh) postResize(needsW, needsH);
   }
-  var currentCollections = [];
-  function log(msg) {
-    const t = (/* @__PURE__ */ new Date()).toLocaleTimeString();
-    const line = document.createElement("div");
-    line.textContent = "[" + t + "] " + msg;
-    if (logEl) {
-      logEl.appendChild(line);
-      logEl.scrollTop = logEl.scrollHeight;
+
+  // src/app/ui.ts
+  function applyTheme() {
+    const effective = appState.systemDarkMode ? "dark" : "light";
+    if (effective === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
     }
-  }
-  function postToPlugin(message) {
-    parent.postMessage({ pluginMessage: message }, "*");
   }
   var githubUi = createGithubUi({
     postToPlugin: (message) => postToPlugin(message),
     log: (message) => log(message),
-    getLogElement: () => logEl,
-    getCollectionSelect: () => collectionSelect,
-    getModeSelect: () => modeSelect,
-    getAllowHexCheckbox: () => allowHexChk,
-    getStyleDictionaryCheckbox: () => styleDictionaryChk,
-    getFlatTokensCheckbox: () => flatTokensChk,
+    getLogElement: () => uiElements.logEl,
+    getCollectionSelect: () => uiElements.collectionSelect,
+    getModeSelect: () => uiElements.modeSelect,
+    getAllowHexCheckbox: () => uiElements.allowHexChk,
+    getStyleDictionaryCheckbox: () => uiElements.styleDictionaryChk,
+    getFlatTokensCheckbox: () => uiElements.flatTokensChk,
     getImportContexts: () => getPreferredImportContexts()
   });
   function clearSelect(sel) {
     while (sel.options.length > 0) sel.remove(0);
   }
   function setDisabledStates() {
-    if (importBtn && fileInput) {
-      const hasFile = !!(fileInput.files && fileInput.files.length > 0);
-      importBtn.disabled = !hasFile;
+    if (uiElements.importBtn && uiElements.fileInput) {
+      const hasFile = !!(uiElements.fileInput.files && uiElements.fileInput.files.length > 0);
+      uiElements.importBtn.disabled = !hasFile;
     }
-    if (exportBtn && exportAllChk && collectionSelect && modeSelect && exportPickers) {
-      const exportAll = !!exportAllChk.checked;
+    if (uiElements.exportBtn && uiElements.exportAllChk && uiElements.collectionSelect && uiElements.modeSelect && uiElements.exportPickers) {
+      const exportAll = !!uiElements.exportAllChk.checked;
       if (exportAll) {
-        exportBtn.disabled = false;
-        exportPickers.style.opacity = "0.5";
+        uiElements.exportBtn.disabled = false;
+        uiElements.exportPickers.style.opacity = "0.5";
       } else {
-        exportPickers.style.opacity = "1";
-        const hasSelection = !!collectionSelect.value && !!modeSelect.value;
-        exportBtn.disabled = !hasSelection;
+        uiElements.exportPickers.style.opacity = "1";
+        const hasSelection = !!uiElements.collectionSelect.value && !!uiElements.modeSelect.value;
+        uiElements.exportBtn.disabled = !hasSelection;
       }
     }
-    if (exportTypographyBtn) {
-      exportTypographyBtn.disabled = false;
+    if (uiElements.exportTypographyBtn) {
+      uiElements.exportTypographyBtn.disabled = false;
     }
   }
   function populateCollections(data) {
-    currentCollections = data.collections;
-    if (!(collectionSelect && modeSelect)) return;
-    clearSelect(collectionSelect);
+    appState.currentCollections = data.collections;
+    if (!(uiElements.collectionSelect && uiElements.modeSelect)) return;
+    clearSelect(uiElements.collectionSelect);
     for (let i = 0; i < data.collections.length; i++) {
       const c = data.collections[i];
       const opt = document.createElement("option");
       opt.value = c.name;
       opt.textContent = c.name;
-      collectionSelect.appendChild(opt);
+      uiElements.collectionSelect.appendChild(opt);
     }
     onCollectionChange();
   }
   function onCollectionChange() {
-    if (!(collectionSelect && modeSelect)) return;
-    const selected = collectionSelect.value;
-    clearSelect(modeSelect);
+    if (!(uiElements.collectionSelect && uiElements.modeSelect)) return;
+    const selected = uiElements.collectionSelect.value;
+    clearSelect(uiElements.modeSelect);
     let firstModeSet = false;
-    for (let i = 0; i < currentCollections.length; i++) {
-      const c = currentCollections[i];
+    for (let i = 0; i < appState.currentCollections.length; i++) {
+      const c = appState.currentCollections[i];
       if (c.name === selected) {
         for (let j = 0; j < c.modes.length; j++) {
           const m = c.modes[j];
           const opt = document.createElement("option");
           opt.value = m.name;
           opt.textContent = m.name;
-          modeSelect.appendChild(opt);
+          uiElements.modeSelect.appendChild(opt);
         }
-        if (modeSelect.options.length > 0 && modeSelect.selectedIndex === -1) {
-          modeSelect.selectedIndex = 0;
+        if (uiElements.modeSelect.options.length > 0 && uiElements.modeSelect.selectedIndex === -1) {
+          uiElements.modeSelect.selectedIndex = 0;
           firstModeSet = true;
         }
         break;
@@ -2582,44 +2704,38 @@
     if (firstModeSet) requestPreviewForCurrent();
   }
   function applyLastSelection(last) {
-    if (!last || !(collectionSelect && modeSelect)) return;
+    if (!last || !(uiElements.collectionSelect && uiElements.modeSelect))
+      return;
     let found = false;
-    for (let i = 0; i < collectionSelect.options.length; i++) {
-      if (collectionSelect.options[i].value === last.collection) {
-        collectionSelect.selectedIndex = i;
+    for (let i = 0; i < uiElements.collectionSelect.options.length; i++) {
+      if (uiElements.collectionSelect.options[i].value === last.collection) {
+        uiElements.collectionSelect.selectedIndex = i;
         found = true;
         break;
       }
     }
     onCollectionChange();
     if (found) {
-      for (let j = 0; j < modeSelect.options.length; j++) {
-        if (modeSelect.options[j].value === last.mode) {
-          modeSelect.selectedIndex = j;
+      for (let j = 0; j < uiElements.modeSelect.options.length; j++) {
+        if (uiElements.modeSelect.options[j].value === last.mode) {
+          uiElements.modeSelect.selectedIndex = j;
           break;
         }
       }
     }
     setDisabledStates();
   }
-  function prettyJson(obj) {
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch (e) {
-      return String(obj);
-    }
-  }
   function requestPreviewForCurrent() {
-    if (!(collectionSelect && modeSelect)) return;
-    const collection = collectionSelect.value || "";
-    const mode = modeSelect.value || "";
+    if (!(uiElements.collectionSelect && uiElements.modeSelect)) return;
+    const collection = uiElements.collectionSelect.value || "";
+    const mode = uiElements.modeSelect.value || "";
     if (!collection || !mode) {
-      if (w3cPreviewEl)
-        w3cPreviewEl.textContent = "{ /* select a collection & mode to preview */ }";
+      if (uiElements.w3cPreviewEl)
+        uiElements.w3cPreviewEl.textContent = "{ /* select a collection & mode to preview */ }";
       return;
     }
-    const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
-    const flatTokens = !!(flatTokensChk && flatTokensChk.checked);
+    const styleDictionary = !!(uiElements.styleDictionaryChk && uiElements.styleDictionaryChk.checked);
+    const flatTokens = !!(uiElements.flatTokensChk && uiElements.flatTokensChk.checked);
     postToPlugin({
       type: "PREVIEW_REQUEST",
       payload: { collection, mode, styleDictionary, flatTokens }
@@ -2646,9 +2762,9 @@
     if (msg.type === "IMPORT_SUMMARY") {
       const summary = msg.payload.summary;
       if (summary && Array.isArray(summary.appliedContexts)) {
-        lastImportSelection = summary.appliedContexts.slice();
+        appState.lastImportSelection = summary.appliedContexts.slice();
       } else {
-        lastImportSelection = [];
+        appState.lastImportSelection = [];
       }
       addImportLogEntry({
         timestamp: msg.payload.timestamp,
@@ -2665,7 +2781,7 @@
         log("Nothing to export.");
         return;
       }
-      if (pendingSave && files.length === 1) {
+      if (appState.pendingSave && files.length === 1) {
         const only = files[0];
         const fname = prettyExportName(only == null ? void 0 : only.name);
         const text = prettyJson(only == null ? void 0 : only.json);
@@ -2680,10 +2796,10 @@
             e.preventDefault();
             triggerJsonDownload(fname, text);
           });
-          if (logEl) {
+          if (uiElements.logEl) {
             div.appendChild(link);
-            logEl.appendChild(div);
-            logEl.scrollTop = logEl.scrollHeight;
+            uiElements.logEl.appendChild(div);
+            uiElements.logEl.scrollTop = uiElements.logEl.scrollHeight;
           }
           log("Export ready.");
           return;
@@ -2706,10 +2822,10 @@
           e.preventDefault();
           triggerJsonDownload(fname, text);
         });
-        if (logEl) {
+        if (uiElements.logEl) {
           div.appendChild(link);
-          logEl.appendChild(div);
-          logEl.scrollTop = logEl.scrollHeight;
+          uiElements.logEl.appendChild(div);
+          uiElements.logEl.scrollTop = uiElements.logEl.scrollHeight;
         }
       }
       log("Export ready.");
@@ -2719,26 +2835,27 @@
       const displayName = prettyExportName(msg.payload.name);
       const header = `/* ${displayName} */
 `;
-      if (w3cPreviewEl)
-        w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
+      if (uiElements.w3cPreviewEl)
+        uiElements.w3cPreviewEl.textContent = header + prettyJson(msg.payload.json);
       return;
     }
     if (msg.type === "COLLECTIONS_DATA") {
       githubUi.onCollectionsData();
       populateCollections({ collections: msg.payload.collections });
-      if (exportAllChk) exportAllChk.checked = !!msg.payload.exportAllPref;
-      if (styleDictionaryChk && typeof msg.payload.styleDictionaryPref === "boolean") {
-        styleDictionaryChk.checked = !!msg.payload.styleDictionaryPref;
+      if (uiElements.exportAllChk)
+        uiElements.exportAllChk.checked = !!msg.payload.exportAllPref;
+      if (uiElements.styleDictionaryChk && typeof msg.payload.styleDictionaryPref === "boolean") {
+        uiElements.styleDictionaryChk.checked = !!msg.payload.styleDictionaryPref;
       }
-      if (flatTokensChk && typeof msg.payload.flatTokensPref === "boolean") {
-        flatTokensChk.checked = !!msg.payload.flatTokensPref;
+      if (uiElements.flatTokensChk && typeof msg.payload.flatTokensPref === "boolean") {
+        uiElements.flatTokensChk.checked = !!msg.payload.flatTokensPref;
       }
-      if (allowHexChk && typeof msg.payload.allowHexPref === "boolean") {
-        allowHexChk.checked = !!msg.payload.allowHexPref;
+      if (uiElements.allowHexChk && typeof msg.payload.allowHexPref === "boolean") {
+        uiElements.allowHexChk.checked = !!msg.payload.allowHexPref;
       }
       if (typeof msg.payload.githubRememberPref === "boolean") {
-        if (githubRememberChk)
-          githubRememberChk.checked = msg.payload.githubRememberPref;
+        if (uiElements.githubRememberChk)
+          uiElements.githubRememberChk.checked = msg.payload.githubRememberPref;
       }
       const last = msg.payload.last;
       applyLastSelection(last);
@@ -2747,118 +2864,37 @@
       return;
     }
     if (msg.type === "RAW_COLLECTIONS_TEXT") {
-      if (rawEl) rawEl.textContent = msg.payload.text;
+      if (uiElements.rawEl) uiElements.rawEl.textContent = msg.payload.text;
       return;
     }
   });
   document.addEventListener("DOMContentLoaded", () => {
     if (typeof document === "undefined") return;
-    logEl = document.getElementById("log");
-    rawEl = document.getElementById("raw");
-    exportAllChk = document.getElementById(
-      "exportAllChk"
-    );
-    collectionSelect = document.getElementById(
-      "collectionSelect"
-    );
-    modeSelect = document.getElementById(
-      "modeSelect"
-    );
-    fileInput = document.getElementById("file");
-    importBtn = document.getElementById(
-      "importBtn"
-    );
-    exportBtn = document.getElementById(
-      "exportBtn"
-    );
-    exportTypographyBtn = document.getElementById(
-      "exportTypographyBtn"
-    );
-    exportPickers = document.getElementById("exportPickers");
-    refreshBtn = document.getElementById(
-      "refreshBtn"
-    );
-    shellEl = document.querySelector(".shell");
-    drawerToggleBtn = document.getElementById(
-      "drawerToggleBtn"
-    );
-    resizeHandleEl = document.getElementById("resizeHandle");
-    w3cPreviewEl = document.getElementById("w3cPreview");
-    copyRawBtn = document.getElementById(
-      "copyRawBtn"
-    );
-    copyW3cBtn = document.getElementById(
-      "copyW3cBtn"
-    );
-    copyLogBtn = document.getElementById(
-      "copyLogBtn"
-    );
-    allowHexChk = document.getElementById(
-      "allowHexChk"
-    );
-    styleDictionaryChk = document.getElementById(
-      "styleDictionaryChk"
-    );
-    flatTokensChk = document.getElementById(
-      "flatTokensChk"
-    );
-    githubRememberChk = document.getElementById(
-      "githubRememberChk"
-    );
-    if (allowHexChk) {
-      allowHexChk.checked = true;
-      allowHexChk.addEventListener("change", () => {
-        postToPlugin({
-          type: "SAVE_PREFS",
-          payload: { allowHexStrings: !!allowHexChk.checked }
-        });
-      });
-    }
-    importScopeOverlay = document.getElementById("importScopeOverlay");
-    importScopeBody = document.getElementById("importScopeBody");
-    importScopeConfirmBtn = document.getElementById(
-      "importScopeConfirmBtn"
-    );
-    importScopeCancelBtn = document.getElementById(
-      "importScopeCancelBtn"
-    );
-    importScopeRememberChk = document.getElementById(
-      "importScopeRememberChk"
-    );
-    importScopeMissingEl = document.getElementById("importScopeMissingNotice");
-    importScopeSummaryEl = document.getElementById("importScopeSummary");
-    importScopeSummaryTextEl = document.getElementById(
-      "importScopeSummaryText"
-    );
-    importScopeClearBtn = document.getElementById(
-      "importScopeClearBtn"
-    );
-    importSkipLogListEl = document.getElementById("importSkipLogList");
-    importSkipLogEmptyEl = document.getElementById("importSkipLogEmpty");
+    initDomElements();
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    systemDarkMode = mediaQuery.matches;
+    appState.systemDarkMode = mediaQuery.matches;
     mediaQuery.addEventListener("change", (e) => {
-      systemDarkMode = e.matches;
+      appState.systemDarkMode = e.matches;
       applyTheme();
     });
     applyTheme();
-    loadImportPreference();
-    loadImportLog();
+    appState.importPreference = readImportPreference();
+    appState.importLogEntries = readImportLog();
     renderImportPreferenceSummary();
     renderImportLog();
-    if (importScopeClearBtn) {
-      importScopeClearBtn.addEventListener(
+    if (uiElements.importScopeClearBtn) {
+      uiElements.importScopeClearBtn.addEventListener(
         "click",
         () => clearImportPreference(true)
       );
     }
-    if (importScopeConfirmBtn) {
-      importScopeConfirmBtn.addEventListener("click", () => {
-        if (!importScopeModalState) {
+    if (uiElements.importScopeConfirmBtn) {
+      uiElements.importScopeConfirmBtn.addEventListener("click", () => {
+        if (!appState.importScopeModalState) {
           closeImportScopeModal();
           return;
         }
-        const state = importScopeModalState;
+        const state = appState.importScopeModalState;
         const selections = [];
         for (let i = 0; i < state.collections.length; i++) {
           const collection = state.collections[i];
@@ -2867,30 +2903,31 @@
           if (!selected) return;
           selections.push(selected.value);
         }
-        const remember = importScopeRememberChk ? !!importScopeRememberChk.checked : false;
+        const remember = uiElements.importScopeRememberChk ? !!uiElements.importScopeRememberChk.checked : false;
         closeImportScopeModal();
         state.onConfirm(selections, remember);
       });
     }
-    if (importScopeCancelBtn) {
-      importScopeCancelBtn.addEventListener(
+    if (uiElements.importScopeCancelBtn) {
+      uiElements.importScopeCancelBtn.addEventListener(
         "click",
         () => closeImportScopeModal()
       );
     }
-    if (importScopeOverlay) {
-      importScopeOverlay.addEventListener("click", (ev) => {
-        if (ev.target === importScopeOverlay) closeImportScopeModal();
+    if (uiElements.importScopeOverlay) {
+      uiElements.importScopeOverlay.addEventListener("click", (ev) => {
+        if (ev.target === uiElements.importScopeOverlay)
+          closeImportScopeModal();
       });
     }
-    if (resizeHandleEl) {
-      resizeHandleEl.addEventListener(
+    if (uiElements.resizeHandleEl) {
+      uiElements.resizeHandleEl.addEventListener(
         "pointerdown",
         (event) => {
           if (event.button !== 0 && event.pointerType === "mouse") return;
-          if (resizeTracking) return;
+          if (appState.resizeTracking) return;
           event.preventDefault();
-          resizeTracking = {
+          appState.resizeTracking = {
             pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
@@ -2898,7 +2935,9 @@
             startHeight: window.innerHeight
           };
           try {
-            resizeHandleEl.setPointerCapture(event.pointerId);
+            uiElements.resizeHandleEl.setPointerCapture(
+              event.pointerId
+            );
           } catch (e) {
           }
           window.addEventListener("pointermove", handleResizeMove, true);
@@ -2908,53 +2947,58 @@
       );
     }
     githubUi.attach({ document, window });
-    if (fileInput) fileInput.addEventListener("change", setDisabledStates);
-    if (exportAllChk) {
-      exportAllChk.addEventListener("change", () => {
+    if (uiElements.fileInput)
+      uiElements.fileInput.addEventListener("change", setDisabledStates);
+    if (uiElements.exportAllChk) {
+      uiElements.exportAllChk.addEventListener("change", () => {
         setDisabledStates();
         postToPlugin({
           type: "SAVE_PREFS",
-          payload: { exportAll: !!exportAllChk.checked }
+          payload: { exportAll: !!uiElements.exportAllChk.checked }
         });
         githubUi.onSelectionChange();
       });
     }
-    if (styleDictionaryChk) {
-      styleDictionaryChk.addEventListener("change", () => {
+    if (uiElements.styleDictionaryChk) {
+      uiElements.styleDictionaryChk.addEventListener("change", () => {
         postToPlugin({
           type: "SAVE_PREFS",
-          payload: { styleDictionary: !!styleDictionaryChk.checked }
+          payload: {
+            styleDictionary: !!uiElements.styleDictionaryChk.checked
+          }
         });
         requestPreviewForCurrent();
         githubUi.onSelectionChange();
       });
     }
-    if (flatTokensChk) {
-      flatTokensChk.addEventListener("change", () => {
+    if (uiElements.flatTokensChk) {
+      uiElements.flatTokensChk.addEventListener("change", () => {
         postToPlugin({
           type: "SAVE_PREFS",
-          payload: { flatTokens: !!flatTokensChk.checked }
+          payload: { flatTokens: !!uiElements.flatTokensChk.checked }
         });
         requestPreviewForCurrent();
         githubUi.onSelectionChange();
       });
     }
-    if (githubRememberChk) {
-      githubRememberChk.addEventListener("change", () => {
+    if (uiElements.githubRememberChk) {
+      uiElements.githubRememberChk.addEventListener("change", () => {
         postToPlugin({
           type: "SAVE_PREFS",
-          payload: { githubRememberToken: !!githubRememberChk.checked }
+          payload: {
+            githubRememberToken: !!uiElements.githubRememberChk.checked
+          }
         });
       });
     }
-    if (refreshBtn) {
-      refreshBtn.addEventListener("click", () => {
+    if (uiElements.refreshBtn) {
+      uiElements.refreshBtn.addEventListener("click", () => {
         postToPlugin({ type: "FETCH_COLLECTIONS" });
       });
     }
-    if (importBtn && fileInput) {
-      importBtn.addEventListener("click", () => {
-        if (!fileInput.files || fileInput.files.length === 0) {
+    if (uiElements.importBtn && uiElements.fileInput) {
+      uiElements.importBtn.addEventListener("click", () => {
+        if (!uiElements.fileInput.files || uiElements.fileInput.files.length === 0) {
           log("Select a JSON file first.");
           return;
         }
@@ -2969,27 +3013,28 @@
               );
               return;
             }
-            const allowHex = !!(allowHexChk && allowHexChk.checked);
+            const allowHex = !!(uiElements.allowHexChk && uiElements.allowHexChk.checked);
             startImportFlow(json, allowHex);
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             log("Failed to parse JSON: " + msg);
           }
         };
-        reader.readAsText(fileInput.files[0]);
+        reader.readAsText(uiElements.fileInput.files[0]);
       });
     }
-    if (exportBtn) {
-      exportBtn.addEventListener("click", async () => {
+    if (uiElements.exportBtn) {
+      uiElements.exportBtn.addEventListener("click", async () => {
         var _a, _b;
         let exportAll = false;
-        if (exportAllChk) exportAll = !!exportAllChk.checked;
-        const styleDictionary = !!(styleDictionaryChk && styleDictionaryChk.checked);
-        const flatTokens = !!(flatTokensChk && flatTokensChk.checked);
+        if (uiElements.exportAllChk)
+          exportAll = !!uiElements.exportAllChk.checked;
+        const styleDictionary = !!(uiElements.styleDictionaryChk && uiElements.styleDictionaryChk.checked);
+        const flatTokens = !!(uiElements.flatTokensChk && uiElements.flatTokensChk.checked);
         const payload = { exportAll, styleDictionary, flatTokens };
-        if (!exportAll && collectionSelect && modeSelect) {
-          payload.collection = collectionSelect.value;
-          payload.mode = modeSelect.value;
+        if (!exportAll && uiElements.collectionSelect && uiElements.modeSelect) {
+          payload.collection = uiElements.collectionSelect.value;
+          payload.mode = uiElements.modeSelect.value;
           if (!(payload.collection && payload.mode)) {
             log('Pick collection and mode or use "Export all".');
             return;
@@ -3007,28 +3052,28 @@
           );
       });
     }
-    if (exportTypographyBtn) {
-      exportTypographyBtn.addEventListener("click", async () => {
+    if (uiElements.exportTypographyBtn) {
+      uiElements.exportTypographyBtn.addEventListener("click", async () => {
         await beginPendingSave("typography.json");
         postToPlugin({ type: "EXPORT_TYPOGRAPHY" });
         log("Typography export requested.");
       });
     }
-    if (drawerToggleBtn) {
-      drawerToggleBtn.addEventListener("click", () => {
-        const current = drawerToggleBtn.getAttribute("aria-expanded") === "true";
+    if (uiElements.drawerToggleBtn) {
+      uiElements.drawerToggleBtn.addEventListener("click", () => {
+        const current = uiElements.drawerToggleBtn.getAttribute("aria-expanded") === "true";
         setDrawerOpen(!current);
       });
     }
-    if (collectionSelect) {
-      collectionSelect.addEventListener("change", () => {
+    if (uiElements.collectionSelect) {
+      uiElements.collectionSelect.addEventListener("change", () => {
         onCollectionChange();
-        if (collectionSelect && modeSelect) {
+        if (uiElements.collectionSelect && uiElements.modeSelect) {
           postToPlugin({
             type: "SAVE_LAST",
             payload: {
-              collection: collectionSelect.value,
-              mode: modeSelect.value
+              collection: uiElements.collectionSelect.value,
+              mode: uiElements.modeSelect.value
             }
           });
           requestPreviewForCurrent();
@@ -3036,14 +3081,14 @@
         githubUi.onSelectionChange();
       });
     }
-    if (modeSelect) {
-      modeSelect.addEventListener("change", () => {
-        if (collectionSelect && modeSelect) {
+    if (uiElements.modeSelect) {
+      uiElements.modeSelect.addEventListener("change", () => {
+        if (uiElements.collectionSelect && uiElements.modeSelect) {
           postToPlugin({
             type: "SAVE_LAST",
             payload: {
-              collection: collectionSelect.value,
-              mode: modeSelect.value
+              collection: uiElements.collectionSelect.value,
+              mode: uiElements.modeSelect.value
             }
           });
         }
@@ -3052,30 +3097,25 @@
         githubUi.onSelectionChange();
       });
     }
-    if (copyRawBtn)
-      copyRawBtn.addEventListener(
+    if (uiElements.copyRawBtn)
+      uiElements.copyRawBtn.addEventListener(
         "click",
-        () => copyElText(
-          document.getElementById("raw"),
-          "Raw Figma Collections"
-        )
+        () => copyElText(uiElements.rawEl, "Raw Figma Collections")
       );
-    if (copyW3cBtn)
-      copyW3cBtn.addEventListener(
+    if (uiElements.copyW3cBtn)
+      uiElements.copyW3cBtn.addEventListener(
         "click",
-        () => copyElText(
-          document.getElementById("w3cPreview"),
-          "W3C Preview"
-        )
+        () => copyElText(uiElements.w3cPreviewEl, "W3C Preview")
       );
-    if (copyLogBtn)
-      copyLogBtn.addEventListener(
+    if (uiElements.copyLogBtn)
+      uiElements.copyLogBtn.addEventListener(
         "click",
-        () => copyElText(document.getElementById("log"), "Log")
+        () => copyElText(uiElements.logEl, "Log")
       );
     githubUi.onSelectionChange();
     autoFitOnce();
-    if (rawEl) rawEl.textContent = "Loading variable collections\u2026";
+    if (uiElements.rawEl)
+      uiElements.rawEl.textContent = "Loading variable collections\u2026";
     setDisabledStates();
     setDrawerOpen(getSavedDrawerOpen());
     postToPlugin({ type: "UI_READY" });
@@ -3084,14 +3124,17 @@
     }, 500);
   });
   function setDrawerOpen(open) {
-    if (shellEl) {
-      if (open) shellEl.classList.remove("drawer-collapsed");
-      else shellEl.classList.add("drawer-collapsed");
+    if (uiElements.shellEl) {
+      if (open) uiElements.shellEl.classList.remove("drawer-collapsed");
+      else uiElements.shellEl.classList.add("drawer-collapsed");
     }
-    if (drawerToggleBtn) {
-      drawerToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
-      drawerToggleBtn.textContent = open ? "Hide" : "Show";
-      drawerToggleBtn.title = open ? "Hide log" : "Show log";
+    if (uiElements.drawerToggleBtn) {
+      uiElements.drawerToggleBtn.setAttribute(
+        "aria-expanded",
+        open ? "true" : "false"
+      );
+      uiElements.drawerToggleBtn.textContent = open ? "Hide" : "Show";
+      uiElements.drawerToggleBtn.title = open ? "Hide log" : "Show log";
     }
     try {
       window.localStorage.setItem("drawerOpen", open ? "1" : "0");
