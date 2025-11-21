@@ -51,11 +51,22 @@ export async function snapshotCollectionsForUi(): Promise<{
     }
 
     const varsList: Array<{ id: string; name: string; type: string }> = [];
+    const varLines: string[] = [];
+
     for (let vi = 0; vi < c.variableIds.length; vi++) {
       const varId = c.variableIds[vi];
       const v = await figma.variables.getVariableByIdAsync(varId);
       if (!v) continue;
       varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
+
+      // Capture values for change detection
+      const values: string[] = [];
+      for (const m of c.modes) {
+        const val = v.valuesByMode[m.modeId];
+        // JSON.stringify handles primitives and VariableAlias objects safely for signature comparison
+        values.push(JSON.stringify(val));
+      }
+      varLines.push(`    - ${v.name} [${v.resolvedType}] = ${values.join(', ')}`);
     }
 
     out.push({ id: c.id, name: c.name, modes: modes, variables: varsList });
@@ -64,9 +75,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     const modeNames: string[] = modes.map(m => m.name);
     rawLines.push('  Modes: ' + (modeNames.length > 0 ? modeNames.join(', ') : '(none)'));
     rawLines.push('  Variables (' + String(varsList.length) + '):');
-    for (let qi = 0; qi < varsList.length; qi++) {
-      rawLines.push('    - ' + varsList[qi].name + ' [' + varsList[qi].type + ']');
-    }
+    rawLines.push(...varLines);
     rawLines.push('');
   }
 
