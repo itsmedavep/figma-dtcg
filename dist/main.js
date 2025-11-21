@@ -25,13 +25,15 @@
     if (typeof figma.editorType !== "string" || figma.editorType !== "figma") {
       return {
         collections: [],
-        rawText: "Variables API is not available in this editor.\nOpen a Figma Design file (not FigJam) and try again."
+        rawText: "Variables API is not available in this editor.\nOpen a Figma Design file (not FigJam) and try again.",
+        checksum: ""
       };
     }
     if (typeof figma.variables === "undefined" || typeof figma.variables.getLocalVariableCollectionsAsync !== "function" || typeof figma.variables.getVariableByIdAsync !== "function") {
       return {
         collections: [],
-        rawText: "Variables API methods not found. Ensure your Figma version supports Variables and try again."
+        rawText: "Variables API methods not found. Ensure your Figma version supports Variables and try again.",
+        checksum: ""
       };
     }
     const locals = await figma.variables.getLocalVariableCollectionsAsync();
@@ -42,6 +44,7 @@
     }
     const out = [];
     const rawLines = [];
+    const checksumParts = [];
     for (let i = 0; i < locals.length; i++) {
       const c = locals[i];
       if (!c) continue;
@@ -57,7 +60,13 @@
         const v = varsById.get(varId);
         if (!v) continue;
         varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
+        const values = [];
+        for (const m of c.modes) {
+          const val = v.valuesByMode[m.modeId];
+          values.push(JSON.stringify(val));
+        }
         varLines.push(`    - ${v.name} [${v.resolvedType}]`);
+        checksumParts.push(`${v.id}:${values.join(",")}`);
       }
       out.push({ id: c.id, name: c.name, modes, variables: varsList });
       rawLines.push("Collection: " + c.name + " (" + c.id + ")");
@@ -83,7 +92,7 @@
         rawLines.push("  (No local text styles found.)");
       }
     }
-    return { collections: out, rawText: rawLines.join("\n") };
+    return { collections: out, rawText: rawLines.join("\n"), checksum: checksumParts.join("|") };
   }
   function safeKeyFromCollectionAndMode(collectionName, modeName) {
     const base = collectionName + "/mode=" + modeName;
@@ -4979,13 +4988,13 @@
   function send(msg) {
     figma.ui.postMessage(msg);
   }
-  var lastRawText = "";
+  var lastChecksum = "";
   async function broadcastLocalCollections(opts = {}) {
     const snap = await snapshotCollectionsForUi();
-    if (!opts.force && snap.rawText === lastRawText) {
+    if (!opts.force && snap.checksum === lastChecksum) {
       return;
     }
-    lastRawText = snap.rawText;
+    lastChecksum = snap.checksum;
     const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
     const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
     const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);

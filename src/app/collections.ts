@@ -9,13 +9,15 @@ export async function snapshotCollectionsForUi(): Promise<{
     variables: Array<{ id: string; name: string; type: string }>;
   }>;
   rawText: string;
+  checksum: string;
 }> {
   if (typeof figma.editorType !== 'string' || figma.editorType !== 'figma') {
     return {
       collections: [],
       rawText:
         'Variables API is not available in this editor.\n' +
-        'Open a Figma Design file (not FigJam) and try again.'
+        'Open a Figma Design file (not FigJam) and try again.',
+      checksum: ''
     };
   }
   if (
@@ -26,7 +28,8 @@ export async function snapshotCollectionsForUi(): Promise<{
     return {
       collections: [],
       rawText:
-        'Variables API methods not found. Ensure your Figma version supports Variables and try again.'
+        'Variables API methods not found. Ensure your Figma version supports Variables and try again.',
+      checksum: ''
     };
   }
 
@@ -44,6 +47,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     variables: Array<{ id: string; name: string; type: string }>;
   }> = [];
   const rawLines: string[] = [];
+  const checksumParts: string[] = [];
 
   for (let i = 0; i < locals.length; i++) {
     const c = locals[i];
@@ -65,12 +69,13 @@ export async function snapshotCollectionsForUi(): Promise<{
       varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
 
       // Capture values for change detection (internal use only, not logged)
-      // const values: string[] = [];
-      // for (const m of c.modes) {
-      //   const val = v.valuesByMode[m.modeId];
-      //   values.push(JSON.stringify(val));
-      // }
+      const values: string[] = [];
+      for (const m of c.modes) {
+        const val = v.valuesByMode[m.modeId];
+        values.push(JSON.stringify(val));
+      }
       varLines.push(`    - ${v.name} [${v.resolvedType}]`);
+      checksumParts.push(`${v.id}:${values.join(',')}`);
     }
 
     out.push({ id: c.id, name: c.name, modes: modes, variables: varsList });
@@ -101,7 +106,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     }
   }
 
-  return { collections: out, rawText: rawLines.join('\n') };
+  return { collections: out, rawText: rawLines.join('\n'), checksum: checksumParts.join('|') };
 }
 
 export function safeKeyFromCollectionAndMode(collectionName: string, modeName: string): string {

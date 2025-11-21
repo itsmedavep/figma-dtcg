@@ -32,17 +32,17 @@ function send(msg: PluginToUi): void {
   figma.ui.postMessage(msg);
 }
 
-let lastRawText = '';
+let lastChecksum = '';
 
 async function broadcastLocalCollections(opts: { force?: boolean; silent?: boolean } = {}): Promise<void> {
   const snap = await snapshotCollectionsForUi();
   
   // If not forced, check if meaningful change occurred
-  if (!opts.force && snap.rawText === lastRawText) {
+  if (!opts.force && snap.checksum === lastChecksum) {
     return;
   }
   
-  lastRawText = snap.rawText;
+  lastChecksum = snap.checksum;
 
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
