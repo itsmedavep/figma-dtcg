@@ -32,21 +32,18 @@ function send(msg: PluginToUi): void {
   figma.ui.postMessage(msg);
 }
 
-const github = createGithubDispatcher({
-  send,
-  snapshotCollectionsForUi,
-  analyzeSelectionState,
-  safeKeyFromCollectionAndMode,
-  importDtcg,
-  exportDtcg,
-});
+let lastChecksum = '';
 
-type MessageOfType<T extends UiToPlugin['type']> = Extract<UiToPlugin, { type: T }>;
-type Handler = (msg: UiToPlugin) => Promise<void> | void;
-
-// Prime the UI with cached state and fresh collections so the iframe can render immediately.
-async function handleUiReady(_msg: UiToPlugin): Promise<void> {
+async function broadcastLocalCollections(opts: { force?: boolean; silent?: boolean } = {}): Promise<void> {
   const snap = await snapshotCollectionsForUi();
+  
+  // If not forced, check if meaningful change occurred
+  if (!opts.force && snap.checksum === lastChecksum) {
+    return;
+  }
+  
+  lastChecksum = snap.checksum;
+
   const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
   const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
   const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
@@ -59,7 +56,10 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
     ? last
     : null;
 
-  send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections (initial)' } });
+  if (!opts.silent) {
+    send({ type: 'INFO', payload: { message: 'Fetched ' + String(snap.collections.length) + ' collections' + (opts.force ? '' : ' (auto)') } });
+  }
+
   send({
     type: 'COLLECTIONS_DATA',
     payload: {
@@ -73,39 +73,91 @@ async function handleUiReady(_msg: UiToPlugin): Promise<void> {
     }
   });
   send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
+}
 
+let pollInterval: number | undefined;
+
+function startPolling() {
+  if (pollInterval) return;
+  
+  // Poll every 500ms for variable changes
+  pollInterval = setInterval(() => {
+    broadcastLocalCollections({ force: false, silent: true }).catch(err => console.error(err));
+  }, 500);
+
+  // Listen for style changes (immediate)
+  figma.on('documentchange', (event) => {
+    const styleChanges = event.documentChanges.filter(c => 
+      c.type === 'STYLE_CREATE' || 
+      c.type === 'STYLE_DELETE' || 
+      c.type === 'STYLE_PROPERTY_CHANGE'
+    );
+    if (styleChanges.length > 0) {
+      const createdIds = new Set(styleChanges.filter(c => c.type === 'STYLE_CREATE').map(c => c.id));
+      const deletedIds = new Set(styleChanges.filter(c => c.type === 'STYLE_DELETE').map(c => c.id));
+      
+      // Ignore styles that were created and deleted in the same batch (ghosts)
+      const ghostIds = new Set([...createdIds].filter(id => deletedIds.has(id)));
+
+      for (const change of styleChanges) {
+        if (ghostIds.has(change.id)) continue;
+
+        if (change.type === 'STYLE_CREATE') {
+          const style = figma.getStyleById(change.id);
+          // If style is null, it might be a ghost that wasn't caught or an internal error. Skip it.
+          if (style) {
+            send({ type: 'INFO', payload: { message: `Style Created: ${style.name}` } });
+          }
+        } else if (change.type === 'STYLE_DELETE') {
+          // We can't get the name of a deleted style, so just log a generic message.
+          send({ type: 'INFO', payload: { message: 'Style Deleted' } });
+        } else if (change.type === 'STYLE_PROPERTY_CHANGE') {
+          // If the style was created in this batch, the CREATE event (with final state) is sufficient.
+          // Suppress the update to avoid "Updated then Created" noise.
+          if (createdIds.has(change.id)) continue;
+
+          const style = figma.getStyleById(change.id);
+          if (style) {
+            send({ type: 'INFO', payload: { message: `Style Updated: ${style.name} (Properties: ${change.properties.join(', ')})` } });
+          }
+        }
+      }
+      broadcastLocalCollections({ force: true, silent: true }).catch(err => console.error(err));
+    }
+  });
+
+  // Also check on selection/page change as a heuristic
+  figma.on('selectionchange', () => {
+    broadcastLocalCollections({ force: false, silent: true }).catch(err => console.error(err));
+  });
+  figma.on('currentpagechange', () => {
+    broadcastLocalCollections({ force: false, silent: true }).catch(err => console.error(err));
+  });
+}
+
+const github = createGithubDispatcher({
+  send,
+  snapshotCollectionsForUi,
+  analyzeSelectionState,
+  safeKeyFromCollectionAndMode,
+  importDtcg,
+  exportDtcg,
+  broadcastLocalCollections,
+});
+
+type MessageOfType<T extends UiToPlugin['type']> = Extract<UiToPlugin, { type: T }>;
+type Handler = (msg: UiToPlugin) => Promise<void> | void;
+
+// Prime the UI with cached state and fresh collections so the iframe can render immediately.
+async function handleUiReady(_msg: UiToPlugin): Promise<void> {
+  await broadcastLocalCollections({ force: true, silent: false });
   await github.onUiReady();
+  startPolling();
 }
 
 // Refresh the collection snapshot on demand, mirroring the bootstrap payload.
 async function handleFetchCollections(_msg: UiToPlugin): Promise<void> {
-  const snapshot = await snapshotCollectionsForUi();
-  const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
-  const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
-  const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
-  const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
-  const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
-  const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
-  const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
-  const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-  const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
-    ? last
-    : null;
-
-  send({ type: 'INFO', payload: { message: 'Fetched ' + String(snapshot.collections.length) + ' collections' } });
-  send({
-    type: 'COLLECTIONS_DATA',
-    payload: {
-      collections: snapshot.collections,
-      last: lastOrNull,
-      exportAllPref: !!exportAllPrefVal,
-      styleDictionaryPref: !!styleDictionaryPrefVal,
-      flatTokensPref: !!flatTokensPrefVal,
-      allowHexPref: allowHexPrefVal,
-      githubRememberPref: githubRememberPrefVal,
-    }
-  });
-  send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snapshot.rawText } });
+  await broadcastLocalCollections({ force: true, silent: false });
 }
 
 // Apply an uploaded DTCG payload to the document and broadcast the resulting summary back to the UI.
@@ -131,32 +183,7 @@ async function handleImportDtcg(msg: UiToPlugin): Promise<void> {
 
   send({ type: 'IMPORT_SUMMARY', payload: { summary, timestamp: Date.now(), source: 'local' } });
 
-  const snap = await snapshotCollectionsForUi();
-  const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
-  const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
-  const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
-  const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
-  const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
-  const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
-  const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
-  const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-  const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
-    ? last
-    : null;
-
-  send({
-    type: 'COLLECTIONS_DATA',
-    payload: {
-      collections: snap.collections,
-      last: lastOrNull,
-      exportAllPref: !!exportAllPrefVal,
-      styleDictionaryPref: !!styleDictionaryPrefVal,
-      flatTokensPref: !!flatTokensPrefVal,
-      allowHexPref: allowHexPrefVal,
-      githubRememberPref: githubRememberPrefVal,
-    }
-  });
-  send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
+  await broadcastLocalCollections({ force: true, silent: true });
 }
 
 // Export tokens either per mode or as a single bundle, matching the UI's requested scope.

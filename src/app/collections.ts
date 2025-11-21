@@ -9,13 +9,15 @@ export async function snapshotCollectionsForUi(): Promise<{
     variables: Array<{ id: string; name: string; type: string }>;
   }>;
   rawText: string;
+  checksum: string;
 }> {
   if (typeof figma.editorType !== 'string' || figma.editorType !== 'figma') {
     return {
       collections: [],
       rawText:
         'Variables API is not available in this editor.\n' +
-        'Open a Figma Design file (not FigJam) and try again.'
+        'Open a Figma Design file (not FigJam) and try again.',
+      checksum: ''
     };
   }
   if (
@@ -26,11 +28,17 @@ export async function snapshotCollectionsForUi(): Promise<{
     return {
       collections: [],
       rawText:
-        'Variables API methods not found. Ensure your Figma version supports Variables and try again.'
+        'Variables API methods not found. Ensure your Figma version supports Variables and try again.',
+      checksum: ''
     };
   }
 
   const locals: VariableCollection[] = await figma.variables.getLocalVariableCollectionsAsync();
+  const allVars = await figma.variables.getLocalVariablesAsync();
+  const varsById = new Map<string, Variable>();
+  for (const v of allVars) {
+    varsById.set(v.id, v);
+  }
 
   const out: Array<{
     id: string;
@@ -39,6 +47,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     variables: Array<{ id: string; name: string; type: string }>;
   }> = [];
   const rawLines: string[] = [];
+  const checksumParts: string[] = [];
 
   for (let i = 0; i < locals.length; i++) {
     const c = locals[i];
@@ -50,12 +59,31 @@ export async function snapshotCollectionsForUi(): Promise<{
       modes.push({ id: m.modeId, name: m.name });
     }
 
+    // Include collection metadata in checksum
+    checksumParts.push(`C:${c.id}:${c.name}`);
+    
+    // Include mode metadata in checksum
+    const modeSigs = c.modes.map(m => `${m.modeId}:${m.name}`);
+    checksumParts.push(`M:${modeSigs.join(',')}`);
+
     const varsList: Array<{ id: string; name: string; type: string }> = [];
+    const varLines: string[] = [];
+
     for (let vi = 0; vi < c.variableIds.length; vi++) {
       const varId = c.variableIds[vi];
-      const v = await figma.variables.getVariableByIdAsync(varId);
+      const v = varsById.get(varId);
       if (!v) continue;
       varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
+
+      // Capture values for change detection (internal use only, not logged)
+      const values: string[] = [];
+      for (const m of c.modes) {
+        const val = v.valuesByMode[m.modeId];
+        values.push(JSON.stringify(val));
+      }
+      varLines.push(`    - ${v.name} [${v.resolvedType}]`);
+      // Include variable name and type in checksum
+      checksumParts.push(`V:${v.id}:${v.name}:${v.resolvedType}:${values.join(',')}`);
     }
 
     out.push({ id: c.id, name: c.name, modes: modes, variables: varsList });
@@ -64,9 +92,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     const modeNames: string[] = modes.map(m => m.name);
     rawLines.push('  Modes: ' + (modeNames.length > 0 ? modeNames.join(', ') : '(none)'));
     rawLines.push('  Variables (' + String(varsList.length) + '):');
-    for (let qi = 0; qi < varsList.length; qi++) {
-      rawLines.push('    - ' + varsList[qi].name + ' [' + varsList[qi].type + ']');
-    }
+    rawLines.push(...varLines);
     rawLines.push('');
   }
 
@@ -88,7 +114,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     }
   }
 
-  return { collections: out, rawText: rawLines.join('\n') };
+  return { collections: out, rawText: rawLines.join('\n'), checksum: checksumParts.join('|') };
 }
 
 export function safeKeyFromCollectionAndMode(collectionName: string, modeName: string): string {

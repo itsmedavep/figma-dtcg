@@ -383,9 +383,14 @@ export function readDtcgToIR(root: unknown, opts: DtcgReaderOptions = {}): Token
     }
 
     if (!resolvedType || unresolved) {
-      logWarn(`Skipped token “${token.path.join('/')}” — could not resolve alias type.`);
-      invalidTokens.add(token);
-      continue;
+      if (declaredType) {
+        // Fallback: trust the declared type if we can't resolve the alias (e.g. external ref)
+        resolvedType = declaredType;
+      } else {
+        logWarn(`Skipped token “${token.path.join('/')}” — could not resolve alias type and no $type declared.`);
+        invalidTokens.add(token);
+        continue;
+      }
     }
 
     if (declaredType && declaredType !== resolvedType) {

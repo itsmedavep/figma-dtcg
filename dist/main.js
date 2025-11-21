@@ -25,18 +25,26 @@
     if (typeof figma.editorType !== "string" || figma.editorType !== "figma") {
       return {
         collections: [],
-        rawText: "Variables API is not available in this editor.\nOpen a Figma Design file (not FigJam) and try again."
+        rawText: "Variables API is not available in this editor.\nOpen a Figma Design file (not FigJam) and try again.",
+        checksum: ""
       };
     }
     if (typeof figma.variables === "undefined" || typeof figma.variables.getLocalVariableCollectionsAsync !== "function" || typeof figma.variables.getVariableByIdAsync !== "function") {
       return {
         collections: [],
-        rawText: "Variables API methods not found. Ensure your Figma version supports Variables and try again."
+        rawText: "Variables API methods not found. Ensure your Figma version supports Variables and try again.",
+        checksum: ""
       };
     }
     const locals = await figma.variables.getLocalVariableCollectionsAsync();
+    const allVars = await figma.variables.getLocalVariablesAsync();
+    const varsById = /* @__PURE__ */ new Map();
+    for (const v of allVars) {
+      varsById.set(v.id, v);
+    }
     const out = [];
     const rawLines = [];
+    const checksumParts = [];
     for (let i = 0; i < locals.length; i++) {
       const c = locals[i];
       if (!c) continue;
@@ -46,20 +54,26 @@
         modes.push({ id: m.modeId, name: m.name });
       }
       const varsList = [];
+      const varLines = [];
       for (let vi = 0; vi < c.variableIds.length; vi++) {
         const varId = c.variableIds[vi];
-        const v = await figma.variables.getVariableByIdAsync(varId);
+        const v = varsById.get(varId);
         if (!v) continue;
         varsList.push({ id: v.id, name: v.name, type: v.resolvedType });
+        const values = [];
+        for (const m of c.modes) {
+          const val = v.valuesByMode[m.modeId];
+          values.push(JSON.stringify(val));
+        }
+        varLines.push(`    - ${v.name} [${v.resolvedType}]`);
+        checksumParts.push(`${v.id}:${values.join(",")}`);
       }
       out.push({ id: c.id, name: c.name, modes, variables: varsList });
       rawLines.push("Collection: " + c.name + " (" + c.id + ")");
       const modeNames = modes.map((m) => m.name);
       rawLines.push("  Modes: " + (modeNames.length > 0 ? modeNames.join(", ") : "(none)"));
       rawLines.push("  Variables (" + String(varsList.length) + "):");
-      for (let qi = 0; qi < varsList.length; qi++) {
-        rawLines.push("    - " + varsList[qi].name + " [" + varsList[qi].type + "]");
-      }
+      rawLines.push(...varLines);
       rawLines.push("");
     }
     if (out.length === 0) {
@@ -78,7 +92,7 @@
         rawLines.push("  (No local text styles found.)");
       }
     }
-    return { collections: out, rawText: rawLines.join("\n") };
+    return { collections: out, rawText: rawLines.join("\n"), checksum: checksumParts.join("|") };
   }
   function safeKeyFromCollectionAndMode(collectionName, modeName) {
     const base = collectionName + "/mode=" + modeName;
@@ -1279,9 +1293,13 @@
         }
       }
       if (!resolvedType || unresolved) {
-        logWarn(`Skipped token \u201C${token.path.join("/")}\u201D \u2014 could not resolve alias type.`);
-        invalidTokens.add(token);
-        continue;
+        if (declaredType) {
+          resolvedType = declaredType;
+        } else {
+          logWarn(`Skipped token \u201C${token.path.join("/")}\u201D \u2014 could not resolve alias type and no $type declared.`);
+          invalidTokens.add(token);
+          continue;
+        }
       }
       if (declaredType && declaredType !== resolvedType) {
         logWarn(`Token \u201C${token.path.join("/")}\u201D declared $type ${declaredType} but resolves to ${resolvedType}; using resolved type.`);
@@ -1545,6 +1563,7 @@
             variableID: v2.id
           };
           if (isAliasValue(mv)) {
+            perContext[ctx].alias = { type: "VARIABLE_ALIAS", id: mv.id };
             const target = variablesById.get(mv.id) || await variablesApi.getVariableByIdAsync(mv.id);
             if (target && !variablesById.has(target.id)) variablesById.set(target.id, target);
             if (target) {
@@ -3622,36 +3641,6 @@
       }
       return { ok: true };
     }
-    async function refreshCollectionsSnapshotForUi() {
-      try {
-        const snap = await deps.snapshotCollectionsForUi();
-        const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
-        const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
-        const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);
-        const flatTokensPrefVal = await figma.clientStorage.getAsync("flatTokensPref").catch(() => false);
-        const allowHexPrefStored = await figma.clientStorage.getAsync("allowHexPref").catch(() => null);
-        const githubRememberPrefStored = await figma.clientStorage.getAsync("githubRememberPref").catch(() => null);
-        const allowHexPrefVal = typeof allowHexPrefStored === "boolean" ? allowHexPrefStored : true;
-        const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
-        const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-        deps.send({
-          type: "COLLECTIONS_DATA",
-          payload: {
-            collections: snap.collections,
-            last: lastOrNull,
-            exportAllPref: !!exportAllPrefVal,
-            styleDictionaryPref: !!styleDictionaryPrefVal,
-            flatTokensPref: !!flatTokensPrefVal,
-            allowHexPref: allowHexPrefVal,
-            githubRememberPref: githubRememberPrefVal
-          }
-        });
-        deps.send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
-      } catch (err) {
-        const message = (err == null ? void 0 : err.message) || "unknown error";
-        deps.send({ type: "ERROR", payload: { message: `GitHub: Failed to refresh local state: ${message}` } });
-      }
-    }
     async function handle(msg) {
       var _a, _b;
       switch (msg.type) {
@@ -4252,7 +4241,7 @@
                 source: "github"
               }
             });
-            await refreshCollectionsSnapshotForUi();
+            await deps.broadcastLocalCollections({ force: true });
           } catch (err) {
             const msgText = (err == null ? void 0 : err.message) || "Invalid JSON";
             deps.send({
@@ -4545,7 +4534,7 @@
             selectionState.collection = selectionCollection;
           if (selectionMode) selectionState.mode = selectionMode;
           await mergeSelected(selectionState);
-          await refreshCollectionsSnapshotForUi();
+          await deps.broadcastLocalCollections({ force: true });
           try {
             const files = [];
             if (scope === "all") {
@@ -4999,16 +4988,13 @@
   function send(msg) {
     figma.ui.postMessage(msg);
   }
-  var github = createGithubDispatcher({
-    send,
-    snapshotCollectionsForUi,
-    analyzeSelectionState,
-    safeKeyFromCollectionAndMode,
-    importDtcg,
-    exportDtcg
-  });
-  async function handleUiReady(_msg) {
+  var lastChecksum = "";
+  async function broadcastLocalCollections(opts = {}) {
     const snap = await snapshotCollectionsForUi();
+    if (!opts.force && snap.checksum === lastChecksum) {
+      return;
+    }
+    lastChecksum = snap.checksum;
     const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
     const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
     const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);
@@ -5018,7 +5004,9 @@
     const allowHexPrefVal = typeof allowHexPrefStored === "boolean" ? allowHexPrefStored : true;
     const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
     const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-    send({ type: "INFO", payload: { message: "Fetched " + String(snap.collections.length) + " collections (initial)" } });
+    if (!opts.silent) {
+      send({ type: "INFO", payload: { message: "Fetched " + String(snap.collections.length) + " collections" + (opts.force ? "" : " (auto)") } });
+    }
     send({
       type: "COLLECTIONS_DATA",
       payload: {
@@ -5032,33 +5020,64 @@
       }
     });
     send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
-    await github.onUiReady();
   }
-  async function handleFetchCollections(_msg) {
-    const snapshot = await snapshotCollectionsForUi();
-    const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
-    const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
-    const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);
-    const flatTokensPrefVal = await figma.clientStorage.getAsync("flatTokensPref").catch(() => false);
-    const allowHexPrefStored = await figma.clientStorage.getAsync("allowHexPref").catch(() => null);
-    const githubRememberPrefStored = await figma.clientStorage.getAsync("githubRememberPref").catch(() => null);
-    const allowHexPrefVal = typeof allowHexPrefStored === "boolean" ? allowHexPrefStored : true;
-    const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
-    const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-    send({ type: "INFO", payload: { message: "Fetched " + String(snapshot.collections.length) + " collections" } });
-    send({
-      type: "COLLECTIONS_DATA",
-      payload: {
-        collections: snapshot.collections,
-        last: lastOrNull,
-        exportAllPref: !!exportAllPrefVal,
-        styleDictionaryPref: !!styleDictionaryPrefVal,
-        flatTokensPref: !!flatTokensPrefVal,
-        allowHexPref: allowHexPrefVal,
-        githubRememberPref: githubRememberPrefVal
+  var pollInterval;
+  function startPolling() {
+    if (pollInterval) return;
+    pollInterval = setInterval(() => {
+      broadcastLocalCollections({ force: false, silent: true }).catch((err) => console.error(err));
+    }, 500);
+    figma.on("documentchange", (event) => {
+      const styleChanges = event.documentChanges.filter(
+        (c) => c.type === "STYLE_CREATE" || c.type === "STYLE_DELETE" || c.type === "STYLE_PROPERTY_CHANGE"
+      );
+      if (styleChanges.length > 0) {
+        const createdIds = new Set(styleChanges.filter((c) => c.type === "STYLE_CREATE").map((c) => c.id));
+        const deletedIds = new Set(styleChanges.filter((c) => c.type === "STYLE_DELETE").map((c) => c.id));
+        const ghostIds = new Set([...createdIds].filter((id) => deletedIds.has(id)));
+        for (const change of styleChanges) {
+          if (ghostIds.has(change.id)) continue;
+          if (change.type === "STYLE_CREATE") {
+            const style = figma.getStyleById(change.id);
+            if (style) {
+              send({ type: "INFO", payload: { message: `Style Created: ${style.name}` } });
+            }
+          } else if (change.type === "STYLE_DELETE") {
+            send({ type: "INFO", payload: { message: "Style Deleted" } });
+          } else if (change.type === "STYLE_PROPERTY_CHANGE") {
+            if (createdIds.has(change.id)) continue;
+            const style = figma.getStyleById(change.id);
+            if (style) {
+              send({ type: "INFO", payload: { message: `Style Updated: ${style.name} (Properties: ${change.properties.join(", ")})` } });
+            }
+          }
+        }
+        broadcastLocalCollections({ force: true, silent: true }).catch((err) => console.error(err));
       }
     });
-    send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snapshot.rawText } });
+    figma.on("selectionchange", () => {
+      broadcastLocalCollections({ force: false, silent: true }).catch((err) => console.error(err));
+    });
+    figma.on("currentpagechange", () => {
+      broadcastLocalCollections({ force: false, silent: true }).catch((err) => console.error(err));
+    });
+  }
+  var github = createGithubDispatcher({
+    send,
+    snapshotCollectionsForUi,
+    analyzeSelectionState,
+    safeKeyFromCollectionAndMode,
+    importDtcg,
+    exportDtcg,
+    broadcastLocalCollections
+  });
+  async function handleUiReady(_msg) {
+    await broadcastLocalCollections({ force: true, silent: false });
+    await github.onUiReady();
+    startPolling();
+  }
+  async function handleFetchCollections(_msg) {
+    await broadcastLocalCollections({ force: true, silent: false });
   }
   async function handleImportDtcg(msg) {
     const payload = msg.payload;
@@ -5079,29 +5098,7 @@
       send({ type: "INFO", payload: { message: "Import completed." } });
     }
     send({ type: "IMPORT_SUMMARY", payload: { summary, timestamp: Date.now(), source: "local" } });
-    const snap = await snapshotCollectionsForUi();
-    const last = await figma.clientStorage.getAsync("lastSelection").catch(() => null);
-    const exportAllPrefVal = await figma.clientStorage.getAsync("exportAllPref").catch(() => false);
-    const styleDictionaryPrefVal = await figma.clientStorage.getAsync("styleDictionaryPref").catch(() => false);
-    const flatTokensPrefVal = await figma.clientStorage.getAsync("flatTokensPref").catch(() => false);
-    const allowHexPrefStored = await figma.clientStorage.getAsync("allowHexPref").catch(() => null);
-    const githubRememberPrefStored = await figma.clientStorage.getAsync("githubRememberPref").catch(() => null);
-    const allowHexPrefVal = typeof allowHexPrefStored === "boolean" ? allowHexPrefStored : true;
-    const githubRememberPrefVal = typeof githubRememberPrefStored === "boolean" ? githubRememberPrefStored : true;
-    const lastOrNull = last && typeof last.collection === "string" && typeof last.mode === "string" ? last : null;
-    send({
-      type: "COLLECTIONS_DATA",
-      payload: {
-        collections: snap.collections,
-        last: lastOrNull,
-        exportAllPref: !!exportAllPrefVal,
-        styleDictionaryPref: !!styleDictionaryPrefVal,
-        flatTokensPref: !!flatTokensPrefVal,
-        allowHexPref: allowHexPrefVal,
-        githubRememberPref: githubRememberPrefVal
-      }
-    });
-    send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });
+    await broadcastLocalCollections({ force: true, silent: true });
   }
   async function handleExportDtcg(msg) {
     const payload = msg.payload;

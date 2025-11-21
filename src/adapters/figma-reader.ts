@@ -65,6 +65,7 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
           collectionName: string; collectionID: string;
           modeName: string; modeID: string;
           variableName: string; variableID: string;
+          alias?: { type: 'VARIABLE_ALIAS'; id: string };
         }
       } = {};
 
@@ -84,6 +85,9 @@ export async function readFigmaToIR(): Promise<TokenGraph> {
         };
 
         if (isAliasValue(mv)) {
+          // Capture alias metadata for export
+          perContext[ctx].alias = { type: 'VARIABLE_ALIAS', id: mv.id };
+
           const target = variablesById.get(mv.id) || await variablesApi.getVariableByIdAsync(mv.id);
           if (target && !variablesById.has(target.id)) variablesById.set(target.id, target);
           if (target) {

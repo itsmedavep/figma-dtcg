@@ -29,6 +29,7 @@ type HandlerDeps = {
     safeKeyFromCollectionAndMode: SafeKeyFn;
     importDtcg: ImportFn;
     exportDtcg: ExportFn;
+    broadcastLocalCollections: (opts?: { force?: boolean; silent?: boolean }) => Promise<void>;
 };
 
 type GhSelected = {
@@ -312,40 +313,6 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
             return { ok: false, status: status || 400, message };
     }
     return { ok: true };
-  }
-
-  async function refreshCollectionsSnapshotForUi(): Promise<void> {
-    try {
-      const snap = await deps.snapshotCollectionsForUi();
-      const last = await figma.clientStorage.getAsync('lastSelection').catch(() => null);
-      const exportAllPrefVal = await figma.clientStorage.getAsync('exportAllPref').catch(() => false);
-      const styleDictionaryPrefVal = await figma.clientStorage.getAsync('styleDictionaryPref').catch(() => false);
-      const flatTokensPrefVal = await figma.clientStorage.getAsync('flatTokensPref').catch(() => false);
-      const allowHexPrefStored = await figma.clientStorage.getAsync('allowHexPref').catch(() => null);
-      const githubRememberPrefStored = await figma.clientStorage.getAsync('githubRememberPref').catch(() => null);
-      const allowHexPrefVal = typeof allowHexPrefStored === 'boolean' ? allowHexPrefStored : true;
-      const githubRememberPrefVal = typeof githubRememberPrefStored === 'boolean' ? githubRememberPrefStored : true;
-      const lastOrNull = last && typeof last.collection === 'string' && typeof last.mode === 'string'
-        ? last
-        : null;
-
-      deps.send({
-        type: 'COLLECTIONS_DATA',
-        payload: {
-          collections: snap.collections,
-          last: lastOrNull,
-          exportAllPref: !!exportAllPrefVal,
-          styleDictionaryPref: !!styleDictionaryPrefVal,
-          flatTokensPref: !!flatTokensPrefVal,
-          allowHexPref: allowHexPrefVal,
-          githubRememberPref: githubRememberPrefVal
-        }
-      });
-      deps.send({ type: 'RAW_COLLECTIONS_TEXT', payload: { text: snap.rawText } });
-    } catch (err) {
-      const message = (err as Error)?.message || 'unknown error';
-      deps.send({ type: 'ERROR', payload: { message: `GitHub: Failed to refresh local state: ${message}` } });
-    }
   }
 
     async function handle(msg: UiToPlugin): Promise<boolean> {
@@ -991,8 +958,6 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                             source: "github",
                         },
                     });
-
-                    await refreshCollectionsSnapshotForUi();
                 } catch (err) {
                     const msgText = (err as Error)?.message || "Invalid JSON";
                     deps.send({
@@ -1013,6 +978,14 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                             message: `GitHub import failed: ${msgText}`,
                         },
                     });
+                    return true;
+                }
+
+                // Refresh UI safely after import
+                try {
+                    await deps.broadcastLocalCollections({ force: true });
+                } catch (e) {
+                    // ignore refresh errors, import succeeded
                 }
                 return true;
             }
@@ -1349,7 +1322,7 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                     selectionState.collection = selectionCollection;
                 if (selectionMode) selectionState.mode = selectionMode;
                 await mergeSelected(selectionState);
-                await refreshCollectionsSnapshotForUi();
+                await deps.broadcastLocalCollections({ force: true });
 
                 try {
                     const files: Array<{ name: string; json: unknown }> = [];
