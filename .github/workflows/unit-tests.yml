@@ -12,6 +12,11 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4 # Checks out your repository code
 
+            - name: Clean node_modules and install dependencies
+              run: |
+                  rm -rf node_modules package-lock.json
+                  npm install
+
             - name: Build project
               run: npm run build
 
