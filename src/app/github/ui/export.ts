@@ -15,6 +15,7 @@ export class GithubExportUi {
     private ghScopeTypography: HTMLInputElement | null = null;
     private ghScopeSelected: HTMLInputElement | null = null;
     private ghCreatePrChk: HTMLInputElement | null = null;
+    private ghPrOptions: HTMLElement | null = null;
     private ghPrTitleInput: HTMLInputElement | null = null;
     private ghPrBodyInput: HTMLTextAreaElement | null = null;
 
@@ -55,6 +56,7 @@ export class GithubExportUi {
         this.ghCreatePrChk = this.doc.getElementById(
             "ghCreatePrChk"
         ) as HTMLInputElement;
+        this.ghPrOptions = this.doc.getElementById("ghPrOptions");
         this.ghPrTitleInput = this.doc.getElementById(
             "ghPrTitleInput"
         ) as HTMLInputElement;
@@ -75,6 +77,15 @@ export class GithubExportUi {
                     el.addEventListener("change", () => this.updateEnabled());
             }
         );
+
+        if (this.ghCreatePrChk) {
+            this.ghCreatePrChk.addEventListener("change", () => {
+                this.updatePrOptionsVisibility();
+                this.updateEnabled();
+            });
+        }
+
+        this.updatePrOptionsVisibility();
     }
 
     public setContext(
@@ -100,10 +111,17 @@ export class GithubExportUi {
         this.prBaseBranch = "";
         this.hasCollections = false;
         this.hasTextStyles = false;
+        if (this.ghCreatePrChk) this.ghCreatePrChk.checked = false;
+        this.updatePrOptionsVisibility();
         this.updateEnabled();
     }
 
     public handleMessage(msg: PluginToUi): boolean {
+        if (msg.type === "GITHUB_RESTORE_SELECTED") {
+            this.restoreFromSaved(msg.payload || {});
+            this.updateEnabled();
+            return false;
+        }
         if (msg.type === "GITHUB_COMMIT_RESULT") {
             this.handleCommitResult(msg.payload);
             return true;
@@ -113,6 +131,79 @@ export class GithubExportUi {
             return true;
         }
         return false;
+    }
+
+    private restoreFromSaved(payload: Record<string, unknown>): void {
+        if (this.ghFilenameInput && typeof payload.filename === "string") {
+            this.ghFilenameInput.value = payload.filename;
+        }
+
+        if (
+            this.ghCommitMsgInput &&
+            typeof payload.commitMessage === "string"
+        ) {
+            this.ghCommitMsgInput.value = payload.commitMessage;
+        }
+
+        if (
+            payload.scope === "all" ||
+            payload.scope === "selected" ||
+            payload.scope === "typography"
+        ) {
+            this.setScope(payload.scope);
+        }
+
+        if (
+            this.ghCreatePrChk &&
+            typeof payload.createPr === "boolean"
+        ) {
+            this.ghCreatePrChk.checked = payload.createPr;
+            this.updatePrOptionsVisibility();
+        }
+
+        if (this.ghPrTitleInput && typeof payload.prTitle === "string") {
+            this.ghPrTitleInput.value = payload.prTitle;
+        }
+        if (this.ghPrBodyInput && typeof payload.prBody === "string") {
+            this.ghPrBodyInput.value = payload.prBody;
+        }
+
+        if (typeof payload.prBase === "string") {
+            this.prBaseBranch = payload.prBase;
+        }
+
+        const styleChk = this.deps.getStyleDictionaryCheckbox();
+        if (styleChk && typeof payload.styleDictionary === "boolean") {
+            styleChk.checked = payload.styleDictionary;
+        }
+        const flatChk = this.deps.getFlatTokensCheckbox();
+        if (flatChk && typeof payload.flatTokens === "boolean") {
+            flatChk.checked = payload.flatTokens;
+        }
+    }
+
+    private setScope(scope: GithubScope): void {
+        if (scope === "all") {
+            if (this.ghScopeAll) this.ghScopeAll.checked = true;
+            if (this.ghScopeSelected) this.ghScopeSelected.checked = false;
+            if (this.ghScopeTypography) this.ghScopeTypography.checked = false;
+        } else if (scope === "typography") {
+            if (this.ghScopeTypography) this.ghScopeTypography.checked = true;
+            if (this.ghScopeAll) this.ghScopeAll.checked = false;
+            if (this.ghScopeSelected) this.ghScopeSelected.checked = false;
+        } else {
+            if (this.ghScopeSelected) this.ghScopeSelected.checked = true;
+            if (this.ghScopeAll) this.ghScopeAll.checked = false;
+            if (this.ghScopeTypography) this.ghScopeTypography.checked = false;
+        }
+
+        this.updatePrOptionsVisibility();
+    }
+
+    private updatePrOptionsVisibility(): void {
+        if (!this.ghPrOptions) return;
+        const show = !!(this.ghCreatePrChk && this.ghCreatePrChk.checked);
+        this.ghPrOptions.style.display = show ? "" : "none";
     }
 
     public updateEnabled() {

@@ -1763,6 +1763,7 @@
       this.ghScopeTypography = null;
       this.ghScopeSelected = null;
       this.ghCreatePrChk = null;
+      this.ghPrOptions = null;
       this.ghPrTitleInput = null;
       this.ghPrBodyInput = null;
       // State
@@ -1798,6 +1799,7 @@
       this.ghCreatePrChk = this.doc.getElementById(
         "ghCreatePrChk"
       );
+      this.ghPrOptions = this.doc.getElementById("ghPrOptions");
       this.ghPrTitleInput = this.doc.getElementById(
         "ghPrTitleInput"
       );
@@ -1816,6 +1818,13 @@
             el.addEventListener("change", () => this.updateEnabled());
         }
       );
+      if (this.ghCreatePrChk) {
+        this.ghCreatePrChk.addEventListener("change", () => {
+          this.updatePrOptionsVisibility();
+          this.updateEnabled();
+        });
+      }
+      this.updatePrOptionsVisibility();
     }
     setContext(owner, repo, branch, folder, prBaseBranch) {
       this.currentOwner = owner;
@@ -1833,9 +1842,16 @@
       this.prBaseBranch = "";
       this.hasCollections = false;
       this.hasTextStyles = false;
+      if (this.ghCreatePrChk) this.ghCreatePrChk.checked = false;
+      this.updatePrOptionsVisibility();
       this.updateEnabled();
     }
     handleMessage(msg) {
+      if (msg.type === "GITHUB_RESTORE_SELECTED") {
+        this.restoreFromSaved(msg.payload || {});
+        this.updateEnabled();
+        return false;
+      }
       if (msg.type === "GITHUB_COMMIT_RESULT") {
         this.handleCommitResult(msg.payload);
         return true;
@@ -1845,6 +1861,59 @@
         return true;
       }
       return false;
+    }
+    restoreFromSaved(payload) {
+      if (this.ghFilenameInput && typeof payload.filename === "string") {
+        this.ghFilenameInput.value = payload.filename;
+      }
+      if (this.ghCommitMsgInput && typeof payload.commitMessage === "string") {
+        this.ghCommitMsgInput.value = payload.commitMessage;
+      }
+      if (payload.scope === "all" || payload.scope === "selected" || payload.scope === "typography") {
+        this.setScope(payload.scope);
+      }
+      if (this.ghCreatePrChk && typeof payload.createPr === "boolean") {
+        this.ghCreatePrChk.checked = payload.createPr;
+        this.updatePrOptionsVisibility();
+      }
+      if (this.ghPrTitleInput && typeof payload.prTitle === "string") {
+        this.ghPrTitleInput.value = payload.prTitle;
+      }
+      if (this.ghPrBodyInput && typeof payload.prBody === "string") {
+        this.ghPrBodyInput.value = payload.prBody;
+      }
+      if (typeof payload.prBase === "string") {
+        this.prBaseBranch = payload.prBase;
+      }
+      const styleChk = this.deps.getStyleDictionaryCheckbox();
+      if (styleChk && typeof payload.styleDictionary === "boolean") {
+        styleChk.checked = payload.styleDictionary;
+      }
+      const flatChk = this.deps.getFlatTokensCheckbox();
+      if (flatChk && typeof payload.flatTokens === "boolean") {
+        flatChk.checked = payload.flatTokens;
+      }
+    }
+    setScope(scope) {
+      if (scope === "all") {
+        if (this.ghScopeAll) this.ghScopeAll.checked = true;
+        if (this.ghScopeSelected) this.ghScopeSelected.checked = false;
+        if (this.ghScopeTypography) this.ghScopeTypography.checked = false;
+      } else if (scope === "typography") {
+        if (this.ghScopeTypography) this.ghScopeTypography.checked = true;
+        if (this.ghScopeAll) this.ghScopeAll.checked = false;
+        if (this.ghScopeSelected) this.ghScopeSelected.checked = false;
+      } else {
+        if (this.ghScopeSelected) this.ghScopeSelected.checked = true;
+        if (this.ghScopeAll) this.ghScopeAll.checked = false;
+        if (this.ghScopeTypography) this.ghScopeTypography.checked = false;
+      }
+      this.updatePrOptionsVisibility();
+    }
+    updatePrOptionsVisibility() {
+      if (!this.ghPrOptions) return;
+      const show = !!(this.ghCreatePrChk && this.ghCreatePrChk.checked);
+      this.ghPrOptions.style.display = show ? "" : "none";
     }
     updateEnabled() {
       if (!this.ghExportAndCommitBtn) return;

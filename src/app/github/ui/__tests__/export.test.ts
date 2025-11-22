@@ -8,6 +8,7 @@ class MockHTMLElement {
     value = "";
     checked = false;
     disabled = false;
+    style: Record<string, any> = {};
     listeners: Record<string, any> = {};
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
@@ -80,7 +81,21 @@ describe("GithubExportUi", () => {
             "ghCreatePrChk",
             "ghPrTitleInput",
             "ghPrBodyInput",
+            "ghPrOptions",
         ].forEach((id) => (mockDoc.elements[id] = new MockHTMLElement()));
+        mockDoc.elements["ghPrOptions"].style.display = "none";
+
+        // Shared option checkboxes returned via deps
+        const styleChk = new MockHTMLElement();
+        const flatChk = new MockHTMLElement();
+        mockDoc.elements["styleDictionaryChk"] = styleChk;
+        mockDoc.elements["flatTokensChk"] = flatChk;
+        (deps.getStyleDictionaryCheckbox as any).mockImplementation(
+            () => styleChk as any
+        );
+        (deps.getFlatTokensCheckbox as any).mockImplementation(
+            () => flatChk as any
+        );
     });
 
     it("should disable export button initially", () => {
@@ -116,6 +131,54 @@ describe("GithubExportUi", () => {
 
         exportUi.reset();
         expect(btn.disabled).toBe(true);
+    });
+
+    it("shows and hides PR fields when toggling create PR checkbox", () => {
+        exportUi.attach(context);
+
+        const prChk = mockDoc.elements["ghCreatePrChk"];
+        const prOptions = mockDoc.elements["ghPrOptions"];
+
+        expect(prOptions.style.display).toBe("none");
+
+        prChk.checked = true;
+        prChk.change();
+        expect(prOptions.style.display).toBe("");
+
+        prChk.checked = false;
+        prChk.change();
+        expect(prOptions.style.display).toBe("none");
+    });
+
+    it("restores saved commit fields", () => {
+        exportUi.attach(context);
+        exportUi.setContext("owner", "repo", "main", "tokens/", "main");
+        exportUi.setCollectionsAvailability(true, true);
+
+        exportUi.handleMessage({
+            type: "GITHUB_RESTORE_SELECTED",
+            payload: {
+                filename: "saved.json",
+                commitMessage: "Saved commit",
+                scope: "all",
+                createPr: true,
+                prTitle: "Restore PR",
+                prBody: "Body",
+                styleDictionary: true,
+                flatTokens: true,
+            },
+        });
+
+        expect(mockDoc.elements["ghFilenameInput"].value).toBe("saved.json");
+        expect(mockDoc.elements["ghCommitMsgInput"].value).toBe("Saved commit");
+        expect(mockDoc.elements["ghScopeAll"].checked).toBe(true);
+        expect(mockDoc.elements["ghScopeSelected"].checked).toBe(false);
+        expect(mockDoc.elements["ghCreatePrChk"].checked).toBe(true);
+        expect(mockDoc.elements["ghPrTitleInput"].value).toBe("Restore PR");
+        expect(mockDoc.elements["ghPrBodyInput"].value).toBe("Body");
+        expect(mockDoc.elements["styleDictionaryChk"].checked).toBe(true);
+        expect(mockDoc.elements["flatTokensChk"].checked).toBe(true);
+        expect(mockDoc.elements["ghPrOptions"].style.display).toBe("");
     });
 
     it("should export with correct payload", () => {
