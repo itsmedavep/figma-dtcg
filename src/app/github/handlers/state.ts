@@ -74,9 +74,16 @@ export async function setLastCommitSignature(
     }
 }
 
+import type { UiToPlugin } from "../../messages";
+
+type SaveStatePayload = Extract<
+    UiToPlugin,
+    { type: "GITHUB_SAVE_STATE" }
+>["payload"];
+
 export async function handleSaveState(
     ctx: DispatcherContext,
-    payload: any
+    payload: SaveStatePayload
 ): Promise<void> {
     const update: Partial<GhSelected> = {};
     if (typeof payload.owner === "string") update.owner = payload.owner;

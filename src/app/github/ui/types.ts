@@ -1,6 +1,6 @@
 // src/app/github/ui/types.ts
 // Shared GitHub tab UI contracts for orchestration and feature modules.
-import type { PluginToUi, UiToPlugin, GithubScope } from "../../messages";
+import type { PluginToUi, UiToPlugin } from "../../messages";
 
 export type FolderListEntry = {
     type: "dir" | "file";

@@ -8,7 +8,9 @@ class MockHTMLElement {
     dataset: Record<string, string> = {};
     style: Record<string, string> = {};
     attributes: Record<string, string> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     children: any[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listeners: Record<string, any> = {};
     type = "";
     disabled = false;
@@ -37,12 +39,15 @@ class MockHTMLElement {
         delete this.attributes[name];
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
-    removeEventListener(event: string, cb: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    removeEventListener(event: string, _cb: any) {
         delete this.listeners[event];
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     dispatchEvent(event: any) {
         if (this.listeners[event.type]) {
             this.listeners[event.type](event);
@@ -70,6 +75,7 @@ class MockHTMLElement {
         return null;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     appendChild(child: any) {
         if (typeof child === "string") {
             this.textContent += child;
@@ -89,16 +95,19 @@ class MockHTMLElement {
         return this.children[0];
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     removeChild(child: any) {
         const idx = this.children.indexOf(child);
         if (idx > -1) this.children.splice(idx, 1);
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     replaceChildren(...children: any[]) {
         this.children = children.filter((c) => typeof c !== "string");
     }
 }
 
 class MockDocument {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listeners: Record<string, any> = {};
     createElement(tag: string) {
         return new MockHTMLElement(tag);
@@ -106,9 +115,11 @@ class MockDocument {
     createTextNode(text: string) {
         return text;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     removeEventListener(event: string, cb: any) {
         if (this.listeners[event] === cb) delete this.listeners[event];
     }
@@ -116,6 +127,7 @@ class MockDocument {
 
 class MockEvent {
     type: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     target: any;
     constructor(type: string) {
         this.type = type;
@@ -136,13 +148,16 @@ describe("Autocomplete", () => {
     let input: HTMLInputElement;
     let menu: HTMLElement;
     let toggleBtn: HTMLButtonElement;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let onQuery: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let onSelect: any;
     let autocomplete: Autocomplete;
 
     beforeEach(() => {
         vi.stubGlobal("document", new MockDocument());
         vi.stubGlobal("window", {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             setTimeout: (cb: any) => cb(),
             clearTimeout: () => {},
         });
@@ -151,8 +166,11 @@ describe("Autocomplete", () => {
         vi.stubGlobal("KeyboardEvent", MockKeyboardEvent);
         vi.stubGlobal("Node", MockHTMLElement);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         input = document.createElement("input") as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         menu = document.createElement("ul") as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         toggleBtn = document.createElement("button") as any;
         onQuery = vi.fn();
         onSelect = vi.fn();
@@ -205,8 +223,10 @@ describe("Autocomplete", () => {
         autocomplete.setItems(items);
         autocomplete.open();
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const li = menu.children[0] as any;
         // Mock target property on event
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const event = new MouseEvent("click") as any;
         event.target = li;
 
@@ -253,6 +273,7 @@ describe("Autocomplete", () => {
     });
 
     it("should detach document listener on destroy", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const doc = document as any as MockDocument;
         expect(typeof doc.listeners["mousedown"]).toBe("function");
         autocomplete.destroy();

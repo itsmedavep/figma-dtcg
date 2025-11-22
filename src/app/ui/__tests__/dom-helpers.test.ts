@@ -8,7 +8,9 @@ class MockHTMLElement {
     dataset: Record<string, string> = {};
     style: Record<string, string> = {};
     attributes: Record<string, string> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     children: any[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listeners: Record<string, any> = {};
     type = "";
     disabled = false;
@@ -47,13 +49,17 @@ class MockHTMLElement {
     }
     setAttribute(name: string, val: string) {
         this.attributes[name] = val;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (typeof (this as any)[name] === "boolean") {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any)[name] = val === "" ? true : Boolean(val);
         } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any)[name] = val;
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
@@ -61,6 +67,7 @@ class MockHTMLElement {
         if (this.listeners["click"]) this.listeners["click"]();
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     appendChild(child: any) {
         if (typeof child === "string") {
             this._textContent += child;
@@ -83,6 +90,7 @@ class MockHTMLElement {
         return this.children[0];
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     removeChild(child: any) {
         const idx = this.children.indexOf(child);
         if (idx > -1) this.children.splice(idx, 1);

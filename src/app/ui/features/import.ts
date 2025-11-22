@@ -239,12 +239,15 @@ function collectContextsFromJson(root: unknown): ImportContextOption[] {
             try {
                 const ext = obj["$extensions"];
                 if (ext && typeof ext === "object") {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const cf = (ext as any)["com.figma"];
                     if (
                         cf &&
                         typeof cf === "object" &&
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         typeof (cf as any).modeName === "string"
                     ) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const candidate = String((cf as any).modeName).trim();
                         if (candidate) mode = candidate;
                     }
@@ -262,6 +265,7 @@ function collectContextsFromJson(root: unknown): ImportContextOption[] {
         for (const key in obj) {
             if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
             if (key.startsWith("$")) continue;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             visit((obj as any)[key], path.concat(String(key)));
         }
     }

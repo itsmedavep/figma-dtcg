@@ -1,10 +1,11 @@
 import { ghListBranches, ghCreateBranch } from "../../../core/github/api";
 import type { DispatcherContext } from "./types";
 import { mergeSelected, getSelected, setSelected } from "./state";
+import type { GithubRepoTarget, GithubBranchPayload } from "../../messages";
 
 export async function handleFetchBranches(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubRepoTarget & { page?: number; force?: boolean }
 ): Promise<void> {
     const owner = String(payload.owner || "");
     const repo = String(payload.repo || "");
@@ -42,7 +43,7 @@ export async function handleFetchBranches(
 
 export async function handleSelectBranch(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubBranchPayload
 ): Promise<void> {
     const sel = await getSelected();
     await setSelected({
@@ -64,7 +65,7 @@ export async function handleSelectBranch(
 
 export async function handleCreateBranch(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubRepoTarget & { baseBranch: string; newBranch: string }
 ): Promise<void> {
     const owner = String(payload.owner || "");
     const repo = String(payload.repo || "");

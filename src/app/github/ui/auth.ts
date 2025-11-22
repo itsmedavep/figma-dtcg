@@ -75,7 +75,7 @@ export class GithubAuthUi {
 
     public handleMessage(msg: PluginToUi): boolean {
         if (msg.type === "GITHUB_AUTH_RESULT") {
-            const p = msg.payload || ({} as any);
+            const p = msg.payload;
             this.ghIsAuthed = !!p.ok;
             this.ghTokenExpiresAt =
                 typeof p.exp !== "undefined" && p.exp !== null

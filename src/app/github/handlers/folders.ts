@@ -4,6 +4,7 @@ import {
     normalizeFolderForStorage,
     folderStorageToCommitPath,
 } from "../folders";
+import type { GithubFolderPayload, GithubRepoTarget } from "../../messages";
 import { getSelected, setSelected } from "./state";
 
 async function ensureFolderPathWritable(
@@ -65,7 +66,7 @@ export { ensureFolderPathWritable }; // Export for use in commits.ts if needed
 
 export async function handleSetFolder(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubFolderPayload
 ): Promise<void> {
     const folderResult = normalizeFolderForStorage(
         String(payload.folder ?? "")
@@ -98,7 +99,7 @@ export async function handleSetFolder(
 
 export async function handleFolderList(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubRepoTarget & { branch: string; path: string }
 ): Promise<void> {
     const owner = String(payload.owner || "");
     const repo = String(payload.repo || "");
@@ -223,13 +224,17 @@ export async function handleFolderList(
 
 export async function handleCreateFolder(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubRepoTarget & {
+        branch: string;
+        path?: string;
+        folderPath?: string;
+    }
 ): Promise<void> {
     const owner = String(payload.owner || "");
     const repo = String(payload.repo || "");
     const branch = String(payload.branch || "");
     const folderPathRaw = String(
-        (payload as any).folderPath || payload.path || ""
+        payload.folderPath || payload.path || ""
     ).trim();
 
     if (!ctx.state.token) {

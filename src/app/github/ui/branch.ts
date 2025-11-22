@@ -6,7 +6,7 @@ import {
     Autocomplete,
     AutocompleteItem,
 } from "../../ui/components/autocomplete";
-import { h, clearChildren } from "../../ui/dom-helpers";
+import { h } from "../../ui/dom-helpers";
 
 const BRANCH_TTL_MS = 60_000;
 const RENDER_STEP = 200;
@@ -334,7 +334,7 @@ export class GithubBranchUi {
         this.applyBranchFilter();
     }
 
-    private handleSelect(item: AutocompleteItem, fromKeyboard: boolean) {
+    private handleSelect(item: AutocompleteItem, _fromKeyboard: boolean) {
         if (item.value === "__more__") {
             this.renderCount = Math.min(
                 this.renderCount + RENDER_STEP,

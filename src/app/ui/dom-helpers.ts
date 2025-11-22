@@ -10,6 +10,7 @@
  */
 export function h<K extends keyof HTMLElementTagNameMap>(
     tag: K,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     props?: Record<string, any> | null,
     ...children: (string | Node | null | undefined)[]
 ): HTMLElementTagNameMap[K] {
@@ -33,7 +34,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(
                 } else if (key === "textContent") {
                     (el as HTMLElement).textContent = val;
                 } else if (val === true) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     if (key in el && typeof (el as any)[key] === "boolean") {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         (el as any)[key] = true;
                     }
                     el.setAttribute(key, "");

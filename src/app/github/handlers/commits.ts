@@ -15,7 +15,16 @@ import {
     ensureFolderPathWritable,
     getSelectedFolderForCommit,
 } from "./folders";
-import type { GithubScope } from "../../messages";
+import type { GithubScope, UiToPlugin } from "../../messages";
+
+type ExportFilesPayload = Extract<
+    UiToPlugin,
+    { type: "GITHUB_EXPORT_FILES" }
+>["payload"];
+type ExportAndCommitPayload = Extract<
+    UiToPlugin,
+    { type: "GITHUB_EXPORT_AND_COMMIT" }
+>["payload"];
 
 function sleep(ms: number) {
     return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -56,7 +65,7 @@ function pickPerModeFile(
 
 export async function handleExportFiles(
     ctx: DispatcherContext,
-    payload: any
+    payload: ExportFilesPayload
 ): Promise<void> {
     const scope: GithubScope =
         payload.scope === "all"
@@ -137,7 +146,7 @@ export async function handleExportFiles(
 
 export async function handleExportAndCommit(
     ctx: DispatcherContext,
-    payload: any
+    payload: ExportAndCommitPayload
 ): Promise<void> {
     const owner = String(payload.owner || "");
     const repo = String(payload.repo || "");
@@ -444,7 +453,7 @@ export async function handleExportAndCommit(
             return;
         }
 
-        const isPlainEmptyObject = (v: any) =>
+        const isPlainEmptyObject = (v: unknown) =>
             v &&
             typeof v === "object" &&
             !Array.isArray(v) &&

@@ -8,8 +8,11 @@ class MockHTMLElement {
     value = "";
     checked = false;
     disabled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     style: Record<string, any> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listeners: Record<string, any> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
@@ -22,7 +25,7 @@ class MockHTMLElement {
     focus() {}
 
     // For log
-    appendChild(child: MockHTMLElement) {}
+    appendChild(_child: MockHTMLElement) {}
     scrollHeight = 100;
     scrollTop = 0;
 }
@@ -32,7 +35,7 @@ class MockDocument {
     getElementById(id: string) {
         return this.elements[id] || null;
     }
-    createElement(tag: string) {
+    createElement(_tag: string) {
         return new MockHTMLElement();
     }
 }
@@ -51,11 +54,13 @@ describe("GithubExportUi", () => {
             getCollectionSelect: vi.fn(() => {
                 const el = new MockHTMLElement();
                 el.value = "coll-1";
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 return el as any;
             }),
             getModeSelect: vi.fn(() => {
                 const el = new MockHTMLElement();
                 el.value = "mode-1";
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 return el as any;
             }),
             getAllowHexCheckbox: vi.fn(),
@@ -66,7 +71,9 @@ describe("GithubExportUi", () => {
         exportUi = new GithubExportUi(deps);
         mockDoc = new MockDocument();
         context = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             document: mockDoc as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             window: {} as any,
         };
 
@@ -90,10 +97,14 @@ describe("GithubExportUi", () => {
         const flatChk = new MockHTMLElement();
         mockDoc.elements["styleDictionaryChk"] = styleChk;
         mockDoc.elements["flatTokensChk"] = flatChk;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (deps.getStyleDictionaryCheckbox as any).mockImplementation(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             () => styleChk as any
         );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (deps.getFlatTokensCheckbox as any).mockImplementation(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             () => flatChk as any
         );
     });

@@ -7,7 +7,9 @@ class MockHTMLElement {
     id = "";
     disabled = false;
     value = "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listeners: Record<string, any> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
@@ -47,13 +49,17 @@ describe("GithubImportUi", () => {
         importUi = new GithubImportUi(deps);
         mockDoc = new MockDocument();
         context = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             document: mockDoc as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             window: {} as any,
         };
 
         mockDoc.elements["ghFetchBtn"] = new MockHTMLElement();
         mockDoc.elements["ghFetchTokensBtn"] = mockDoc.elements["ghFetchBtn"];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pathInput = new MockHTMLElement() as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (pathInput as any).value = "tokens/tokens.json";
         mockDoc.elements["ghFetchPathInput"] = pathInput;
     });

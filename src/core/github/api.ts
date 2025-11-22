@@ -79,7 +79,6 @@ function b64(s: string): string {
  * Includes ASCII control characters (\u0000-\u001F) which are not allowed in
  * repository paths and could cause security or parsing issues.
  */
-// eslint-disable-next-line no-control-regex -- Intentionally filtering control characters for path security
 const INVALID_REPO_SEGMENT = /[<>:"\\|?*\u0000-\u001F]/;
 
 function sanitizeRepoPathInput(
@@ -268,7 +267,6 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
         const all: GhRepo[] = [];
         let page = 1;
 
-        // eslint-disable-next-line no-constant-condition
         while (true) {
             const res = await fetchJsonWithRetry(
                 `${base}&page=${page}`,

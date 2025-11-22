@@ -29,10 +29,12 @@ class MockHTMLElement {
     removeAttribute(name: string) {
         delete this.attributes[name];
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listeners: Record<string, any> = {};
     click() {
         if (this.listeners["click"]) this.listeners["click"]();
@@ -82,7 +84,9 @@ describe("GithubAuthUi", () => {
         authUi = new GithubAuthUi(deps);
         mockDoc = new MockDocument();
         context = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             document: mockDoc as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             window: {} as any,
         };
 

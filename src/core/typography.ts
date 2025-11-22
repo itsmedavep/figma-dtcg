@@ -802,6 +802,7 @@ export function applyTypographyValueToTextStyle(
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const anyStyle = style as any;
     const supportsTextAlignHorizontal =
         typeof anyStyle.textAlignHorizontal !== "undefined";

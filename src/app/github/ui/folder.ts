@@ -438,7 +438,7 @@ export class GithubFolderUi {
         label: string,
         options?: { onClick?: () => void; muted?: boolean; disabled?: boolean }
     ): HTMLElement {
-        const props: Record<string, any> = {
+        const props: Record<string, unknown> = {
             className: `folder-picker-row ${options?.muted ? "is-muted" : ""}`,
             type: "button",
         };

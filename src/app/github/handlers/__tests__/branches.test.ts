@@ -44,6 +44,7 @@ describe("Branch Handlers", () => {
 
     describe("handleFetchBranches", () => {
         it("should fetch branches and update state", async () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (ghListBranches as any).mockResolvedValue({
                 ok: true,
                 defaultBranch: "main",
@@ -70,6 +71,7 @@ describe("Branch Handlers", () => {
         });
 
         it("should handle error", async () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (ghListBranches as any).mockResolvedValue({ ok: false });
             await handleFetchBranches(ctx, { owner: "owner", repo: "repo" });
 
@@ -95,11 +97,16 @@ describe("Branch Handlers", () => {
 
     describe("handleSelectBranch", () => {
         it("should update selected branch", async () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (getSelected as any).mockResolvedValue({
                 owner: "owner",
                 repo: "repo",
             });
-            await handleSelectBranch(ctx, { branch: "feature" });
+            await handleSelectBranch(ctx, {
+                owner: "owner",
+                repo: "repo",
+                branch: "feature",
+            });
 
             expect(setSelected).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -114,6 +121,7 @@ describe("Branch Handlers", () => {
 
     describe("handleCreateBranch", () => {
         it("should create branch and update state", async () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (ghCreateBranch as any).mockResolvedValue({ ok: true });
             await handleCreateBranch(ctx, {
                 owner: "owner",
@@ -143,7 +151,13 @@ describe("Branch Handlers", () => {
         });
 
         it("should handle missing args", async () => {
-            await handleCreateBranch(ctx, { owner: "owner" });
+            await handleCreateBranch(ctx, {
+                owner: "owner",
+                repo: "",
+                baseBranch: "",
+                newBranch: "",
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any);
             expect(sendMock).toHaveBeenCalledWith(
                 expect.objectContaining({
                     type: "GITHUB_CREATE_BRANCH_RESULT",

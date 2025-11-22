@@ -5,9 +5,16 @@ import {
     folderStorageToCommitPath,
 } from "../folders";
 
+import type { UiToPlugin } from "../../messages";
+
+type FetchTokensPayload = Extract<
+    UiToPlugin,
+    { type: "GITHUB_FETCH_TOKENS" }
+>["payload"];
+
 export async function handleFetchTokens(
     ctx: DispatcherContext,
-    payload: any
+    payload: FetchTokensPayload
 ): Promise<void> {
     const owner = String(payload.owner || "");
     const repo = String(payload.repo || "");
@@ -107,7 +114,7 @@ export async function handleFetchTokens(
     try {
         const json = JSON.parse(res.contentText || "{}");
         const contexts = Array.isArray(payload.contexts)
-            ? payload.contexts.map((c: any) => String(c))
+            ? payload.contexts.map((c) => String(c))
             : [];
         const summary = await ctx.deps.importDtcg(json, {
             allowHexStrings: allowHex,

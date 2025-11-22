@@ -59,7 +59,7 @@
     }
     handleMessage(msg) {
       if (msg.type === "GITHUB_AUTH_RESULT") {
-        const p = msg.payload || {};
+        const p = msg.payload;
         this.ghIsAuthed = !!p.ok;
         this.ghTokenExpiresAt = typeof p.exp !== "undefined" && p.exp !== null ? p.exp : typeof p.tokenExpiration !== "undefined" && p.tokenExpiration !== null ? p.tokenExpiration : null;
         if (typeof p.remember === "boolean") {
@@ -840,7 +840,7 @@
       this.updateClearButtonVisibility();
       this.applyBranchFilter();
     }
-    handleSelect(item, fromKeyboard) {
+    handleSelect(item, _fromKeyboard) {
       if (item.value === "__more__") {
         this.renderCount = Math.min(
           this.renderCount + RENDER_STEP,
@@ -2353,8 +2353,17 @@
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return null;
-      const ctxs = Array.isArray(parsed.contexts) ? normalizeContextList(parsed.contexts) : [];
-      const ts = typeof parsed.updatedAt === "number" ? Number(parsed.updatedAt) : Date.now();
+      const ctxs = Array.isArray(parsed.contexts) ? (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        normalizeContextList(parsed.contexts)
+      ) : [];
+      const ts = (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        typeof parsed.updatedAt === "number" ? (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          Number(parsed.updatedAt)
+        ) : Date.now()
+      );
       if (ctxs.length > 0) return { contexts: ctxs, updatedAt: ts };
     } catch (e) {
     }
@@ -2385,9 +2394,21 @@
       for (let i = 0; i < parsed.length; i++) {
         const entry = parsed[i];
         if (!entry || typeof entry !== "object") continue;
-        const timestamp = typeof entry.timestamp === "number" ? Number(entry.timestamp) : null;
+        const timestamp = (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          typeof entry.timestamp === "number" ? (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            Number(entry.timestamp)
+          ) : null
+        );
         const summary = entry.summary;
-        const source = entry.source === "github" ? "github" : entry.source === "local" ? "local" : void 0;
+        const source = (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          entry.source === "github" ? "github" : (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            entry.source === "local" ? "local" : void 0
+          )
+        );
         if (!timestamp || !summary || typeof summary !== "object") continue;
         if (!Array.isArray(summary.appliedContexts) || !Array.isArray(summary.availableContexts))
           continue;
@@ -2598,7 +2619,8 @@
           const ext = obj["$extensions"];
           if (ext && typeof ext === "object") {
             const cf = ext["com.figma"];
-            if (cf && typeof cf === "object" && typeof cf.modeName === "string") {
+            if (cf && typeof cf === "object" && // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            typeof cf.modeName === "string") {
               const candidate = String(cf.modeName).trim();
               if (candidate) mode = candidate;
             }

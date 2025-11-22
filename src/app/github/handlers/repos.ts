@@ -34,9 +34,11 @@ export async function listAndSendRepos(
     }
 }
 
+import type { GithubRepoTarget } from "../../messages";
+
 export async function handleSelectRepo(
     ctx: DispatcherContext,
-    payload: any
+    payload: GithubRepoTarget
 ): Promise<void> {
     const sel = await getSelected();
     await setSelected({

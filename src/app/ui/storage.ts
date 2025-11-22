@@ -43,12 +43,16 @@ export function readImportPreference(): ImportPreference | null {
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object") return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ctxs = Array.isArray((parsed as any).contexts)
-            ? normalizeContextList((parsed as any).contexts as string[])
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              normalizeContextList((parsed as any).contexts as string[])
             : [];
         const ts =
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             typeof (parsed as any).updatedAt === "number"
-                ? Number((parsed as any).updatedAt)
+                ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  Number((parsed as any).updatedAt)
                 : Date.now();
         if (ctxs.length > 0) return { contexts: ctxs, updatedAt: ts };
     } catch {
@@ -84,14 +88,19 @@ export function readImportLog(): ImportLogEntry[] {
             const entry = parsed[i];
             if (!entry || typeof entry !== "object") continue;
             const timestamp =
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 typeof (entry as any).timestamp === "number"
-                    ? Number((entry as any).timestamp)
+                    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      Number((entry as any).timestamp)
                     : null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const summary = (entry as any).summary as ImportSummary | undefined;
             const source =
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (entry as any).source === "github"
                     ? "github"
-                    : (entry as any).source === "local"
+                    : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (entry as any).source === "local"
                     ? "local"
                     : undefined;
             if (!timestamp || !summary || typeof summary !== "object") continue;
@@ -101,18 +110,22 @@ export function readImportLog(): ImportLogEntry[] {
             )
                 continue;
             if (!Array.isArray(summary.tokensWithRemovedContexts)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (summary as any).tokensWithRemovedContexts = [];
             }
             if (!Array.isArray(summary.skippedContexts)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (summary as any).skippedContexts = [];
             }
             if (!Array.isArray(summary.missingRequestedContexts)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (summary as any).missingRequestedContexts = [];
             }
             if (
                 typeof summary.createdStyles !== "number" ||
                 !isFinite(summary.createdStyles)
             ) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (summary as any).createdStyles = 0;
             }
             entries.push({ timestamp, summary, source });

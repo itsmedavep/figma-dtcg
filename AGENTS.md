@@ -40,6 +40,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 -   Preserve existing ordering guarantees (especially in token normalization) and avoid adding helpers that would reorder data implicitly.
 -   Guard optional Figma APIs and browser APIs with defensive checks; silent `catch { /* ignore */ }` blocks are used deliberately to keep the plugin resilient.
 -   Keep things modular in the code. No giant "god" functions.
+-   Avoid using `any` type unless necessary.
 
 ## UI (src/app/ui.\*)
 
@@ -58,3 +59,6 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 -   When changes affect the compiled output or manifest wiring, run `npm run build` to ensure assets emit successfully.
 -   Run `npm test` after adding or modifying and unit tests.
 -   When changes affect the application's functionality, organization, or when new unit tests get added
+-   Use `npm run lint` to check for style violations.
+-   Use `npm run typecheck` to check for type errors.
+-   Use `npm run test` to run unit tests.

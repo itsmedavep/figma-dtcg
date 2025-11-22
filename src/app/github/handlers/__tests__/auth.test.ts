@@ -53,6 +53,7 @@ describe("Auth Handlers", () => {
     describe("handleSetToken", () => {
         it("should set token and verify user", async () => {
             const token = "test-token";
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (ghGetUser as any).mockResolvedValue({
                 ok: true,
                 user: { login: "testuser", name: "Test User" },
@@ -81,6 +82,7 @@ describe("Auth Handlers", () => {
         });
 
         it("should handle invalid token", async () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (ghGetUser as any).mockResolvedValue({
                 ok: false,
                 error: "Bad credentials",
@@ -140,6 +142,7 @@ describe("Auth Handlers", () => {
                     return Promise.resolve(btoa("stored-token"));
                 return Promise.resolve(null);
             });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (ghGetUser as any).mockResolvedValue({
                 ok: true,
                 user: { login: "storeduser", name: "Stored User" },

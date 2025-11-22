@@ -73,6 +73,7 @@ class MockHTMLElement {
     select() {}
 
     // For list
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     appendChild(child: any) {
         if (typeof child === "string") {
             this.textContent += child;
@@ -81,6 +82,7 @@ class MockHTMLElement {
         }
         return child;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     replaceChildren(...children: any[]) {
         this.children = children.filter((c) => typeof c !== "string");
     }
@@ -134,8 +136,11 @@ describe("GithubFolderUi", () => {
         mockDoc = new MockDocument();
 
         // Setup global document for dom-helpers
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).document = mockDoc;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).window = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             setTimeout: (cb: any) => cb(),
             clearTimeout: () => {},
         };
@@ -143,6 +148,7 @@ describe("GithubFolderUi", () => {
         folderUi = new GithubFolderUi(deps);
         context = {
             document: mockDoc as unknown as Document,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             window: (globalThis as any).window,
         };
 
@@ -160,14 +166,20 @@ describe("GithubFolderUi", () => {
         ].forEach((id) => (mockDoc.elements[id] = new MockHTMLElement()));
 
         // Mock globals
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).HTMLElement = MockHTMLElement;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).HTMLInputElement = MockHTMLElement;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).HTMLButtonElement = MockHTMLElement;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).Node = MockHTMLElement;
     });
 
     afterEach(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).document;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).window;
     });
 
