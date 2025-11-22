@@ -1677,6 +1677,10 @@
       this.updateEnabled();
     }
     reset() {
+      this.currentOwner = "";
+      this.currentRepo = "";
+      this.currentBranch = "";
+      this.currentFolder = "";
       this.updateEnabled();
     }
     handleMessage(msg) {
@@ -1822,6 +1826,13 @@
       this.updateEnabled();
     }
     reset() {
+      this.currentOwner = "";
+      this.currentRepo = "";
+      this.currentBranch = "";
+      this.currentFolder = "";
+      this.prBaseBranch = "";
+      this.hasCollections = false;
+      this.hasTextStyles = false;
       this.updateEnabled();
     }
     handleMessage(msg) {

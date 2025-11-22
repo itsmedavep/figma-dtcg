@@ -1,3 +1,5 @@
+// src/app/github/ui/export.ts
+// GitHub export UI for committing token files and optionally opening PRs.
 import type { PluginToUi, GithubScope, UiToPlugin } from "../../messages";
 import type { GithubUiDependencies, AttachContext } from "./types";
 
@@ -91,6 +93,13 @@ export class GithubExportUi {
     }
 
     public reset() {
+        this.currentOwner = "";
+        this.currentRepo = "";
+        this.currentBranch = "";
+        this.currentFolder = "";
+        this.prBaseBranch = "";
+        this.hasCollections = false;
+        this.hasTextStyles = false;
         this.updateEnabled();
     }
 

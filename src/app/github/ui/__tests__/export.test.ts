@@ -103,6 +103,21 @@ describe("GithubExportUi", () => {
         expect(btn.disabled).toBe(false);
     });
 
+    it("should clear context on reset and disable export", () => {
+        exportUi.attach(context);
+
+        const filename = mockDoc.elements["ghFilenameInput"];
+        filename.value = "tokens.json";
+
+        const btn = mockDoc.elements["ghExportAndCommitBtn"];
+
+        exportUi.setContext("owner", "repo", "main", "tokens/", "main");
+        expect(btn.disabled).toBe(false);
+
+        exportUi.reset();
+        expect(btn.disabled).toBe(true);
+    });
+
     it("should export with correct payload", () => {
         exportUi.attach(context);
 

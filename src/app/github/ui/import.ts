@@ -1,3 +1,5 @@
+// src/app/github/ui/import.ts
+// Token import UI for fetching repository token files.
 import type { PluginToUi } from "../../messages";
 import type { GithubUiDependencies, AttachContext } from "./types";
 
@@ -53,6 +55,10 @@ export class GithubImportUi {
     }
 
     public reset() {
+        this.currentOwner = "";
+        this.currentRepo = "";
+        this.currentBranch = "";
+        this.currentFolder = "";
         this.updateEnabled();
     }
 
