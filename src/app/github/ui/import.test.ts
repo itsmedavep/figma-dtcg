@@ -6,12 +6,16 @@ import type { GithubUiDependencies, AttachContext } from "./types";
 class MockHTMLElement {
     id = "";
     disabled = false;
+    value = "";
     listeners: Record<string, any> = {};
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
     click() {
         if (this.listeners["click"]) this.listeners["click"]();
+    }
+    trigger(type: string) {
+        if (this.listeners[type]) this.listeners[type]();
     }
 }
 
@@ -48,6 +52,10 @@ describe("GithubImportUi", () => {
         };
 
         mockDoc.elements["ghFetchBtn"] = new MockHTMLElement();
+        mockDoc.elements["ghFetchTokensBtn"] = mockDoc.elements["ghFetchBtn"];
+        const pathInput = new MockHTMLElement() as any;
+        (pathInput as any).value = "tokens/tokens.json";
+        mockDoc.elements["ghFetchPathInput"] = pathInput;
     });
 
     it("should disable fetch button initially", () => {
@@ -81,6 +89,8 @@ describe("GithubImportUi", () => {
                 repo: "repo",
                 branch: "main",
                 path: "tokens/tokens.json",
+                allowHexStrings: false,
+                contexts: [],
             },
         });
         expect(btn.disabled).toBe(true); // Should disable during flight

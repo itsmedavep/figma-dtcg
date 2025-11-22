@@ -1,18 +1,38 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { GithubFolderUi } from "./folder";
 import type { GithubUiDependencies, AttachContext } from "./types";
 
 // Minimal DOM mocks
 class MockHTMLElement {
     id = "";
-    value = "";
+    _value = "";
     textContent = "";
     disabled = false;
     hidden = false;
+    _className = "";
+
+    get value() {
+        return this._value;
+    }
+    set value(v: string) {
+        this._value = v;
+    }
+
+    get className() {
+        return this._className;
+    }
+    set className(v: string) {
+        this._className = v;
+    }
+
     classList = {
-        add: vi.fn(),
-        remove: vi.fn(),
-        contains: vi.fn(),
+        add: (c: string) => {
+            this._className += " " + c;
+        },
+        remove: (c: string) => {
+            this._className = this._className.replace(c, "").trim();
+        },
+        contains: (c: string) => this._className.includes(c),
     };
     style = { display: "" };
     dataset: Record<string, string> = {};
@@ -53,11 +73,16 @@ class MockHTMLElement {
     select() {}
 
     // For list
-    appendChild(child: MockHTMLElement) {
-        this.children.push(child);
+    appendChild(child: any) {
+        if (typeof child === "string") {
+            this.textContent += child;
+        } else {
+            this.children.push(child);
+        }
+        return child;
     }
-    replaceChildren(...children: MockHTMLElement[]) {
-        this.children = children;
+    replaceChildren(...children: any[]) {
+        this.children = children.filter((c) => typeof c !== "string");
     }
 
     contains(_node: Node | null) {
@@ -72,6 +97,9 @@ class MockDocument {
     }
     createElement(_tag: string) {
         return new MockHTMLElement();
+    }
+    createTextNode(text: string) {
+        return text;
     }
     activeElement: MockHTMLElement | null = null;
 
@@ -102,14 +130,20 @@ describe("GithubFolderUi", () => {
             getFlatTokensCheckbox: vi.fn(),
             getImportContexts: vi.fn(() => []),
         };
-        folderUi = new GithubFolderUi(deps);
+
         mockDoc = new MockDocument();
+
+        // Setup global document for dom-helpers
+        (globalThis as any).document = mockDoc;
+        (globalThis as any).window = {
+            setTimeout: (cb: any) => cb(),
+            clearTimeout: () => {},
+        };
+
+        folderUi = new GithubFolderUi(deps);
         context = {
             document: mockDoc as unknown as Document,
-            window: {
-                setTimeout: vi.fn((cb) => cb()),
-                clearTimeout: vi.fn(),
-            } as unknown as Window,
+            window: (globalThis as any).window,
         };
 
         // Setup elements
@@ -126,19 +160,15 @@ describe("GithubFolderUi", () => {
         ].forEach((id) => (mockDoc.elements[id] = new MockHTMLElement()));
 
         // Mock globals
-        (
-            globalThis as unknown as { HTMLElement: typeof MockHTMLElement }
-        ).HTMLElement = MockHTMLElement;
-        (
-            globalThis as unknown as {
-                HTMLInputElement: typeof MockHTMLElement;
-            }
-        ).HTMLInputElement = MockHTMLElement;
-        (
-            globalThis as unknown as {
-                HTMLButtonElement: typeof MockHTMLElement;
-            }
-        ).HTMLButtonElement = MockHTMLElement;
+        (globalThis as any).HTMLElement = MockHTMLElement;
+        (globalThis as any).HTMLInputElement = MockHTMLElement;
+        (globalThis as any).HTMLButtonElement = MockHTMLElement;
+        (globalThis as any).Node = MockHTMLElement;
+    });
+
+    afterEach(() => {
+        delete (globalThis as any).document;
+        delete (globalThis as any).window;
     });
 
     it("should open picker and list root folders", async () => {

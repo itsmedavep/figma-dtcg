@@ -1,34 +1,100 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { GithubRepoUi } from "./repo";
 import type { GithubUiDependencies, AttachContext } from "./types";
 
 // Minimal DOM mocks
 class MockHTMLElement {
     id = "";
-    value = "";
+    _value = "";
     textContent = "";
     disabled = false;
-    options: MockHTMLElement[] = [];
+    hidden = false;
+    _className = "";
+
+    get value() {
+        return this._value;
+    }
+    set value(v: string) {
+        this._value = v;
+    }
+
+    get className() {
+        return this._className;
+    }
+    set className(v: string) {
+        this._className = v;
+    }
+
+    classList = {
+        add: (c: string) => {
+            this._className += " " + c;
+        },
+        remove: (c: string) => {
+            this._className = this._className.replace(c, "").trim();
+        },
+        contains: (c: string) => this._className.includes(c),
+    };
+    style = { display: "" };
+    dataset: Record<string, string> = {};
+    attributes: Record<string, string> = {};
+    children: MockHTMLElement[] = [];
+
+    // Select specific
+    get options() {
+        return this.children;
+    }
     selectedIndex = -1;
 
-    appendChild(child: MockHTMLElement) {
-        this.options.push(child);
+    getAttribute(name: string) {
+        return this.attributes[name] || null;
     }
-    remove(index: number) {
-        this.options.splice(index, 1);
+    setAttribute(name: string, val: string) {
+        this.attributes[name] = val;
+        (this as any)[name] = val;
+    }
+    removeAttribute(name: string) {
+        delete this.attributes[name];
     }
 
-    listeners: Record<string, any> = {};
-    addEventListener(event: string, cb: any) {
+    listeners: Record<string, (e: unknown) => void> = {};
+    addEventListener(event: string, cb: (e: unknown) => void) {
         this.listeners[event] = cb;
     }
-    dispatchEvent(event: any) {
-        if (this.listeners[event.type]) this.listeners[event.type]();
+    click() {
+        if (this.listeners["click"])
+            this.listeners["click"]({
+                preventDefault: () => {},
+                target: this,
+                stopPropagation: () => {},
+            });
     }
 
-    // For createElement
-    createElement(tag: string) {
-        return new MockHTMLElement();
+    // For list
+    appendChild(child: any) {
+        if (typeof child === "string") {
+            this.textContent += child;
+        } else {
+            this.children.push(child);
+        }
+        return child;
+    }
+    removeChild(child: MockHTMLElement) {
+        const idx = this.children.indexOf(child);
+        if (idx > -1) this.children.splice(idx, 1);
+        return child;
+    }
+    remove(index: number) {
+        this.children.splice(index, 1);
+    }
+    replaceChildren(...children: any[]) {
+        this.children = children.filter((c) => typeof c !== "string");
+    }
+    get firstChild() {
+        return this.children[0] || null;
+    }
+
+    contains(_node: Node | null) {
+        return false;
     }
 }
 
@@ -37,8 +103,20 @@ class MockDocument {
     getElementById(id: string) {
         return this.elements[id] || null;
     }
-    createElement(tag: string) {
+    createElement(_tag: string) {
         return new MockHTMLElement();
+    }
+    createTextNode(text: string) {
+        return text;
+    }
+    activeElement: MockHTMLElement | null = null;
+
+    listeners: Record<string, (e: unknown) => void> = {};
+    addEventListener(event: string, cb: (e: unknown) => void) {
+        this.listeners[event] = cb;
+    }
+    contains(_node: Node | null) {
+        return false;
     }
 }
 
@@ -60,14 +138,36 @@ describe("GithubRepoUi", () => {
             getFlatTokensCheckbox: vi.fn(),
             getImportContexts: vi.fn(() => []),
         };
-        repoUi = new GithubRepoUi(deps);
+
         mockDoc = new MockDocument();
+
+        // Setup global document for dom-helpers
+        (globalThis as any).document = mockDoc;
+        (globalThis as any).window = {
+            setTimeout: (cb: any) => cb(),
+            clearTimeout: () => {},
+        };
+
+        repoUi = new GithubRepoUi(deps);
         context = {
-            document: mockDoc as any,
-            window: {} as any,
+            document: mockDoc as unknown as Document,
+            window: (globalThis as any).window,
         };
 
         mockDoc.elements["ghRepoSelect"] = new MockHTMLElement();
+
+        // Mock globals
+        (globalThis as any).HTMLElement = MockHTMLElement;
+        (globalThis as any).HTMLInputElement = MockHTMLElement;
+        (globalThis as any).HTMLButtonElement = MockHTMLElement;
+        (globalThis as any).HTMLSelectElement = MockHTMLElement;
+        (globalThis as any).HTMLOptionElement = MockHTMLElement;
+        (globalThis as any).Node = MockHTMLElement;
+    });
+
+    afterEach(() => {
+        delete (globalThis as any).document;
+        delete (globalThis as any).window;
     });
 
     it("should populate repos", () => {
@@ -106,11 +206,11 @@ describe("GithubRepoUi", () => {
         // Simulate population
         const opt = new MockHTMLElement();
         opt.value = "owner/repo1";
-        select.options.push(opt);
+        select.appendChild(opt);
         select.value = "owner/repo1";
 
         // Simulate change event
-        if (select.listeners["change"]) select.listeners["change"]();
+        if (select.listeners["change"]) select.listeners["change"]({});
 
         expect(deps.postToPlugin).toHaveBeenCalledWith({
             type: "GITHUB_SELECT_REPO",

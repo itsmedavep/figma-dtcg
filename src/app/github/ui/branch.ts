@@ -2,21 +2,15 @@
 // Branch picker UI: search, pagination, selection, and creation flows.
 import type { PluginToUi } from "../../messages";
 import type { GithubUiDependencies, AttachContext } from "./types";
+import {
+    Autocomplete,
+    AutocompleteItem,
+} from "../../ui/components/autocomplete";
+import { h, clearChildren } from "../../ui/dom-helpers";
 
 const BRANCH_TTL_MS = 60_000;
 const RENDER_STEP = 200;
 const BRANCH_INPUT_PLACEHOLDER = "Search branches…";
-
-type BranchSelectionResult = "selected" | "more" | "fetch" | "noop";
-type BranchListState = {
-    all: string[];
-    filtered: string[];
-    renderCount: number;
-    menuVisible: boolean;
-    highlightIndex: number;
-    lastQuery: string;
-    inputPristine: boolean;
-};
 
 export class GithubBranchUi {
     private deps: GithubUiDependencies;
@@ -37,6 +31,9 @@ export class GithubBranchUi {
     private ghCreateBranchConfirmBtn: HTMLButtonElement | null = null;
     private ghCancelBranchBtn: HTMLButtonElement | null = null;
 
+    // Components
+    private autocomplete: Autocomplete | null = null;
+
     // State
     private currentOwner = "";
     private currentRepo = "";
@@ -46,15 +43,12 @@ export class GithubBranchUi {
     private hasMorePages = false;
     private isFetchingBranches = false;
     private lastBranchesFetchedAtMs = 0;
-    private listState: BranchListState = {
-        all: [],
-        filtered: [],
-        renderCount: 0,
-        menuVisible: false,
-        highlightIndex: -1,
-        lastQuery: "",
-        inputPristine: true,
-    };
+
+    private allBranches: string[] = [];
+    private filteredBranches: string[] = [];
+    private renderCount = 0;
+    private lastQuery = "";
+    private inputPristine = true;
 
     // Callbacks
     public onBranchChange: ((branch: string) => void) | null = null;
@@ -98,6 +92,18 @@ export class GithubBranchUi {
             "ghCancelBranchBtn"
         ) as HTMLButtonElement;
 
+        if (this.ghBranchInput && this.ghBranchMenu) {
+            this.autocomplete = new Autocomplete({
+                input: this.ghBranchInput,
+                menu: this.ghBranchMenu,
+                toggleBtn: this.ghBranchToggleBtn || undefined,
+                onQuery: (q) => this.handleQuery(q),
+                onSelect: (item, fromKeyboard) =>
+                    this.handleSelect(item, fromKeyboard),
+                renderItem: (item) => this.renderAutocompleteItem(item),
+            });
+        }
+
         this.setupEventListeners();
     }
 
@@ -130,7 +136,7 @@ export class GithubBranchUi {
             const raw = this.ghBranchInput.value.trim();
             if (raw && raw !== "__more__" && raw !== "__fetch__") {
                 if (
-                    this.listState.all.includes(raw) ||
+                    this.allBranches.includes(raw) ||
                     raw === this.defaultBranchFromApi
                 )
                     return raw;
@@ -168,18 +174,14 @@ export class GithubBranchUi {
             const names = Array.isArray(pl.branches)
                 ? (pl.branches as Array<{ name: string }>).map((b) => b.name)
                 : [];
-            const set = new Set(this.listState.all);
+            const set = new Set(this.allBranches);
             for (const n of names) if (n) set.add(n);
-            this.listState.all = Array.from(set).sort((a, b) =>
+            this.allBranches = Array.from(set).sort((a, b) =>
                 a.localeCompare(b)
             );
 
             this.applyBranchFilter();
             this.setBranchDisabled(false);
-
-            // Notify change if we auto-selected something (like default branch)
-            // But usually we wait for user action.
-            // However, if we just loaded, we might want to ensure the UI reflects the default if nothing selected.
 
             this.deps.log(
                 `Loaded ${names.length} branches (page ${
@@ -215,8 +217,8 @@ export class GithubBranchUi {
             this.desiredBranch = typeof p.branch === "string" ? p.branch : null;
             if (this.desiredBranch && this.ghBranchInput) {
                 this.ghBranchInput.value = this.desiredBranch;
-                this.listState.lastQuery = this.desiredBranch;
-                this.listState.inputPristine = false;
+                this.lastQuery = this.desiredBranch;
+                this.inputPristine = false;
                 this.updateClearButtonVisibility();
                 if (this.onBranchChange)
                     this.onBranchChange(this.desiredBranch);
@@ -233,54 +235,34 @@ export class GithubBranchUi {
         this.loadedPages = 0;
         this.hasMorePages = false;
         this.isFetchingBranches = false;
-        this.listState.all = [];
-        this.listState.filtered = [];
-        this.listState.renderCount = 0;
+        this.allBranches = [];
+        this.filteredBranches = [];
+        this.renderCount = 0;
         if (this.ghBranchInput) {
             this.ghBranchInput.value = "";
-            this.listState.lastQuery = "";
-            this.listState.inputPristine = true;
+            this.lastQuery = "";
+            this.inputPristine = true;
             this.updateClearButtonVisibility();
         }
-        if (this.ghBranchMenu)
-            while (this.ghBranchMenu.firstChild)
-                this.ghBranchMenu.removeChild(this.ghBranchMenu.firstChild);
-        this.closeBranchMenu();
+        if (this.autocomplete) {
+            this.autocomplete.setItems([]);
+            this.autocomplete.close();
+        }
     }
 
     private setupEventListeners() {
+        // Autocomplete handles input, focus, keydown, menu click, outside click.
+        // We only need to handle extra buttons.
+
         if (this.ghBranchInput) {
-            let timeout: number | undefined;
-            this.ghBranchInput.addEventListener("focus", () => {
-                if (this.ghBranchInput!.disabled) return;
-                // Show all branches when focusing (not filtered by current value)
-                this.showAllBranches();
-                this.openBranchMenu();
-            });
-            this.ghBranchInput.addEventListener("input", () => {
-                if (timeout) this.win?.clearTimeout(timeout);
-                const value = this.ghBranchInput!.value;
-                if (value !== "__more__" && value !== "__fetch__") {
-                    this.listState.lastQuery = value;
-                }
-                this.listState.inputPristine = false;
-                this.updateClearButtonVisibility();
-                if (!this.listState.menuVisible) this.openBranchMenu();
-                timeout = this.win?.setTimeout(() => {
-                    this.applyBranchFilter();
-                }, 120) as number | undefined;
-            });
-            this.ghBranchInput.addEventListener("keydown", (e: KeyboardEvent) =>
-                this.handleInputKeydown(e)
-            );
+            // We still need change event for manual typing + blur/enter without menu interaction
             this.ghBranchInput.addEventListener("change", () => {
-                const result = this.processBranchSelection(
-                    this.ghBranchInput!.value,
-                    false
-                );
-                if (result === "selected") this.closeBranchMenu();
-                else if (result === "more" || result === "fetch")
-                    this.syncBranchHighlightAfterRender();
+                // If autocomplete is open, it might handle selection via Enter.
+                // But if user types and tabs out, we want to select.
+                const val = this.ghBranchInput!.value;
+                if (val && val !== "__more__" && val !== "__fetch__") {
+                    this.processBranchSelection(val);
+                }
             });
         }
 
@@ -290,50 +272,16 @@ export class GithubBranchUi {
                 e.stopPropagation();
                 if (this.ghBranchInput) {
                     this.ghBranchInput.value = "";
-                    this.listState.lastQuery = "";
+                    this.lastQuery = "";
                     this.desiredBranch = null;
-                    this.listState.inputPristine = false;
+                    this.inputPristine = false;
                     this.updateClearButtonVisibility();
-                    this.showAllBranches();
+
+                    // Trigger refresh of list (show all)
+                    this.handleQuery("");
                     this.ghBranchInput.focus();
                 }
             });
-        }
-
-        if (this.ghBranchToggleBtn) {
-            this.ghBranchToggleBtn.addEventListener("click", () => {
-                if (this.ghBranchToggleBtn!.disabled) return;
-                if (this.listState.menuVisible) {
-                    this.closeBranchMenu();
-                    return;
-                }
-                // Show all branches when opening dropdown
-                this.showAllBranches();
-                this.openBranchMenu();
-                if (
-                    this.ghBranchInput &&
-                    this.doc?.activeElement !== this.ghBranchInput
-                )
-                    this.ghBranchInput.focus();
-            });
-        }
-
-        if (this.ghBranchMenu) {
-            this.ghBranchMenu.addEventListener("mousedown", (event) =>
-                event.preventDefault()
-            );
-            this.ghBranchMenu.addEventListener("click", (event) =>
-                this.handleMenuClick(event)
-            );
-        }
-
-        if (this.doc) {
-            this.doc.addEventListener("mousedown", (event) =>
-                this.handleOutsideClick(event)
-            );
-            this.doc.addEventListener("focusin", (event) =>
-                this.handleOutsideClick(event)
-            );
         }
 
         if (this.ghBranchRefreshBtn) {
@@ -377,85 +325,36 @@ export class GithubBranchUi {
         }
     }
 
-    private handleInputKeydown(e: KeyboardEvent) {
-        if (e.key === "ArrowDown") {
-            this.openBranchMenu();
-            this.moveBranchHighlight(1);
-            e.preventDefault();
-            return;
+    private handleQuery(query: string) {
+        if (query !== "__more__" && query !== "__fetch__") {
+            this.lastQuery = query;
         }
-        if (e.key === "ArrowUp") {
-            this.openBranchMenu();
-            this.moveBranchHighlight(-1);
-            e.preventDefault();
-            return;
-        }
-        if (e.key === "Enter") {
-        if (this.listState.menuVisible && this.listState.highlightIndex >= 0) {
-            const items = this.getBranchMenuItems();
-            const item = items[this.listState.highlightIndex];
-            if (item && item.dataset.selectable === "1") {
-                const value = item.getAttribute("data-value") || "";
-                if (value) {
-                    const result = this.processBranchSelection(value, true);
-                    if (result === "selected") this.closeBranchMenu();
-                        else if (result === "more" || result === "fetch") {
-                            this.syncBranchHighlightAfterRender();
-                            this.openBranchMenu();
-                        }
-                    }
-                }
-            } else {
-                const result = this.processBranchSelection(
-                    this.ghBranchInput!.value,
-                    false
-                );
-                if (result === "selected") this.closeBranchMenu();
-                else if (result === "more" || result === "fetch")
-                    this.syncBranchHighlightAfterRender();
-            }
-            // Removed revalidateBranchesIfStale(true) here as per user request.
-            // Enter now only selects if something is valid, otherwise does nothing (or just closes menu if empty).
-            e.preventDefault();
-            return;
-        }
-        if (e.key === "Escape") {
-            if (this.listState.menuVisible) {
-                this.closeBranchMenu();
-                e.preventDefault();
-            }
-        }
+        this.inputPristine = false;
+        this.updateClearButtonVisibility();
+        this.applyBranchFilter();
     }
 
-    private handleMenuClick(event: Event) {
-        const target = event.target as HTMLElement | null;
-        if (!target) return;
-        const item = target.closest("li");
-        if (!item || !(item instanceof HTMLLIElement)) return;
-        if (item.getAttribute("aria-disabled") === "true") return;
-        const value = item.getAttribute("data-value") || "";
-        if (!value) return;
-        const result = this.processBranchSelection(value, true);
-        if (result === "selected") this.closeBranchMenu();
-        else if (result === "more" || result === "fetch") {
-            this.syncBranchHighlightAfterRender();
-            this.openBranchMenu();
+    private handleSelect(item: AutocompleteItem, fromKeyboard: boolean) {
+        if (item.value === "__more__") {
+            this.renderCount = Math.min(
+                this.renderCount + RENDER_STEP,
+                this.filteredBranches.length
+            );
+            this.updateAutocompleteItems();
+            this.updateBranchCount();
+            if (this.ghBranchInput) this.ghBranchInput.value = this.lastQuery;
+            if (this.autocomplete) this.autocomplete.open();
+            return;
         }
-        if (this.ghBranchInput) this.ghBranchInput.focus();
-    }
 
-    private handleOutsideClick(event: Event) {
-        if (!this.listState.menuVisible) return;
-        const target = event.target as Node | null;
-        if (!target) {
-            this.closeBranchMenu();
+        if (item.value === "__fetch__") {
+            this.ensureNextPageIfNeeded();
+            if (this.ghBranchInput) this.ghBranchInput.value = this.lastQuery;
             return;
         }
-        if (this.ghBranchMenu && this.ghBranchMenu.contains(target)) return;
-        if (this.ghBranchInput && target === this.ghBranchInput) return;
-        if (this.ghBranchToggleBtn && this.ghBranchToggleBtn.contains(target))
-            return;
-        this.closeBranchMenu();
+
+        this.processBranchSelection(item.value);
+        if (this.autocomplete) this.autocomplete.close();
     }
 
     private revalidateBranchesIfStale(forceLog = false): void {
@@ -473,16 +372,16 @@ export class GithubBranchUi {
         this.loadedPages = 0;
         this.hasMorePages = false;
         this.isFetchingBranches = true;
-        this.listState.all = [];
-        this.listState.filtered = [];
-        this.listState.renderCount = 0;
+        this.allBranches = [];
+        this.filteredBranches = [];
+        this.renderCount = 0;
 
         this.setBranchDisabled(true, "Refreshing branches…");
         this.updateBranchCount();
         if (this.ghBranchInput) {
             this.ghBranchInput.value = "";
-            this.listState.lastQuery = "";
-            this.listState.inputPristine = true;
+            this.lastQuery = "";
+            this.inputPristine = true;
         }
         this.deps.log("Refreshing branches…");
 
@@ -505,17 +404,6 @@ export class GithubBranchUi {
         }
     }
 
-    private showAllBranches(): void {
-        // Show all branches without filtering
-        this.listState.filtered = [...this.listState.all];
-        this.listState.renderCount = Math.min(
-            RENDER_STEP,
-            this.listState.filtered.length
-        );
-        this.renderOptions();
-        this.updateBranchCount();
-    }
-
     private setBranchDisabled(disabled: boolean, placeholder?: string): void {
         const nextPlaceholder =
             placeholder !== undefined ? placeholder : BRANCH_INPUT_PLACEHOLDER;
@@ -524,318 +412,146 @@ export class GithubBranchUi {
             this.ghBranchInput.placeholder = nextPlaceholder;
             if (disabled) {
                 this.ghBranchInput.value = "";
-                this.listState.lastQuery = "";
-                this.listState.inputPristine = true;
+                this.lastQuery = "";
+                this.inputPristine = true;
             }
         }
         if (this.ghBranchToggleBtn) {
             this.ghBranchToggleBtn.disabled = disabled;
             this.ghBranchToggleBtn.setAttribute("aria-expanded", "false");
         }
-        if (disabled) this.closeBranchMenu();
+        if (disabled && this.autocomplete) this.autocomplete.close();
     }
 
     private updateBranchCount(): void {
         if (!this.ghBranchCountEl) return;
-        const total = this.listState.all.length;
-        const showing = this.listState.filtered.length;
+        const total = this.allBranches.length;
+        const showing = this.filteredBranches.length;
         this.ghBranchCountEl.textContent = `${showing} / ${total}${
             this.hasMorePages ? " +" : ""
         }`;
-    }
-
-    private getBranchMenuItems(): HTMLLIElement[] {
-        if (!this.ghBranchMenu) return [];
-        const items: HTMLLIElement[] = [];
-        let node = this.ghBranchMenu.firstElementChild;
-        while (node) {
-            if (node instanceof HTMLLIElement) items.push(node);
-            node = node.nextElementSibling;
-        }
-        return items;
-    }
-
-    private setBranchHighlight(index: number, scrollIntoView: boolean): void {
-        const items = this.getBranchMenuItems();
-        this.listState.highlightIndex = index;
-        for (let i = 0; i < items.length; i++) {
-            if (i === this.listState.highlightIndex)
-                items[i].setAttribute("data-active", "1");
-            else items[i].removeAttribute("data-active");
-        }
-        if (
-            scrollIntoView &&
-            this.listState.highlightIndex >= 0 &&
-            this.listState.highlightIndex < items.length
-        ) {
-            try {
-                items[this.listState.highlightIndex].scrollIntoView({
-                    block: "nearest",
-                });
-            } catch {
-                /* ignore */
-            }
-        }
-    }
-
-    private findNextSelectable(
-        startIndex: number,
-        delta: number,
-        items: HTMLLIElement[]
-    ): number {
-        if (!items.length) return -1;
-        let index = startIndex;
-        for (let i = 0; i < items.length; i++) {
-            index += delta;
-            if (index < 0) index = items.length - 1;
-            else if (index >= items.length) index = 0;
-            const item = items[index];
-            if (!item) continue;
-            if (
-                item.dataset.selectable === "1" &&
-                item.getAttribute("aria-disabled") !== "true"
-            )
-                return index;
-        }
-        return -1;
-    }
-
-    private moveBranchHighlight(delta: number): void {
-        const items = this.getBranchMenuItems();
-        if (!items.length) {
-            this.setBranchHighlight(-1, false);
-            return;
-        }
-        const next = this.findNextSelectable(
-            this.listState.highlightIndex,
-            delta,
-            items
-        );
-        if (next >= 0) this.setBranchHighlight(next, true);
-    }
-
-    private syncBranchHighlightAfterRender(): void {
-        const items = this.getBranchMenuItems();
-        if (!this.listState.menuVisible) {
-            this.setBranchHighlight(-1, false);
-            return;
-        }
-        if (!items.length) {
-            this.setBranchHighlight(-1, false);
-            return;
-        }
-        if (
-            this.listState.highlightIndex >= 0 &&
-            this.listState.highlightIndex < items.length
-        ) {
-            const current = items[this.listState.highlightIndex];
-            if (
-                current &&
-                current.dataset.selectable === "1" &&
-                current.getAttribute("aria-disabled") !== "true"
-            ) {
-                this.setBranchHighlight(this.listState.highlightIndex, false);
-                return;
-            }
-        }
-        const first = this.findNextSelectable(-1, 1, items);
-        this.setBranchHighlight(first, false);
-    }
-
-    private setBranchMenuVisible(show: boolean): void {
-        if (!this.ghBranchMenu) {
-            this.listState.menuVisible = false;
-            this.listState.highlightIndex = -1;
-            return;
-        }
-        if (show && this.ghBranchInput && this.ghBranchInput.disabled)
-            show = false;
-        this.listState.menuVisible = show;
-        if (this.listState.menuVisible) {
-            this.ghBranchMenu.hidden = false;
-            this.ghBranchMenu.setAttribute("data-open", "1");
-            if (this.ghBranchToggleBtn)
-                this.ghBranchToggleBtn.setAttribute("aria-expanded", "true");
-            if (this.ghBranchInput)
-                this.ghBranchInput.setAttribute("aria-expanded", "true");
-        } else {
-            this.ghBranchMenu.hidden = true;
-            this.ghBranchMenu.removeAttribute("data-open");
-            if (this.ghBranchToggleBtn)
-                this.ghBranchToggleBtn.setAttribute("aria-expanded", "false");
-            if (this.ghBranchInput)
-                this.ghBranchInput.setAttribute("aria-expanded", "false");
-            this.setBranchHighlight(-1, false);
-        }
-    }
-
-    private openBranchMenu(): void {
-        if (!this.ghBranchMenu) return;
-        if (!this.listState.menuVisible) {
-            if (!this.ghBranchMenu.childElementCount) this.renderOptions();
-            this.setBranchMenuVisible(true);
-        }
-        this.syncBranchHighlightAfterRender();
-    }
-
-    private closeBranchMenu(): void {
-        this.setBranchMenuVisible(false);
-    }
-
-    private renderOptions(): void {
-        if (!this.ghBranchMenu || !this.doc) return;
-
-        while (this.ghBranchMenu.firstChild)
-            this.ghBranchMenu.removeChild(this.ghBranchMenu.firstChild);
-
-        const slice = this.listState.filtered.slice(
-            0,
-            this.listState.renderCount
-        );
-        if (slice.length > 0) {
-            for (let i = 0; i < slice.length; i++) {
-                const name = slice[i];
-                const item = this.doc.createElement("li");
-                item.className = "gh-branch-item";
-                item.dataset.value = name;
-                item.dataset.selectable = "1";
-                item.setAttribute("role", "option");
-                item.textContent = name;
-                if (i === this.listState.highlightIndex)
-                    item.setAttribute("data-active", "1");
-                this.ghBranchMenu.appendChild(item);
-            }
-        } else {
-            const empty = this.doc.createElement("li");
-            empty.className = "gh-branch-item gh-branch-item-empty";
-            empty.setAttribute("aria-disabled", "true");
-            empty.dataset.selectable = "0";
-            empty.textContent = this.listState.all.length
-                ? "No matching branches"
-                : "No branches loaded yet";
-            this.ghBranchMenu.appendChild(empty);
-        }
-
-        if (this.listState.filtered.length > this.listState.renderCount) {
-            const more = this.doc.createElement("li");
-            more.className = "gh-branch-item gh-branch-item-action";
-            more.dataset.value = "__more__";
-            more.dataset.selectable = "1";
-            more.textContent = `Load more… (${
-                this.listState.filtered.length - this.listState.renderCount
-            } more)`;
-            this.ghBranchMenu.appendChild(more);
-        } else if (this.hasMorePages) {
-            const fetch = this.doc.createElement("li");
-            fetch.className = "gh-branch-item gh-branch-item-action";
-            fetch.dataset.value = "__fetch__";
-            fetch.dataset.selectable = "1";
-            fetch.textContent = "Load next page…";
-            this.ghBranchMenu.appendChild(fetch);
-        }
-
-        if (this.ghBranchInput) {
-            const want = this.desiredBranch || this.defaultBranchFromApi || "";
-            if (
-                !this.ghBranchInput.value &&
-                want &&
-                this.listState.inputPristine
-            ) {
-                this.ghBranchInput.value = want;
-                this.listState.lastQuery = want;
-                this.updateClearButtonVisibility();
-            }
-        }
-
-        if (this.listState.menuVisible) {
-            this.syncBranchHighlightAfterRender();
-        }
     }
 
     private applyBranchFilter(): void {
         const rawInput = (this.ghBranchInput?.value || "").trim();
         const raw =
             rawInput === "__more__" || rawInput === "__fetch__"
-                ? this.listState.lastQuery.trim()
+                ? this.lastQuery.trim()
                 : rawInput;
         const q = raw.toLowerCase();
-        // Always filter by the query, even if it matches the selection.
-        // This allows users to refine their search (e.g. "main" -> "maintenance").
+
         const effectiveQuery = q;
-        this.listState.filtered = effectiveQuery
-            ? this.listState.all.filter((n) =>
+        this.filteredBranches = effectiveQuery
+            ? this.allBranches.filter((n) =>
                   n.toLowerCase().includes(effectiveQuery)
               )
-            : [...this.listState.all];
+            : [...this.allBranches];
 
-        this.listState.renderCount = Math.min(
-            RENDER_STEP,
-            this.listState.filtered.length
-        );
-        this.renderOptions();
+        this.renderCount = Math.min(RENDER_STEP, this.filteredBranches.length);
+        this.updateAutocompleteItems();
         this.updateBranchCount();
-
-        if (
-            !this.listState.menuVisible &&
-            this.ghBranchInput &&
-            !this.ghBranchInput.disabled
-        ) {
-            const isFocused =
-                !!this.doc && this.doc.activeElement === this.ghBranchInput;
-            if (isFocused) {
-                this.setBranchMenuVisible(true);
-                this.syncBranchHighlightAfterRender();
-            }
-        }
     }
 
-    private processBranchSelection(
-        rawValue: string,
-        fromMenu: boolean
-    ): BranchSelectionResult {
-        const value = (rawValue || "").trim();
-        if (!this.ghBranchInput) return "noop";
+    private updateAutocompleteItems() {
+        if (!this.autocomplete) return;
 
-        if (value === "__more__") {
-            this.listState.renderCount = Math.min(
-                this.listState.renderCount + RENDER_STEP,
-                this.listState.filtered.length
+        const items: AutocompleteItem[] = [];
+        const slice = this.filteredBranches.slice(0, this.renderCount);
+
+        if (slice.length > 0) {
+            for (const name of slice) {
+                items.push({
+                    key: name,
+                    label: name,
+                    value: name,
+                    type: "option",
+                });
+            }
+        } else {
+            items.push({
+                key: "__empty__",
+                label: this.allBranches.length
+                    ? "No matching branches"
+                    : "No branches loaded yet",
+                value: "",
+                type: "info",
+                disabled: true,
+            });
+        }
+
+        if (this.filteredBranches.length > this.renderCount) {
+            items.push({
+                key: "__more__",
+                label: `Load more… (${
+                    this.filteredBranches.length - this.renderCount
+                } more)`,
+                value: "__more__",
+                type: "action",
+            });
+        } else if (this.hasMorePages) {
+            items.push({
+                key: "__fetch__",
+                label: "Load next page…",
+                value: "__fetch__",
+                type: "action",
+            });
+        }
+
+        this.autocomplete.setItems(items);
+    }
+
+    private renderAutocompleteItem(item: AutocompleteItem): HTMLElement {
+        if (item.type === "info") {
+            return h(
+                "li",
+                {
+                    className: "gh-branch-item gh-branch-item-empty",
+                    "aria-disabled": "true",
+                },
+                item.label
             );
-            this.renderOptions();
-            this.updateBranchCount();
-            this.ghBranchInput.value = this.listState.lastQuery;
-            if (fromMenu && !this.listState.menuVisible)
-                this.setBranchMenuVisible(true);
-            return "more";
         }
-
-        if (value === "__fetch__") {
-            this.ensureNextPageIfNeeded();
-            this.ghBranchInput.value = this.listState.lastQuery;
-            return "fetch";
+        if (item.type === "action") {
+            return h(
+                "li",
+                {
+                    className: "gh-branch-item gh-branch-item-action",
+                },
+                item.label
+            );
         }
+        return h(
+            "li",
+            {
+                className: "gh-branch-item",
+            },
+            item.label
+        );
+    }
 
-        if (!value) return "noop";
+    private processBranchSelection(value: string): void {
+        const val = (value || "").trim();
+        if (!val) return;
+        if (!this.ghBranchInput) return;
 
-        this.desiredBranch = value;
-        this.listState.lastQuery = value;
-        this.ghBranchInput.value = value;
-        this.listState.inputPristine = false;
+        this.desiredBranch = val;
+        this.lastQuery = val;
+        this.ghBranchInput.value = val;
+        this.inputPristine = false;
         this.updateClearButtonVisibility();
+
         this.deps.postToPlugin({
             type: "GITHUB_SELECT_BRANCH",
             payload: {
                 owner: this.currentOwner,
                 repo: this.currentRepo,
-                branch: value,
+                branch: val,
             },
         });
 
         this.applyBranchFilter();
 
-        if (this.onBranchChange) this.onBranchChange(value);
-
-        return "selected";
+        if (this.onBranchChange) this.onBranchChange(val);
     }
 
     private ensureNextPageIfNeeded(): void {
@@ -937,18 +653,18 @@ export class GithubBranchUi {
             const url = String(pl.html_url || "");
 
             if (newBranch) {
-                const s = new Set(this.listState.all);
+                const s = new Set(this.allBranches);
                 if (!s.has(newBranch)) {
                     s.add(newBranch);
-                    this.listState.all = Array.from(s).sort((a, b) =>
+                    this.allBranches = Array.from(s).sort((a, b) =>
                         a.localeCompare(b)
                     );
                 }
                 this.desiredBranch = newBranch;
                 if (this.ghBranchInput) {
                     this.ghBranchInput.value = newBranch;
-                    this.listState.lastQuery = newBranch;
-                    this.listState.inputPristine = false;
+                    this.lastQuery = newBranch;
+                    this.inputPristine = false;
                 }
                 this.applyBranchFilter();
             }
@@ -962,12 +678,15 @@ export class GithubBranchUi {
                 );
                 const logEl = this.deps.getLogElement();
                 if (logEl && this.doc) {
-                    const wrap = this.doc.createElement("div");
-                    const a = this.doc.createElement("a");
-                    a.href = url;
-                    a.target = "_blank";
-                    a.textContent = "View on GitHub";
-                    wrap.appendChild(a);
+                    const wrap = h(
+                        "div",
+                        null,
+                        h(
+                            "a",
+                            { href: url, target: "_blank" },
+                            "View on GitHub"
+                        )
+                    );
                     logEl.appendChild(wrap);
                     (logEl as HTMLElement).scrollTop = (
                         logEl as HTMLElement

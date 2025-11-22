@@ -250,16 +250,16 @@ function requestPreviewForCurrent(): void {
  * Message pump
  * ----------------------------------------------------- */
 window.addEventListener("message", async (event: MessageEvent) => {
-    const data: unknown = (event as unknown as { data?: unknown }).data;
+    const data: unknown = (event as { data?: unknown }).data;
     if (!data || typeof data !== "object") return;
 
-    let msg: PluginToUi | any | null = null;
-    if (
-        (data as any).pluginMessage &&
-        typeof (data as any).pluginMessage === "object"
-    ) {
-        const maybe = (data as any).pluginMessage;
-        if (maybe && typeof maybe.type === "string") msg = maybe;
+    let msg: PluginToUi | null = null;
+    const maybePayload = (data as { pluginMessage?: unknown }).pluginMessage;
+    if (maybePayload && typeof maybePayload === "object") {
+        const maybeMsg = maybePayload as Partial<PluginToUi>;
+        if (typeof maybeMsg.type === "string") {
+            msg = maybeMsg as PluginToUi;
+        }
     }
     if (!msg) return;
 
@@ -404,10 +404,23 @@ window.addEventListener("message", async (event: MessageEvent) => {
                 uiElements.githubRememberChk.checked =
                     msg.payload.githubRememberPref;
         }
-        const last = (msg.payload as any).last as {
-            collection: string;
-            mode: string;
-        } | null;
+        const payload = msg.payload;
+        let last: { collection: string; mode: string } | null = null;
+        if (payload && typeof payload === "object" && "last" in payload) {
+            const maybeLast = (payload as { last?: unknown }).last;
+            if (
+                maybeLast &&
+                typeof maybeLast === "object" &&
+                typeof (maybeLast as { collection?: unknown }).collection ===
+                    "string" &&
+                typeof (maybeLast as { mode?: unknown }).mode === "string"
+            ) {
+                last = {
+                    collection: (maybeLast as { collection: string }).collection,
+                    mode: (maybeLast as { mode: string }).mode,
+                };
+            }
+        }
         applyLastSelection(last);
         setDisabledStates();
         requestPreviewForCurrent();

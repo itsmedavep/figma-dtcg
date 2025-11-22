@@ -1,18 +1,38 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { GithubBranchUi } from "./branch";
 import type { GithubUiDependencies, AttachContext } from "./types";
 
 // Minimal DOM mocks
 class MockHTMLElement {
     id = "";
-    value = "";
+    _value = "";
     textContent = "";
     disabled = false;
     hidden = false;
+    _className = "";
+
+    get value() {
+        return this._value;
+    }
+    set value(v: string) {
+        this._value = v;
+    }
+
+    get className() {
+        return this._className;
+    }
+    set className(v: string) {
+        this._className = v;
+    }
+
     classList = {
-        add: vi.fn(),
-        remove: vi.fn(),
-        contains: vi.fn(),
+        add: (c: string) => {
+            this._className += " " + c;
+        },
+        remove: (c: string) => {
+            this._className = this._className.replace(c, "").trim();
+        },
+        contains: (c: string) => this._className.includes(c),
     };
     style = { display: "" };
     dataset: Record<string, string> = {};
@@ -33,19 +53,47 @@ class MockHTMLElement {
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
     }
-    click() {
-        if (this.listeners["click"]) this.listeners["click"]();
+    removeEventListener(event: string, cb: any) {
+        delete this.listeners[event];
     }
-    focus() {}
+    dispatchEvent(event: any) {
+        if (this.listeners[event.type]) {
+            this.listeners[event.type](event);
+        }
+    }
+    click() {
+        if (this.listeners["click"])
+            this.listeners["click"]({
+                preventDefault: () => {},
+                stopPropagation: () => {},
+                target: this,
+            });
+    }
+    focus() {
+        if (this.listeners["focus"]) this.listeners["focus"]();
+    }
     select() {}
+    scrollIntoView() {}
+    contains(node: any) {
+        return false;
+    }
 
     // For list
-    appendChild(child: MockHTMLElement) {
-        this.children.push(child);
+    appendChild(child: any) {
+        if (typeof child === "string") {
+            // ignore text nodes for now or wrap
+        } else {
+            this.children.push(child);
+        }
+        return child;
     }
     removeChild(child: MockHTMLElement) {
         const idx = this.children.indexOf(child);
         if (idx > -1) this.children.splice(idx, 1);
+        return child;
+    }
+    replaceChildren(...nodes: any[]) {
+        this.children = nodes.filter((n) => typeof n !== "string");
     }
     get firstChild() {
         return this.children[0] || null;
@@ -73,11 +121,17 @@ class MockDocument {
     createElement(tag: string) {
         return new MockHTMLElement();
     }
+    createTextNode(text: string) {
+        return text;
+    }
     activeElement: MockHTMLElement | null = null;
 
     listeners: Record<string, any> = {};
     addEventListener(event: string, cb: any) {
         this.listeners[event] = cb;
+    }
+    removeEventListener(event: string, cb: any) {
+        delete this.listeners[event];
     }
 }
 
@@ -99,11 +153,20 @@ describe("GithubBranchUi", () => {
             getFlatTokensCheckbox: vi.fn(),
             getImportContexts: vi.fn(() => []),
         };
-        branchUi = new GithubBranchUi(deps);
+
         mockDoc = new MockDocument();
+
+        // Setup global document for dom-helpers
+        (globalThis as any).document = mockDoc;
+        (globalThis as any).window = {
+            setTimeout: (cb: any) => cb(),
+            clearTimeout: () => {},
+        };
+
+        branchUi = new GithubBranchUi(deps);
         context = {
             document: mockDoc as any,
-            window: { setTimeout: vi.fn(), clearTimeout: vi.fn() } as any,
+            window: (globalThis as any).window,
         };
 
         // Setup elements
@@ -118,6 +181,7 @@ describe("GithubBranchUi", () => {
             "ghNewBranchName",
             "ghCreateBranchConfirmBtn",
             "ghCancelBranchBtn",
+            "ghBranchClearBtn",
         ].forEach((id) => (mockDoc.elements[id] = new MockHTMLElement()));
 
         // Mock globals
@@ -125,6 +189,13 @@ describe("GithubBranchUi", () => {
         (globalThis as any).HTMLInputElement = MockHTMLElement;
         (globalThis as any).HTMLButtonElement = MockHTMLElement;
         (globalThis as any).HTMLUListElement = MockHTMLElement;
+        (globalThis as any).HTMLElement = MockHTMLElement;
+        (globalThis as any).Node = MockHTMLElement;
+    });
+
+    afterEach(() => {
+        delete (globalThis as any).document;
+        delete (globalThis as any).window;
     });
 
     it("should fetch branches when repo is set", () => {
@@ -175,7 +246,11 @@ describe("GithubBranchUi", () => {
         });
 
         const menu = mockDoc.elements["ghBranchMenu"];
-        expect(menu.children.length).toBe(2); // renderOptions ran
+        // Autocomplete renders items.
+        // We need to trigger a query or ensure items are set.
+        // handleMessage calls applyBranchFilter which calls updateAutocompleteItems.
+
+        expect(menu.children.length).toBe(2);
         expect(mockDoc.elements["ghBranchCount"].textContent).toContain("2");
 
         branchUi.reset();

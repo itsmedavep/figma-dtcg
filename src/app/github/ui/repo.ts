@@ -1,5 +1,8 @@
+// src/app/github/ui/repo.ts
+// Repository picker UI: select and restore GitHub repositories.
 import type { PluginToUi } from "../../messages";
 import type { GithubUiDependencies, AttachContext } from "./types";
+import { h, clearChildren } from "../../ui/dom-helpers";
 
 export class GithubRepoUi {
     private deps: GithubUiDependencies;
@@ -106,13 +109,12 @@ export class GithubRepoUi {
         }>
     ): void {
         if (!this.ghRepoSelect || !this.doc) return;
-        while (this.ghRepoSelect.options.length) this.ghRepoSelect.remove(0);
+        clearChildren(this.ghRepoSelect);
 
         for (const r of list) {
-            const opt = this.doc.createElement("option");
-            opt.value = r.full_name;
-            opt.textContent = r.full_name;
-            this.ghRepoSelect.appendChild(opt);
+            this.ghRepoSelect.appendChild(
+                h("option", { value: r.full_name }, r.full_name)
+            );
         }
         this.ghRepoSelect.disabled = list.length === 0;
 

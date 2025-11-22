@@ -213,6 +213,52 @@
     }
   };
 
+  // src/app/ui/dom-helpers.ts
+  function h(tag, props, ...children) {
+    const el = document.createElement(tag);
+    if (props) {
+      for (const key in props) {
+        if (Object.prototype.hasOwnProperty.call(props, key)) {
+          const val = props[key];
+          if (key === "className") {
+            el.className = val;
+          } else if (key === "dataset" && typeof val === "object") {
+            for (const dKey in val) {
+              el.dataset[dKey] = val[dKey];
+            }
+          } else if (key === "style" && typeof val === "object") {
+            Object.assign(el.style, val);
+          } else if (key.startsWith("on") && typeof val === "function") {
+            el.addEventListener(key.substring(2).toLowerCase(), val);
+          } else if (key === "textContent") {
+            el.textContent = val;
+          } else if (val === true) {
+            if (key in el && typeof el[key] === "boolean") {
+              el[key] = true;
+            }
+            el.setAttribute(key, "");
+          } else if (val === false || val === null || val === void 0) {
+          } else {
+            el.setAttribute(key, String(val));
+          }
+        }
+      }
+    }
+    for (const child of children) {
+      if (typeof child === "string") {
+        el.appendChild(document.createTextNode(child));
+      } else if (child instanceof Node) {
+        el.appendChild(child);
+      }
+    }
+    return el;
+  }
+  function clearChildren(el) {
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
+  }
+
   // src/app/github/ui/repo.ts
   var GithubRepoUi = class {
     constructor(deps) {
@@ -287,12 +333,11 @@
     }
     populateGhRepos(list) {
       if (!this.ghRepoSelect || !this.doc) return;
-      while (this.ghRepoSelect.options.length) this.ghRepoSelect.remove(0);
+      clearChildren(this.ghRepoSelect);
       for (const r of list) {
-        const opt = this.doc.createElement("option");
-        opt.value = r.full_name;
-        opt.textContent = r.full_name;
-        this.ghRepoSelect.appendChild(opt);
+        this.ghRepoSelect.appendChild(
+          h("option", { value: r.full_name }, r.full_name)
+        );
       }
       this.ghRepoSelect.disabled = list.length === 0;
       if (list.length > 0) {
@@ -332,6 +377,201 @@
     }
   };
 
+  // src/app/ui/components/autocomplete.ts
+  var Autocomplete = class {
+    constructor(options) {
+      this.items = [];
+      this.highlightIndex = -1;
+      this.isOpen = false;
+      // Bound event handlers for add/remove symmetry
+      this.onInputFocus = () => {
+        this.open();
+        this.onQuery(this.input.value);
+      };
+      this.onInputInput = () => {
+        if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
+        this.debounceTimer = window.setTimeout(() => {
+          this.open();
+          this.onQuery(this.input.value);
+        }, 120);
+      };
+      this.onInputKeydown = (e) => this.handleKeydown(e);
+      this.onToggleClick = (e) => {
+        e.preventDefault();
+        this.toggle();
+      };
+      this.onMenuMouseDown = (e) => e.preventDefault();
+      this.onMenuClick = (e) => {
+        const target = e.target;
+        const li = target.closest("li");
+        if (li) {
+          const index = Number(li.dataset.index);
+          if (!isNaN(index) && this.items[index]) {
+            this.select(index, false);
+          }
+        }
+      };
+      this.onDocumentMouseDown = (e) => {
+        if (!this.isOpen) return;
+        const target = e.target;
+        if (this.menu.contains(target) || this.input.contains(target) || this.toggleBtn && this.toggleBtn.contains(target)) {
+          return;
+        }
+        this.close();
+      };
+      this.input = options.input;
+      this.menu = options.menu;
+      this.toggleBtn = options.toggleBtn;
+      this.onQuery = options.onQuery;
+      this.onSelect = options.onSelect;
+      this.renderItem = options.renderItem || this.defaultRenderItem;
+      this.setupEvents();
+    }
+    setItems(items) {
+      this.items = items;
+      this.render();
+      if (this.isOpen) {
+        this.syncHighlight();
+      }
+    }
+    open() {
+      if (this.isOpen) return;
+      this.isOpen = true;
+      this.menu.hidden = false;
+      this.menu.setAttribute("data-open", "1");
+      this.input.setAttribute("aria-expanded", "true");
+      if (this.toggleBtn)
+        this.toggleBtn.setAttribute("aria-expanded", "true");
+      this.syncHighlight();
+    }
+    close() {
+      if (!this.isOpen) return;
+      this.isOpen = false;
+      this.menu.hidden = true;
+      this.menu.removeAttribute("data-open");
+      this.input.setAttribute("aria-expanded", "false");
+      if (this.toggleBtn)
+        this.toggleBtn.setAttribute("aria-expanded", "false");
+      this.setHighlight(-1);
+    }
+    destroy() {
+      window.clearTimeout(this.debounceTimer);
+      this.input.removeEventListener("focus", this.onInputFocus);
+      this.input.removeEventListener("input", this.onInputInput);
+      this.input.removeEventListener("keydown", this.onInputKeydown);
+      if (this.toggleBtn)
+        this.toggleBtn.removeEventListener("click", this.onToggleClick);
+      this.menu.removeEventListener("mousedown", this.onMenuMouseDown);
+      this.menu.removeEventListener("click", this.onMenuClick);
+      document.removeEventListener("mousedown", this.onDocumentMouseDown);
+    }
+    toggle() {
+      if (this.isOpen) this.close();
+      else {
+        this.input.focus();
+        this.open();
+        this.onQuery(this.input.value);
+      }
+    }
+    setupEvents() {
+      this.input.addEventListener("focus", this.onInputFocus);
+      this.input.addEventListener("input", this.onInputInput);
+      this.input.addEventListener("keydown", this.onInputKeydown);
+      if (this.toggleBtn) {
+        this.toggleBtn.addEventListener("click", this.onToggleClick);
+      }
+      this.menu.addEventListener("mousedown", this.onMenuMouseDown);
+      this.menu.addEventListener("click", this.onMenuClick);
+      document.addEventListener("mousedown", this.onDocumentMouseDown);
+    }
+    handleKeydown(e) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        this.moveHighlight(1);
+        this.open();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        this.moveHighlight(-1);
+        this.open();
+      } else if (e.key === "Enter") {
+        if (this.isOpen && this.highlightIndex >= 0) {
+          e.preventDefault();
+          this.select(this.highlightIndex, true);
+        }
+      } else if (e.key === "Escape") {
+        if (this.isOpen) {
+          e.preventDefault();
+          this.close();
+        }
+      }
+    }
+    moveHighlight(delta) {
+      if (this.items.length === 0) return;
+      let next = this.highlightIndex + delta;
+      if (next >= this.items.length) next = 0;
+      if (next < 0) next = this.items.length - 1;
+      let scanned = 0;
+      while (scanned < this.items.length) {
+        const item = this.items[next];
+        if (item.type !== "info" && !item.disabled) {
+          this.setHighlight(next);
+          return;
+        }
+        next += delta;
+        if (next >= this.items.length) next = 0;
+        if (next < 0) next = this.items.length - 1;
+        scanned++;
+      }
+    }
+    setHighlight(index) {
+      this.highlightIndex = index;
+      const children = this.menu.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (i === index) {
+          child.setAttribute("data-active", "1");
+          child.scrollIntoView({ block: "nearest" });
+        } else {
+          child.removeAttribute("data-active");
+        }
+      }
+    }
+    syncHighlight() {
+      if (this.highlightIndex >= 0 && this.items[this.highlightIndex]) {
+        const item = this.items[this.highlightIndex];
+        if (item.type !== "info" && !item.disabled) {
+          this.setHighlight(this.highlightIndex);
+          return;
+        }
+      }
+      const first = this.items.findIndex(
+        (i) => i.type !== "info" && !i.disabled
+      );
+      this.setHighlight(first);
+    }
+    select(index, fromKeyboard) {
+      const item = this.items[index];
+      if (!item || item.disabled || item.type === "info") return;
+      this.onSelect(item, fromKeyboard);
+    }
+    render() {
+      clearChildren(this.menu);
+      this.items.forEach((item, index) => {
+        const el = this.renderItem(item);
+        el.dataset.index = String(index);
+        el.setAttribute("role", "option");
+        if (item.disabled) el.setAttribute("aria-disabled", "true");
+        this.menu.appendChild(el);
+      });
+    }
+    defaultRenderItem(item) {
+      return h("li", {
+        className: `autocomplete-item ${item.type === "info" ? "is-info" : ""}`,
+        textContent: item.label
+      });
+    }
+  };
+
   // src/app/github/ui/branch.ts
   var BRANCH_TTL_MS = 6e4;
   var RENDER_STEP = 200;
@@ -352,6 +592,8 @@
       this.ghNewBranchName = null;
       this.ghCreateBranchConfirmBtn = null;
       this.ghCancelBranchBtn = null;
+      // Components
+      this.autocomplete = null;
       // State
       this.currentOwner = "";
       this.currentRepo = "";
@@ -361,15 +603,11 @@
       this.hasMorePages = false;
       this.isFetchingBranches = false;
       this.lastBranchesFetchedAtMs = 0;
-      this.listState = {
-        all: [],
-        filtered: [],
-        renderCount: 0,
-        menuVisible: false,
-        highlightIndex: -1,
-        lastQuery: "",
-        inputPristine: true
-      };
+      this.allBranches = [];
+      this.filteredBranches = [];
+      this.renderCount = 0;
+      this.lastQuery = "";
+      this.inputPristine = true;
       // Callbacks
       this.onBranchChange = null;
       this.deps = deps;
@@ -406,6 +644,16 @@
       this.ghCancelBranchBtn = this.doc.getElementById(
         "ghCancelBranchBtn"
       );
+      if (this.ghBranchInput && this.ghBranchMenu) {
+        this.autocomplete = new Autocomplete({
+          input: this.ghBranchInput,
+          menu: this.ghBranchMenu,
+          toggleBtn: this.ghBranchToggleBtn || void 0,
+          onQuery: (q) => this.handleQuery(q),
+          onSelect: (item, fromKeyboard) => this.handleSelect(item, fromKeyboard),
+          renderItem: (item) => this.renderAutocompleteItem(item)
+        });
+      }
       this.setupEventListeners();
     }
     setRepo(owner, repo) {
@@ -433,7 +681,7 @@
       if (this.ghBranchInput && !this.ghBranchInput.disabled) {
         const raw = this.ghBranchInput.value.trim();
         if (raw && raw !== "__more__" && raw !== "__fetch__") {
-          if (this.listState.all.includes(raw) || raw === this.defaultBranchFromApi)
+          if (this.allBranches.includes(raw) || raw === this.defaultBranchFromApi)
             return raw;
         }
       }
@@ -458,9 +706,9 @@
         }
         if (this.ghNewBranchBtn) this.ghNewBranchBtn.disabled = false;
         const names = Array.isArray(pl.branches) ? pl.branches.map((b) => b.name) : [];
-        const set = new Set(this.listState.all);
+        const set = new Set(this.allBranches);
         for (const n of names) if (n) set.add(n);
-        this.listState.all = Array.from(set).sort(
+        this.allBranches = Array.from(set).sort(
           (a, b) => a.localeCompare(b)
         );
         this.applyBranchFilter();
@@ -492,8 +740,8 @@
         this.desiredBranch = typeof p.branch === "string" ? p.branch : null;
         if (this.desiredBranch && this.ghBranchInput) {
           this.ghBranchInput.value = this.desiredBranch;
-          this.listState.lastQuery = this.desiredBranch;
-          this.listState.inputPristine = false;
+          this.lastQuery = this.desiredBranch;
+          this.inputPristine = false;
           this.updateClearButtonVisibility();
           if (this.onBranchChange)
             this.onBranchChange(this.desiredBranch);
@@ -508,54 +756,27 @@
       this.loadedPages = 0;
       this.hasMorePages = false;
       this.isFetchingBranches = false;
-      this.listState.all = [];
-      this.listState.filtered = [];
-      this.listState.renderCount = 0;
+      this.allBranches = [];
+      this.filteredBranches = [];
+      this.renderCount = 0;
       if (this.ghBranchInput) {
         this.ghBranchInput.value = "";
-        this.listState.lastQuery = "";
-        this.listState.inputPristine = true;
+        this.lastQuery = "";
+        this.inputPristine = true;
         this.updateClearButtonVisibility();
       }
-      if (this.ghBranchMenu)
-        while (this.ghBranchMenu.firstChild)
-          this.ghBranchMenu.removeChild(this.ghBranchMenu.firstChild);
-      this.closeBranchMenu();
+      if (this.autocomplete) {
+        this.autocomplete.setItems([]);
+        this.autocomplete.close();
+      }
     }
     setupEventListeners() {
       if (this.ghBranchInput) {
-        let timeout;
-        this.ghBranchInput.addEventListener("focus", () => {
-          if (this.ghBranchInput.disabled) return;
-          this.showAllBranches();
-          this.openBranchMenu();
-        });
-        this.ghBranchInput.addEventListener("input", () => {
-          var _a, _b;
-          if (timeout) (_a = this.win) == null ? void 0 : _a.clearTimeout(timeout);
-          const value = this.ghBranchInput.value;
-          if (value !== "__more__" && value !== "__fetch__") {
-            this.listState.lastQuery = value;
-          }
-          this.listState.inputPristine = false;
-          this.updateClearButtonVisibility();
-          if (!this.listState.menuVisible) this.openBranchMenu();
-          timeout = (_b = this.win) == null ? void 0 : _b.setTimeout(() => {
-            this.applyBranchFilter();
-          }, 120);
-        });
-        this.ghBranchInput.addEventListener(
-          "keydown",
-          (e) => this.handleInputKeydown(e)
-        );
         this.ghBranchInput.addEventListener("change", () => {
-          const result = this.processBranchSelection(
-            this.ghBranchInput.value,
-            false
-          );
-          if (result === "selected") this.closeBranchMenu();
-          else if (result === "more" || result === "fetch")
-            this.syncBranchHighlightAfterRender();
+          const val = this.ghBranchInput.value;
+          if (val && val !== "__more__" && val !== "__fetch__") {
+            this.processBranchSelection(val);
+          }
         });
       }
       if (this.ghBranchClearBtn) {
@@ -564,48 +785,14 @@
           e.stopPropagation();
           if (this.ghBranchInput) {
             this.ghBranchInput.value = "";
-            this.listState.lastQuery = "";
+            this.lastQuery = "";
             this.desiredBranch = null;
-            this.listState.inputPristine = false;
+            this.inputPristine = false;
             this.updateClearButtonVisibility();
-            this.showAllBranches();
+            this.handleQuery("");
             this.ghBranchInput.focus();
           }
         });
-      }
-      if (this.ghBranchToggleBtn) {
-        this.ghBranchToggleBtn.addEventListener("click", () => {
-          var _a;
-          if (this.ghBranchToggleBtn.disabled) return;
-          if (this.listState.menuVisible) {
-            this.closeBranchMenu();
-            return;
-          }
-          this.showAllBranches();
-          this.openBranchMenu();
-          if (this.ghBranchInput && ((_a = this.doc) == null ? void 0 : _a.activeElement) !== this.ghBranchInput)
-            this.ghBranchInput.focus();
-        });
-      }
-      if (this.ghBranchMenu) {
-        this.ghBranchMenu.addEventListener(
-          "mousedown",
-          (event) => event.preventDefault()
-        );
-        this.ghBranchMenu.addEventListener(
-          "click",
-          (event) => this.handleMenuClick(event)
-        );
-      }
-      if (this.doc) {
-        this.doc.addEventListener(
-          "mousedown",
-          (event) => this.handleOutsideClick(event)
-        );
-        this.doc.addEventListener(
-          "focusin",
-          (event) => this.handleOutsideClick(event)
-        );
       }
       if (this.ghBranchRefreshBtn) {
         this.ghBranchRefreshBtn.addEventListener("click", () => {
@@ -645,81 +832,33 @@
         );
       }
     }
-    handleInputKeydown(e) {
-      if (e.key === "ArrowDown") {
-        this.openBranchMenu();
-        this.moveBranchHighlight(1);
-        e.preventDefault();
-        return;
+    handleQuery(query) {
+      if (query !== "__more__" && query !== "__fetch__") {
+        this.lastQuery = query;
       }
-      if (e.key === "ArrowUp") {
-        this.openBranchMenu();
-        this.moveBranchHighlight(-1);
-        e.preventDefault();
-        return;
-      }
-      if (e.key === "Enter") {
-        if (this.listState.menuVisible && this.listState.highlightIndex >= 0) {
-          const items = this.getBranchMenuItems();
-          const item = items[this.listState.highlightIndex];
-          if (item && item.dataset.selectable === "1") {
-            const value = item.getAttribute("data-value") || "";
-            if (value) {
-              const result = this.processBranchSelection(value, true);
-              if (result === "selected") this.closeBranchMenu();
-              else if (result === "more" || result === "fetch") {
-                this.syncBranchHighlightAfterRender();
-                this.openBranchMenu();
-              }
-            }
-          }
-        } else {
-          const result = this.processBranchSelection(
-            this.ghBranchInput.value,
-            false
-          );
-          if (result === "selected") this.closeBranchMenu();
-          else if (result === "more" || result === "fetch")
-            this.syncBranchHighlightAfterRender();
-        }
-        e.preventDefault();
-        return;
-      }
-      if (e.key === "Escape") {
-        if (this.listState.menuVisible) {
-          this.closeBranchMenu();
-          e.preventDefault();
-        }
-      }
+      this.inputPristine = false;
+      this.updateClearButtonVisibility();
+      this.applyBranchFilter();
     }
-    handleMenuClick(event) {
-      const target = event.target;
-      if (!target) return;
-      const item = target.closest("li");
-      if (!item || !(item instanceof HTMLLIElement)) return;
-      if (item.getAttribute("aria-disabled") === "true") return;
-      const value = item.getAttribute("data-value") || "";
-      if (!value) return;
-      const result = this.processBranchSelection(value, true);
-      if (result === "selected") this.closeBranchMenu();
-      else if (result === "more" || result === "fetch") {
-        this.syncBranchHighlightAfterRender();
-        this.openBranchMenu();
-      }
-      if (this.ghBranchInput) this.ghBranchInput.focus();
-    }
-    handleOutsideClick(event) {
-      if (!this.listState.menuVisible) return;
-      const target = event.target;
-      if (!target) {
-        this.closeBranchMenu();
+    handleSelect(item, fromKeyboard) {
+      if (item.value === "__more__") {
+        this.renderCount = Math.min(
+          this.renderCount + RENDER_STEP,
+          this.filteredBranches.length
+        );
+        this.updateAutocompleteItems();
+        this.updateBranchCount();
+        if (this.ghBranchInput) this.ghBranchInput.value = this.lastQuery;
+        if (this.autocomplete) this.autocomplete.open();
         return;
       }
-      if (this.ghBranchMenu && this.ghBranchMenu.contains(target)) return;
-      if (this.ghBranchInput && target === this.ghBranchInput) return;
-      if (this.ghBranchToggleBtn && this.ghBranchToggleBtn.contains(target))
+      if (item.value === "__fetch__") {
+        this.ensureNextPageIfNeeded();
+        if (this.ghBranchInput) this.ghBranchInput.value = this.lastQuery;
         return;
-      this.closeBranchMenu();
+      }
+      this.processBranchSelection(item.value);
+      if (this.autocomplete) this.autocomplete.close();
     }
     revalidateBranchesIfStale(forceLog = false) {
       if (!this.currentOwner || !this.currentRepo) return;
@@ -734,15 +873,15 @@
       this.loadedPages = 0;
       this.hasMorePages = false;
       this.isFetchingBranches = true;
-      this.listState.all = [];
-      this.listState.filtered = [];
-      this.listState.renderCount = 0;
+      this.allBranches = [];
+      this.filteredBranches = [];
+      this.renderCount = 0;
       this.setBranchDisabled(true, "Refreshing branches\u2026");
       this.updateBranchCount();
       if (this.ghBranchInput) {
         this.ghBranchInput.value = "";
-        this.listState.lastQuery = "";
-        this.listState.inputPristine = true;
+        this.lastQuery = "";
+        this.inputPristine = true;
       }
       this.deps.log("Refreshing branches\u2026");
       this.deps.postToPlugin({
@@ -760,15 +899,6 @@
         this.ghBranchClearBtn.hidden = !hasText;
       }
     }
-    showAllBranches() {
-      this.listState.filtered = [...this.listState.all];
-      this.listState.renderCount = Math.min(
-        RENDER_STEP,
-        this.listState.filtered.length
-      );
-      this.renderOptions();
-      this.updateBranchCount();
-    }
     setBranchDisabled(disabled, placeholder) {
       const nextPlaceholder = placeholder !== void 0 ? placeholder : BRANCH_INPUT_PLACEHOLDER;
       if (this.ghBranchInput) {
@@ -776,249 +906,121 @@
         this.ghBranchInput.placeholder = nextPlaceholder;
         if (disabled) {
           this.ghBranchInput.value = "";
-          this.listState.lastQuery = "";
-          this.listState.inputPristine = true;
+          this.lastQuery = "";
+          this.inputPristine = true;
         }
       }
       if (this.ghBranchToggleBtn) {
         this.ghBranchToggleBtn.disabled = disabled;
         this.ghBranchToggleBtn.setAttribute("aria-expanded", "false");
       }
-      if (disabled) this.closeBranchMenu();
+      if (disabled && this.autocomplete) this.autocomplete.close();
     }
     updateBranchCount() {
       if (!this.ghBranchCountEl) return;
-      const total = this.listState.all.length;
-      const showing = this.listState.filtered.length;
+      const total = this.allBranches.length;
+      const showing = this.filteredBranches.length;
       this.ghBranchCountEl.textContent = `${showing} / ${total}${this.hasMorePages ? " +" : ""}`;
-    }
-    getBranchMenuItems() {
-      if (!this.ghBranchMenu) return [];
-      const items = [];
-      let node = this.ghBranchMenu.firstElementChild;
-      while (node) {
-        if (node instanceof HTMLLIElement) items.push(node);
-        node = node.nextElementSibling;
-      }
-      return items;
-    }
-    setBranchHighlight(index, scrollIntoView) {
-      const items = this.getBranchMenuItems();
-      this.listState.highlightIndex = index;
-      for (let i = 0; i < items.length; i++) {
-        if (i === this.listState.highlightIndex)
-          items[i].setAttribute("data-active", "1");
-        else items[i].removeAttribute("data-active");
-      }
-      if (scrollIntoView && this.listState.highlightIndex >= 0 && this.listState.highlightIndex < items.length) {
-        try {
-          items[this.listState.highlightIndex].scrollIntoView({
-            block: "nearest"
-          });
-        } catch (e) {
-        }
-      }
-    }
-    findNextSelectable(startIndex, delta, items) {
-      if (!items.length) return -1;
-      let index = startIndex;
-      for (let i = 0; i < items.length; i++) {
-        index += delta;
-        if (index < 0) index = items.length - 1;
-        else if (index >= items.length) index = 0;
-        const item = items[index];
-        if (!item) continue;
-        if (item.dataset.selectable === "1" && item.getAttribute("aria-disabled") !== "true")
-          return index;
-      }
-      return -1;
-    }
-    moveBranchHighlight(delta) {
-      const items = this.getBranchMenuItems();
-      if (!items.length) {
-        this.setBranchHighlight(-1, false);
-        return;
-      }
-      const next = this.findNextSelectable(
-        this.listState.highlightIndex,
-        delta,
-        items
-      );
-      if (next >= 0) this.setBranchHighlight(next, true);
-    }
-    syncBranchHighlightAfterRender() {
-      const items = this.getBranchMenuItems();
-      if (!this.listState.menuVisible) {
-        this.setBranchHighlight(-1, false);
-        return;
-      }
-      if (!items.length) {
-        this.setBranchHighlight(-1, false);
-        return;
-      }
-      if (this.listState.highlightIndex >= 0 && this.listState.highlightIndex < items.length) {
-        const current = items[this.listState.highlightIndex];
-        if (current && current.dataset.selectable === "1" && current.getAttribute("aria-disabled") !== "true") {
-          this.setBranchHighlight(this.listState.highlightIndex, false);
-          return;
-        }
-      }
-      const first = this.findNextSelectable(-1, 1, items);
-      this.setBranchHighlight(first, false);
-    }
-    setBranchMenuVisible(show) {
-      if (!this.ghBranchMenu) {
-        this.listState.menuVisible = false;
-        this.listState.highlightIndex = -1;
-        return;
-      }
-      if (show && this.ghBranchInput && this.ghBranchInput.disabled)
-        show = false;
-      this.listState.menuVisible = show;
-      if (this.listState.menuVisible) {
-        this.ghBranchMenu.hidden = false;
-        this.ghBranchMenu.setAttribute("data-open", "1");
-        if (this.ghBranchToggleBtn)
-          this.ghBranchToggleBtn.setAttribute("aria-expanded", "true");
-        if (this.ghBranchInput)
-          this.ghBranchInput.setAttribute("aria-expanded", "true");
-      } else {
-        this.ghBranchMenu.hidden = true;
-        this.ghBranchMenu.removeAttribute("data-open");
-        if (this.ghBranchToggleBtn)
-          this.ghBranchToggleBtn.setAttribute("aria-expanded", "false");
-        if (this.ghBranchInput)
-          this.ghBranchInput.setAttribute("aria-expanded", "false");
-        this.setBranchHighlight(-1, false);
-      }
-    }
-    openBranchMenu() {
-      if (!this.ghBranchMenu) return;
-      if (!this.listState.menuVisible) {
-        if (!this.ghBranchMenu.childElementCount) this.renderOptions();
-        this.setBranchMenuVisible(true);
-      }
-      this.syncBranchHighlightAfterRender();
-    }
-    closeBranchMenu() {
-      this.setBranchMenuVisible(false);
-    }
-    renderOptions() {
-      if (!this.ghBranchMenu || !this.doc) return;
-      while (this.ghBranchMenu.firstChild)
-        this.ghBranchMenu.removeChild(this.ghBranchMenu.firstChild);
-      const slice = this.listState.filtered.slice(
-        0,
-        this.listState.renderCount
-      );
-      if (slice.length > 0) {
-        for (let i = 0; i < slice.length; i++) {
-          const name = slice[i];
-          const item = this.doc.createElement("li");
-          item.className = "gh-branch-item";
-          item.dataset.value = name;
-          item.dataset.selectable = "1";
-          item.setAttribute("role", "option");
-          item.textContent = name;
-          if (i === this.listState.highlightIndex)
-            item.setAttribute("data-active", "1");
-          this.ghBranchMenu.appendChild(item);
-        }
-      } else {
-        const empty = this.doc.createElement("li");
-        empty.className = "gh-branch-item gh-branch-item-empty";
-        empty.setAttribute("aria-disabled", "true");
-        empty.dataset.selectable = "0";
-        empty.textContent = this.listState.all.length ? "No matching branches" : "No branches loaded yet";
-        this.ghBranchMenu.appendChild(empty);
-      }
-      if (this.listState.filtered.length > this.listState.renderCount) {
-        const more = this.doc.createElement("li");
-        more.className = "gh-branch-item gh-branch-item-action";
-        more.dataset.value = "__more__";
-        more.dataset.selectable = "1";
-        more.textContent = `Load more\u2026 (${this.listState.filtered.length - this.listState.renderCount} more)`;
-        this.ghBranchMenu.appendChild(more);
-      } else if (this.hasMorePages) {
-        const fetch = this.doc.createElement("li");
-        fetch.className = "gh-branch-item gh-branch-item-action";
-        fetch.dataset.value = "__fetch__";
-        fetch.dataset.selectable = "1";
-        fetch.textContent = "Load next page\u2026";
-        this.ghBranchMenu.appendChild(fetch);
-      }
-      if (this.ghBranchInput) {
-        const want = this.desiredBranch || this.defaultBranchFromApi || "";
-        if (!this.ghBranchInput.value && want && this.listState.inputPristine) {
-          this.ghBranchInput.value = want;
-          this.listState.lastQuery = want;
-          this.updateClearButtonVisibility();
-        }
-      }
-      if (this.listState.menuVisible) {
-        this.syncBranchHighlightAfterRender();
-      }
     }
     applyBranchFilter() {
       var _a;
       const rawInput = (((_a = this.ghBranchInput) == null ? void 0 : _a.value) || "").trim();
-      const raw = rawInput === "__more__" || rawInput === "__fetch__" ? this.listState.lastQuery.trim() : rawInput;
+      const raw = rawInput === "__more__" || rawInput === "__fetch__" ? this.lastQuery.trim() : rawInput;
       const q = raw.toLowerCase();
       const effectiveQuery = q;
-      this.listState.filtered = effectiveQuery ? this.listState.all.filter(
+      this.filteredBranches = effectiveQuery ? this.allBranches.filter(
         (n) => n.toLowerCase().includes(effectiveQuery)
-      ) : [...this.listState.all];
-      this.listState.renderCount = Math.min(
-        RENDER_STEP,
-        this.listState.filtered.length
-      );
-      this.renderOptions();
+      ) : [...this.allBranches];
+      this.renderCount = Math.min(RENDER_STEP, this.filteredBranches.length);
+      this.updateAutocompleteItems();
       this.updateBranchCount();
-      if (!this.listState.menuVisible && this.ghBranchInput && !this.ghBranchInput.disabled) {
-        const isFocused = !!this.doc && this.doc.activeElement === this.ghBranchInput;
-        if (isFocused) {
-          this.setBranchMenuVisible(true);
-          this.syncBranchHighlightAfterRender();
-        }
-      }
     }
-    processBranchSelection(rawValue, fromMenu) {
-      const value = (rawValue || "").trim();
-      if (!this.ghBranchInput) return "noop";
-      if (value === "__more__") {
-        this.listState.renderCount = Math.min(
-          this.listState.renderCount + RENDER_STEP,
-          this.listState.filtered.length
+    updateAutocompleteItems() {
+      if (!this.autocomplete) return;
+      const items = [];
+      const slice = this.filteredBranches.slice(0, this.renderCount);
+      if (slice.length > 0) {
+        for (const name of slice) {
+          items.push({
+            key: name,
+            label: name,
+            value: name,
+            type: "option"
+          });
+        }
+      } else {
+        items.push({
+          key: "__empty__",
+          label: this.allBranches.length ? "No matching branches" : "No branches loaded yet",
+          value: "",
+          type: "info",
+          disabled: true
+        });
+      }
+      if (this.filteredBranches.length > this.renderCount) {
+        items.push({
+          key: "__more__",
+          label: `Load more\u2026 (${this.filteredBranches.length - this.renderCount} more)`,
+          value: "__more__",
+          type: "action"
+        });
+      } else if (this.hasMorePages) {
+        items.push({
+          key: "__fetch__",
+          label: "Load next page\u2026",
+          value: "__fetch__",
+          type: "action"
+        });
+      }
+      this.autocomplete.setItems(items);
+    }
+    renderAutocompleteItem(item) {
+      if (item.type === "info") {
+        return h(
+          "li",
+          {
+            className: "gh-branch-item gh-branch-item-empty",
+            "aria-disabled": "true"
+          },
+          item.label
         );
-        this.renderOptions();
-        this.updateBranchCount();
-        this.ghBranchInput.value = this.listState.lastQuery;
-        if (fromMenu && !this.listState.menuVisible)
-          this.setBranchMenuVisible(true);
-        return "more";
       }
-      if (value === "__fetch__") {
-        this.ensureNextPageIfNeeded();
-        this.ghBranchInput.value = this.listState.lastQuery;
-        return "fetch";
+      if (item.type === "action") {
+        return h(
+          "li",
+          {
+            className: "gh-branch-item gh-branch-item-action"
+          },
+          item.label
+        );
       }
-      if (!value) return "noop";
-      this.desiredBranch = value;
-      this.listState.lastQuery = value;
-      this.ghBranchInput.value = value;
-      this.listState.inputPristine = false;
+      return h(
+        "li",
+        {
+          className: "gh-branch-item"
+        },
+        item.label
+      );
+    }
+    processBranchSelection(value) {
+      const val = (value || "").trim();
+      if (!val) return;
+      if (!this.ghBranchInput) return;
+      this.desiredBranch = val;
+      this.lastQuery = val;
+      this.ghBranchInput.value = val;
+      this.inputPristine = false;
       this.updateClearButtonVisibility();
       this.deps.postToPlugin({
         type: "GITHUB_SELECT_BRANCH",
         payload: {
           owner: this.currentOwner,
           repo: this.currentRepo,
-          branch: value
+          branch: val
         }
       });
       this.applyBranchFilter();
-      if (this.onBranchChange) this.onBranchChange(value);
-      return "selected";
+      if (this.onBranchChange) this.onBranchChange(val);
     }
     ensureNextPageIfNeeded() {
       if (!this.ghBranchInput) return;
@@ -1106,18 +1108,18 @@
         const newBranch = String(pl.newBranch || "");
         const url = String(pl.html_url || "");
         if (newBranch) {
-          const s = new Set(this.listState.all);
+          const s = new Set(this.allBranches);
           if (!s.has(newBranch)) {
             s.add(newBranch);
-            this.listState.all = Array.from(s).sort(
+            this.allBranches = Array.from(s).sort(
               (a, b) => a.localeCompare(b)
             );
           }
           this.desiredBranch = newBranch;
           if (this.ghBranchInput) {
             this.ghBranchInput.value = newBranch;
-            this.listState.lastQuery = newBranch;
-            this.listState.inputPristine = false;
+            this.lastQuery = newBranch;
+            this.inputPristine = false;
           }
           this.applyBranchFilter();
         }
@@ -1129,12 +1131,15 @@
           );
           const logEl = this.deps.getLogElement();
           if (logEl && this.doc) {
-            const wrap = this.doc.createElement("div");
-            const a = this.doc.createElement("a");
-            a.href = url;
-            a.target = "_blank";
-            a.textContent = "View on GitHub";
-            wrap.appendChild(a);
+            const wrap = h(
+              "div",
+              null,
+              h(
+                "a",
+                { href: url, target: "_blank" },
+                "View on GitHub"
+              )
+            );
             logEl.appendChild(wrap);
             logEl.scrollTop = logEl.scrollHeight;
           }
@@ -1512,22 +1517,20 @@
       this.pickerState.lastFocus = null;
     }
     createFolderPickerRow(label, options) {
-      if (!this.doc) throw new Error("GitHub UI not attached");
-      const btn = this.doc.createElement("button");
-      btn.type = "button";
-      btn.className = "folder-picker-row";
-      btn.textContent = label;
-      if (options == null ? void 0 : options.muted) btn.classList.add("is-muted");
-      if (options == null ? void 0 : options.disabled) btn.disabled = true;
+      const props = {
+        className: `folder-picker-row ${(options == null ? void 0 : options.muted) ? "is-muted" : ""}`,
+        type: "button"
+      };
+      if (options == null ? void 0 : options.disabled) props.disabled = true;
       if (options == null ? void 0 : options.onClick) {
-        btn.addEventListener("mousedown", (event) => {
+        props.onmousedown = (event) => {
           var _a;
           event.preventDefault();
           event.stopPropagation();
           (_a = options.onClick) == null ? void 0 : _a.call(options);
-        });
+        };
       }
-      return btn;
+      return h("button", props, label);
     }
     updateFolderPickerTitle(branch) {
       if (!this.folderPickerTitleEl) return;
@@ -2876,8 +2879,8 @@
   // src/app/ui/features/resize.ts
   function postResize(width, height) {
     const w = Math.max(720, Math.min(1600, Math.floor(width)));
-    const h = Math.max(420, Math.min(1200, Math.floor(height)));
-    postToPlugin({ type: "UI_RESIZE", payload: { width: w, height: h } });
+    const h2 = Math.max(420, Math.min(1200, Math.floor(height)));
+    postToPlugin({ type: "UI_RESIZE", payload: { width: w, height: h2 } });
   }
   function queueResize(width, height) {
     appState.resizeQueued = { width, height };
@@ -3094,9 +3097,12 @@
     const data = event.data;
     if (!data || typeof data !== "object") return;
     let msg = null;
-    if (data.pluginMessage && typeof data.pluginMessage === "object") {
-      const maybe = data.pluginMessage;
-      if (maybe && typeof maybe.type === "string") msg = maybe;
+    const maybePayload = data.pluginMessage;
+    if (maybePayload && typeof maybePayload === "object") {
+      const maybeMsg = maybePayload;
+      if (typeof maybeMsg.type === "string") {
+        msg = maybeMsg;
+      }
     }
     if (!msg) return;
     if (msg.type === "ERROR") {
@@ -3211,7 +3217,17 @@
         if (uiElements.githubRememberChk)
           uiElements.githubRememberChk.checked = msg.payload.githubRememberPref;
       }
-      const last = msg.payload.last;
+      const payload = msg.payload;
+      let last = null;
+      if (payload && typeof payload === "object" && "last" in payload) {
+        const maybeLast = payload.last;
+        if (maybeLast && typeof maybeLast === "object" && typeof maybeLast.collection === "string" && typeof maybeLast.mode === "string") {
+          last = {
+            collection: maybeLast.collection,
+            mode: maybeLast.mode
+          };
+        }
+      }
       applyLastSelection(last);
       setDisabledStates();
       requestPreviewForCurrent();

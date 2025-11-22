@@ -6,6 +6,7 @@ import type {
     AttachContext,
     FolderListEntry,
 } from "./types";
+import { h } from "../../ui/dom-helpers";
 
 const GH_FOLDER_PLACEHOLDER = "Path in repository…";
 type FolderPickerState = {
@@ -436,24 +437,22 @@ export class GithubFolderUi {
     private createFolderPickerRow(
         label: string,
         options?: { onClick?: () => void; muted?: boolean; disabled?: boolean }
-    ): HTMLButtonElement {
-        if (!this.doc) throw new Error("GitHub UI not attached");
-        const btn = this.doc.createElement("button");
-        btn.type = "button";
-        btn.className = "folder-picker-row";
-        btn.textContent = label;
-        if (options?.muted) btn.classList.add("is-muted");
-        if (options?.disabled) btn.disabled = true;
+    ): HTMLElement {
+        const props: Record<string, any> = {
+            className: `folder-picker-row ${options?.muted ? "is-muted" : ""}`,
+            type: "button",
+        };
+
+        if (options?.disabled) props.disabled = true;
         if (options?.onClick) {
-            // Use mousedown to ensure it fires before blur events and to improve responsiveness
-            btn.addEventListener("mousedown", (event: Event) => {
+            props.onmousedown = (event: MouseEvent) => {
                 event.preventDefault();
-                // Stop propagation to prevent overlay closing if that was an issue
                 event.stopPropagation();
                 options.onClick?.();
-            });
+            };
         }
-        return btn;
+
+        return h("button", props, label);
     }
 
     private updateFolderPickerTitle(branch: string): void {
