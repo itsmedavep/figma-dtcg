@@ -16,7 +16,7 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 -   [Working With The Plugin](#working-with-the-plugin)
 -   [`$extensions` Metadata](#extensions-metadata)
 
-## Overview
+## Overview [![Run Unit Tests](https://github.com/itsmedavep/figma-dtcg/actions/workflows/unit-tests.yml/badge.svg?event=status)](https://github.com/itsmedavep/figma-dtcg/actions/workflows/unit-tests.yml)
 
 ### What It Does
 
