@@ -191,6 +191,7 @@ export type PluginToUi =
               drawerOpenPref?: boolean;
               allowHexPref?: boolean;
               githubRememberPref?: boolean;
+              textStylesCount?: number;
           };
       }
     | { type: "RAW_COLLECTIONS_TEXT"; payload: { text: string } }

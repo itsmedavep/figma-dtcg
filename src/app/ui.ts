@@ -39,15 +39,39 @@ import {
 /* -------------------------------------------------------
  * Shared helpers
  * ----------------------------------------------------- */
+const prefersDarkQuery =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function"
+        ? window.matchMedia("(prefers-color-scheme: dark)")
+        : null;
 
 function applyTheme(): void {
+    if (typeof document === "undefined") return;
     const effective = appState.systemDarkMode ? "dark" : "light";
+    const root = document.documentElement;
     if (effective === "light") {
-        document.documentElement.setAttribute("data-theme", "light");
+        root.setAttribute("data-theme", "light");
     } else {
-        document.documentElement.removeAttribute("data-theme");
+        root.removeAttribute("data-theme");
     }
+    root.style.colorScheme = effective;
 }
+
+function primeTheme(): void {
+    if (!prefersDarkQuery) {
+        applyTheme();
+        return;
+    }
+
+    appState.systemDarkMode = prefersDarkQuery.matches;
+    applyTheme();
+    prefersDarkQuery.addEventListener("change", (e) => {
+        appState.systemDarkMode = e.matches;
+        applyTheme();
+    });
+}
+
+primeTheme();
 
 /* -------------------------------------------------------
  * Collections / logging
@@ -226,16 +250,16 @@ function requestPreviewForCurrent(): void {
  * Message pump
  * ----------------------------------------------------- */
 window.addEventListener("message", async (event: MessageEvent) => {
-    const data: unknown = (event as unknown as { data?: unknown }).data;
+    const data: unknown = (event as { data?: unknown }).data;
     if (!data || typeof data !== "object") return;
 
-    let msg: PluginToUi | any | null = null;
-    if (
-        (data as any).pluginMessage &&
-        typeof (data as any).pluginMessage === "object"
-    ) {
-        const maybe = (data as any).pluginMessage;
-        if (maybe && typeof maybe.type === "string") msg = maybe;
+    let msg: PluginToUi | null = null;
+    const maybePayload = (data as { pluginMessage?: unknown }).pluginMessage;
+    if (maybePayload && typeof maybePayload === "object") {
+        const maybeMsg = maybePayload as Partial<PluginToUi>;
+        if (typeof maybeMsg.type === "string") {
+            msg = maybeMsg as PluginToUi;
+        }
     }
     if (!msg) return;
 
@@ -344,7 +368,15 @@ window.addEventListener("message", async (event: MessageEvent) => {
     }
 
     if (msg.type === "COLLECTIONS_DATA") {
-        githubUi.onCollectionsData();
+        githubUi.onCollectionsData({
+            collections: msg.payload.collections,
+            textStyles: msg.payload.textStylesCount
+                ? new Array(msg.payload.textStylesCount).fill({
+                      id: "",
+                      name: "",
+                  })
+                : [],
+        });
         populateCollections({ collections: msg.payload.collections });
         if (uiElements.exportAllChk)
             uiElements.exportAllChk.checked = !!msg.payload.exportAllPref;
@@ -372,10 +404,23 @@ window.addEventListener("message", async (event: MessageEvent) => {
                 uiElements.githubRememberChk.checked =
                     msg.payload.githubRememberPref;
         }
-        const last = (msg.payload as any).last as {
-            collection: string;
-            mode: string;
-        } | null;
+        const payload = msg.payload;
+        let last: { collection: string; mode: string } | null = null;
+        if (payload && typeof payload === "object" && "last" in payload) {
+            const maybeLast = (payload as { last?: unknown }).last;
+            if (
+                maybeLast &&
+                typeof maybeLast === "object" &&
+                typeof (maybeLast as { collection?: unknown }).collection ===
+                    "string" &&
+                typeof (maybeLast as { mode?: unknown }).mode === "string"
+            ) {
+                last = {
+                    collection: (maybeLast as { collection: string }).collection,
+                    mode: (maybeLast as { mode: string }).mode,
+                };
+            }
+        }
         applyLastSelection(last);
         setDisabledStates();
         requestPreviewForCurrent();
@@ -397,15 +442,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     initDomElements();
 
-    // System theme listener
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    appState.systemDarkMode = mediaQuery.matches;
-    mediaQuery.addEventListener("change", (e) => {
-        appState.systemDarkMode = e.matches;
-        applyTheme();
-    });
-    // Initial apply (defaults to auto/system until we get prefs)
-    applyTheme();
+    // Fallback apply if matchMedia is unavailable in the host environment.
+    if (!prefersDarkQuery) applyTheme();
 
     appState.importPreference = readImportPreference();
     appState.importLogEntries = readImportLog();

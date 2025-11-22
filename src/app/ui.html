@@ -162,18 +162,23 @@
 
               <!-- Branch controls -->
               <div class="stack gh-section">
-                <label>Export repository branch</label>
+                <div class="gh-branch-label-row">
+                  <label>Export repository branch:</label>
+                  <div id="ghBranchCount" class="muted gh-branch-count"></div>
+                </div>
                 <div class="gh-branch-search">
                   <div class="gh-branch-combo">
                     <input id="ghBranchInput" type="text" placeholder="Pick a repository first…" autocomplete="off"
                       disabled />
+                    <button id="ghBranchClearBtn" class="gh-branch-clear" type="button" aria-label="Clear search" hidden>
+                      <span aria-hidden="true">×</span>
+                    </button>
                     <button id="ghBranchToggleBtn" class="gh-branch-toggle" type="button" aria-label="Show branches"
                       aria-haspopup="listbox" disabled>
                       <span aria-hidden="true">▾</span>
                     </button>
                     <ul id="ghBranchMenu" class="gh-branch-menu" role="listbox" aria-label="Branches" hidden></ul>
                   </div>
-                  <div id="ghBranchCount" class="muted gh-branch-count"></div>
                 </div>
                 <div class="gh-branch-actions">
                   <button id="ghBranchRefreshBtn" class="css-button-neumorphic gh-branch-refresh"
@@ -183,7 +188,7 @@
                 </div>
                 <div id="ghNewBranchRow" class="gh-new-branch-row" style="display:none;">
                   <input id="ghNewBranchName" type="text" placeholder="feature/my-branch" />
-                  <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic" type="button">Create</button>
+                  <button id="ghCreateBranchConfirmBtn" class="css-button-neumorphic" type="button">Save</button>
                   <button id="ghCancelBranchBtn" class="css-button-neumorphic" type="button">Cancel</button>
                 </div>
               </div>

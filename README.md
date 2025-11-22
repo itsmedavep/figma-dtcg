@@ -1,4 +1,4 @@
-# Figma DTCG Plugin
+# Figma DTCG Plugin [![Unit Tests](https://github.com/itsmedavep/figma-dtcg/actions/workflows/unit-tests.yml/badge.svg?event=pull_request)](https://github.com/itsmedavep/figma-dtcg/actions/workflows/unit-tests.yml)
 
 This project bridges Figma variables and the W3C Design Tokens Format by importing and exporting tokens while preserving metadata needed for real-world workflows.
 
@@ -71,17 +71,60 @@ This project bridges Figma variables and the W3C Design Tokens Format by importi
 -   Aliases are maintained when the target token exists and passes validation; unresolved references are flagged before export.
 -   Unsupported primitives or complex alias chains are preserved in the intermediate representation when possible but may be omitted from final exports. Review plugin warnings to understand what was skipped.
 
+## Architecture
+
+The plugin follows a modular, layered architecture:
+
+-   **Core Layer** (`src/core/`) - Framework-agnostic token graph types, color conversions, normalization helpers, and the staged pipeline logic. This layer has no dependencies on Figma or UI concerns.
+-   **Adapter Layer** (`src/adapters/`) - Format boundaries for DTCG and Figma, translating between raw platform data and the core intermediate representation.
+-   **Application Layer** (`src/app/`) - Plugin UI logic, GitHub integration, and top-level command handlers.
+    -   **GitHub Handlers** (`src/app/github/handlers/`) - Modular, domain-specific handlers for authentication, repositories, branches, folders, commits, imports, and state management. Each handler is independently testable.
+    -   **UI Components** (`src/app/ui/`) - Reusable UI components including autocomplete, DOM helpers, and feature modules for import, export, and resize functionality.
+
 ## Testing & Validation
 
--   `npm run typecheck` runs the primary TypeScript validation pass against the plugin source.
--   Additional deterministic helpers have tests compiled through `tsc -p tests/tsconfig.test.json`; execute the emitted JavaScript in `tests/dist/` to verify behavior when evolving normalization logic.
+-   **Unit Tests**: Run `npm test` to execute the Vitest test suite. Tests are located in:
+    -   `src/**/*.test.ts` - Component and handler unit tests co-located with source files
+    -   `tests/__tests__/**/*.test.ts` - Core functionality and integration tests
+-   **Type Checking**: Run `npm run typecheck` to validate TypeScript types across the entire codebase.
+-   **Linting**: Run `npm run lint` to check code quality and style with ESLint. The configuration enforces TypeScript best practices and warns about `any` types and unused variables.
+-   **CI/CD**: GitHub Actions automatically runs tests, type checking, and builds on all pull requests targeting `main` and `develop` branches.
 
 ## Repository Tour
 
--   `src/core/` holds the shared infrastructure: token graph types, color conversions, normalization helpers, and the staged pipeline logic.
--   `src/adapters/` implements format boundaries for DTCG and Figma, translating between raw platform data and the core representation.
--   `src/app/` contains the plugin UI logic, GitHub integration, and top-level command handlers.
--   `tests/` houses automated coverage for utilities that must stay deterministic across environments.
+-   **`src/core/`** - Shared infrastructure independent of Figma or UI:
+    -   `ir.ts` - Intermediate representation types for the token graph
+    -   `color.ts` - Color space conversions and normalization
+    -   `typography.ts` - Typography token handling and text style conversions
+    -   `normalize.ts` - Path canonicalization and token normalization utilities
+    -   `pipeline.ts` - Staged processing pipeline for token transformations
+-   **`src/adapters/`** - Format boundaries:
+    -   `dtcg-reader.ts` / `dtcg-writer.ts` - DTCG JSON parsing and serialization
+    -   `figma-reader.ts` / `figma-writer.ts` - Figma variable and style conversions
+-   **`src/app/`** - Plugin application logic:
+    -   `main.ts` - Plugin entry point and command handlers
+    -   `ui.ts` - Main UI controller and message handling
+    -   `messages.ts` - Type-safe message contracts between UI and plugin
+    -   **`github/`** - GitHub integration:
+        -   `dispatcher.ts` - Routes GitHub messages to domain handlers
+        -   **`handlers/`** - Modular handlers for auth, repos, branches, folders, commits, imports, and state
+    -   **`ui/`** - UI component library:
+        -   `dom-helpers.ts` - DOM manipulation utilities
+        -   `components/autocomplete.ts` - Reusable autocomplete component
+        -   `features/` - Feature-specific UI modules (import, export, resize)
+-   **`tests/`** - Automated test coverage:
+    -   `__tests__/` - Core functionality tests (DTCG writer, color profiles, type validation)
+    -   Test fixtures for round-trip validation
+
+## Development Workflow
+
+1. **Initial Setup**: Run `npm install` to install dependencies.
+2. **Development Mode**: Use `npm run watch` to continuously rebuild the plugin as you make changes. The watch mode monitors `src/app/` and rebuilds both UI and main bundles automatically.
+3. **Type Safety**: Run `npm run typecheck` frequently to catch type errors early.
+4. **Code Quality**: Run `npm run lint` to ensure code follows project conventions.
+5. **Testing**: Run `npm test` to execute the full test suite before committing changes.
+6. **Building**: Run `npm run build` for a one-time production build.
+7. **CI/CD**: All pull requests automatically run tests, type checking, and builds via GitHub Actions.
 
 ## Typical Flow
 

@@ -10,6 +10,7 @@ export async function snapshotCollectionsForUi(): Promise<{
     }>;
     rawText: string;
     checksum: string;
+    textStylesCount: number;
 }> {
     if (typeof figma.editorType !== "string" || figma.editorType !== "figma") {
         return {
@@ -18,6 +19,7 @@ export async function snapshotCollectionsForUi(): Promise<{
                 "Variables API is not available in this editor.\n" +
                 "Open a Figma Design file (not FigJam) and try again.",
             checksum: "",
+            textStylesCount: 0,
         };
     }
     if (
@@ -31,6 +33,7 @@ export async function snapshotCollectionsForUi(): Promise<{
             rawText:
                 "Variables API methods not found. Ensure your Figma version supports Variables and try again.",
             checksum: "",
+            textStylesCount: 0,
         };
     }
 
@@ -108,8 +111,13 @@ export async function snapshotCollectionsForUi(): Promise<{
         rawLines.push("Create one in the Variables panel, then press Refresh.");
     }
 
-    if (typeof figma.getLocalTextStyles === "function") {
-        const textStyles = figma.getLocalTextStyles();
+    let textStylesCount = 0;
+    let textStyles: readonly TextStyle[] | null = null;
+    if (typeof figma.getLocalTextStylesAsync === "function") {
+        textStyles = await figma.getLocalTextStylesAsync();
+    }
+    if (textStyles) {
+        textStylesCount = textStyles.length;
         rawLines.push("");
         rawLines.push("Text styles: " + String(textStyles.length));
         for (let si = 0; si < textStyles.length; si++) {
@@ -125,6 +133,7 @@ export async function snapshotCollectionsForUi(): Promise<{
         collections: out,
         rawText: rawLines.join("\n"),
         checksum: checksumParts.join("|"),
+        textStylesCount,
     };
 }
 

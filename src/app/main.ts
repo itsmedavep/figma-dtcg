@@ -110,6 +110,7 @@ async function broadcastLocalCollections(
             flatTokensPref: !!flatTokensPrefVal,
             allowHexPref: allowHexPrefVal,
             githubRememberPref: githubRememberPrefVal,
+            textStylesCount: snap.textStylesCount,
         },
     });
     send({ type: "RAW_COLLECTIONS_TEXT", payload: { text: snap.rawText } });

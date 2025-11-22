@@ -516,7 +516,9 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
     async function importTypographyTokens(tokens: TokenNode[]): Promise<void> {
         if (tokens.length === 0) return;
 
-        const canReadStyles = typeof figma.getLocalTextStyles === "function";
+        const hasAsyncTextStyles =
+            typeof figma.getLocalTextStylesAsync === "function";
+        const canReadStyles = hasAsyncTextStyles;
         const canCreateStyles = typeof figma.createTextStyle === "function";
         if (!canReadStyles || !canCreateStyles) {
             logWarn(
@@ -527,7 +529,7 @@ export async function writeIRToFigma(graph: TokenGraph): Promise<WriteResult> {
 
         const stylesById = new Map<string, TextStyle>();
         const stylesByName = new Map<string, TextStyle>();
-        const localStyles = figma.getLocalTextStyles();
+        const localStyles = await figma.getLocalTextStylesAsync();
         for (const style of localStyles) {
             stylesById.set(style.id, style);
             stylesByName.set(style.name, style);

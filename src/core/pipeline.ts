@@ -72,7 +72,6 @@ function keysOf<T>(obj: { [k: string]: T }): string[] {
  * Includes control characters (\u0000-\u001F) which are invalid in file paths and could cause
  * security issues or filesystem errors.
  */
-// eslint-disable-next-line no-control-regex -- Intentionally filtering control characters for path safety
 const INVALID_FILE_CHARS = /[<>:"/\\|?*\u0000-\u001F]/g;
 
 function sanitizeForFile(s: string): string {

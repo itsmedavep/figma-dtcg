@@ -13,6 +13,7 @@ export function prettyExportName(original: string | undefined | null): string {
 }
 
 export function supportsFilePicker(): boolean {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return typeof (window as any).showSaveFilePicker === "function";
 }
 
@@ -21,6 +22,7 @@ export async function beginPendingSave(
 ): Promise<boolean> {
     try {
         if (!supportsFilePicker()) return false;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const handle = await (window as any).showSaveFilePicker({
             suggestedName,
             types: [

@@ -28,6 +28,7 @@ const SUPPORTED_DTCG_COLOR_SPACES = new Set(["srgb", "display-p3"] as const);
  * Strict shape validator for a DTCG color object.
  * Expects: { colorSpace: 'srgb'|'display-p3', components: [r,g,b], alpha?: number, hex?: string }
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function isDtcgColorShapeValid(input: any): {
     ok: boolean;
     reason?: string;
@@ -37,6 +38,7 @@ export function isDtcgColorShapeValid(input: any): {
     }
 
     const cs = String(input.colorSpace || "").toLowerCase();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (!SUPPORTED_DTCG_COLOR_SPACES.has(cs as any)) {
         return {
             ok: false,
@@ -371,7 +373,11 @@ export function figmaToSrgb(
     b: number,
     a: number
 ): ColorValue {
-    const comps: [number, number, number] = [clamp01(r), clamp01(g), clamp01(b)];
+    const comps: [number, number, number] = [
+        clamp01(r),
+        clamp01(g),
+        clamp01(b),
+    ];
     return { colorSpace: "srgb", components: comps, alpha: clamp01(a) };
 }
 
@@ -447,6 +453,7 @@ export function isValidDtcgColorValueObject(v: unknown): v is {
     hex?: unknown;
 } {
     if (!v || typeof v !== "object") return false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const o = v as any;
     if (!Array.isArray(o.components) || o.components.length < 3) return false;
     if (
