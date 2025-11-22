@@ -1396,6 +1396,12 @@
               folder: normalized.payload
             }
           });
+          this.deps.postToPlugin({
+            type: "GITHUB_SAVE_STATE",
+            payload: {
+              folder: normalized.payload
+            }
+          });
           this.closeFolderPicker();
           this.deps.log(
             `Folder selected: ${normalized.display === "/" ? "(repo root)" : normalized.display}`
@@ -1812,17 +1818,54 @@
           () => this.handleExportClick()
         );
       }
+      if (this.ghFilenameInput) {
+        this.ghFilenameInput.addEventListener(
+          "input",
+          () => this.saveState()
+        );
+      }
+      if (this.ghCommitMsgInput) {
+        this.ghCommitMsgInput.addEventListener(
+          "input",
+          () => this.saveState()
+        );
+      }
       [this.ghScopeAll, this.ghScopeTypography, this.ghScopeSelected].forEach(
         (el) => {
-          if (el)
-            el.addEventListener("change", () => this.updateEnabled());
+          if (el) {
+            el.addEventListener("change", () => {
+              this.updateEnabled();
+              this.saveState();
+            });
+          }
         }
       );
       if (this.ghCreatePrChk) {
         this.ghCreatePrChk.addEventListener("change", () => {
           this.updatePrOptionsVisibility();
           this.updateEnabled();
+          this.saveState();
         });
+      }
+      if (this.ghPrTitleInput) {
+        this.ghPrTitleInput.addEventListener(
+          "input",
+          () => this.saveState()
+        );
+      }
+      if (this.ghPrBodyInput) {
+        this.ghPrBodyInput.addEventListener(
+          "input",
+          () => this.saveState()
+        );
+      }
+      const styleChk = this.deps.getStyleDictionaryCheckbox();
+      if (styleChk) {
+        styleChk.addEventListener("change", () => this.saveState());
+      }
+      const flatChk = this.deps.getFlatTokensCheckbox();
+      if (flatChk) {
+        flatChk.addEventListener("change", () => this.saveState());
       }
       this.updatePrOptionsVisibility();
     }
@@ -2068,6 +2111,42 @@
         logEl.appendChild(wrap);
         logEl.scrollTop = logEl.scrollHeight;
       }
+    }
+    saveState() {
+      var _a, _b, _c, _d;
+      const payload = {
+        type: "GITHUB_SAVE_STATE",
+        payload: {}
+      };
+      if ((_a = this.ghFilenameInput) == null ? void 0 : _a.value) {
+        payload.payload.filename = this.ghFilenameInput.value;
+      }
+      if ((_b = this.ghCommitMsgInput) == null ? void 0 : _b.value) {
+        payload.payload.commitMessage = this.ghCommitMsgInput.value;
+      }
+      const scope = this.getSelectedScope();
+      payload.payload.scope = scope;
+      if (this.ghCreatePrChk) {
+        payload.payload.createPr = this.ghCreatePrChk.checked;
+      }
+      if ((_c = this.ghPrTitleInput) == null ? void 0 : _c.value) {
+        payload.payload.prTitle = this.ghPrTitleInput.value;
+      }
+      if ((_d = this.ghPrBodyInput) == null ? void 0 : _d.value) {
+        payload.payload.prBody = this.ghPrBodyInput.value;
+      }
+      if (this.prBaseBranch) {
+        payload.payload.prBase = this.prBaseBranch;
+      }
+      const styleChk = this.deps.getStyleDictionaryCheckbox();
+      if (styleChk) {
+        payload.payload.styleDictionary = styleChk.checked;
+      }
+      const flatChk = this.deps.getFlatTokensCheckbox();
+      if (flatChk) {
+        payload.payload.flatTokens = flatChk.checked;
+      }
+      this.deps.postToPlugin(payload);
     }
   };
 

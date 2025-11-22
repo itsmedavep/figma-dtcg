@@ -271,6 +271,14 @@ export class GithubFolderUi {
                     },
                 });
 
+                // Persist folder selection to storage
+                this.deps.postToPlugin({
+                    type: "GITHUB_SAVE_STATE",
+                    payload: {
+                        folder: normalized.payload,
+                    },
+                });
+
                 this.closeFolderPicker();
                 this.deps.log(
                     `Folder selected: ${

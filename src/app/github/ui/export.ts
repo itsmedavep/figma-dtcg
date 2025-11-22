@@ -70,11 +70,29 @@ export class GithubExportUi {
             );
         }
 
-        // Listen for scope changes to update button state
+        // Listen for filename changes to persist state
+        if (this.ghFilenameInput) {
+            this.ghFilenameInput.addEventListener("input", () =>
+                this.saveState()
+            );
+        }
+
+        // Listen for commit message changes to persist state
+        if (this.ghCommitMsgInput) {
+            this.ghCommitMsgInput.addEventListener("input", () =>
+                this.saveState()
+            );
+        }
+
+        // Listen for scope changes to update button state and persist
         [this.ghScopeAll, this.ghScopeTypography, this.ghScopeSelected].forEach(
             (el) => {
-                if (el)
-                    el.addEventListener("change", () => this.updateEnabled());
+                if (el) {
+                    el.addEventListener("change", () => {
+                        this.updateEnabled();
+                        this.saveState();
+                    });
+                }
             }
         );
 
@@ -82,7 +100,30 @@ export class GithubExportUi {
             this.ghCreatePrChk.addEventListener("change", () => {
                 this.updatePrOptionsVisibility();
                 this.updateEnabled();
+                this.saveState();
             });
+        }
+
+        // Listen for PR option changes to persist state
+        if (this.ghPrTitleInput) {
+            this.ghPrTitleInput.addEventListener("input", () =>
+                this.saveState()
+            );
+        }
+        if (this.ghPrBodyInput) {
+            this.ghPrBodyInput.addEventListener("input", () =>
+                this.saveState()
+            );
+        }
+
+        // Listen for checkbox changes (via deps)
+        const styleChk = this.deps.getStyleDictionaryCheckbox();
+        if (styleChk) {
+            styleChk.addEventListener("change", () => this.saveState());
+        }
+        const flatChk = this.deps.getFlatTokensCheckbox();
+        if (flatChk) {
+            flatChk.addEventListener("change", () => this.saveState());
         }
 
         this.updatePrOptionsVisibility();
@@ -153,10 +194,7 @@ export class GithubExportUi {
             this.setScope(payload.scope);
         }
 
-        if (
-            this.ghCreatePrChk &&
-            typeof payload.createPr === "boolean"
-        ) {
+        if (this.ghCreatePrChk && typeof payload.createPr === "boolean") {
             this.ghCreatePrChk.checked = payload.createPr;
             this.updatePrOptionsVisibility();
         }
@@ -452,5 +490,51 @@ export class GithubExportUi {
                 logEl as HTMLElement
             ).scrollHeight;
         }
+    }
+
+    private saveState(): void {
+        const payload: UiToPlugin = {
+            type: "GITHUB_SAVE_STATE",
+            payload: {},
+        };
+
+        if (this.ghFilenameInput?.value) {
+            payload.payload.filename = this.ghFilenameInput.value;
+        }
+
+        if (this.ghCommitMsgInput?.value) {
+            payload.payload.commitMessage = this.ghCommitMsgInput.value;
+        }
+
+        const scope = this.getSelectedScope();
+        payload.payload.scope = scope;
+
+        if (this.ghCreatePrChk) {
+            payload.payload.createPr = this.ghCreatePrChk.checked;
+        }
+
+        if (this.ghPrTitleInput?.value) {
+            payload.payload.prTitle = this.ghPrTitleInput.value;
+        }
+
+        if (this.ghPrBodyInput?.value) {
+            payload.payload.prBody = this.ghPrBodyInput.value;
+        }
+
+        if (this.prBaseBranch) {
+            payload.payload.prBase = this.prBaseBranch;
+        }
+
+        const styleChk = this.deps.getStyleDictionaryCheckbox();
+        if (styleChk) {
+            payload.payload.styleDictionary = styleChk.checked;
+        }
+
+        const flatChk = this.deps.getFlatTokensCheckbox();
+        if (flatChk) {
+            payload.payload.flatTokens = flatChk.checked;
+        }
+
+        this.deps.postToPlugin(payload);
     }
 }
