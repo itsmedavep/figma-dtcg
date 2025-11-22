@@ -52,20 +52,6 @@ export function createGithubUi(deps: GithubUiDependencies): GithubUiApi {
             exportUi.setContext(owner, repo, branch, folder, prBase);
         };
 
-        importUi.onTokensFetched = (tokens) => {
-            const contexts = deps.getImportContexts();
-            if (!contexts.length) {
-                deps.log(
-                    "No import configuration found. Please set up import settings."
-                );
-                return;
-            }
-            deps.log("Importing tokens into Figma…");
-            deps.postToPlugin({
-                type: "IMPORT_DTCG",
-                payload: { json: tokens, contexts },
-            });
-        };
     }
 
     function attach(context: AttachContext): void {

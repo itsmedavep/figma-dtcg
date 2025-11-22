@@ -1649,8 +1649,6 @@
       this.currentRepo = "";
       this.currentBranch = "";
       this.currentFolder = "";
-      // Callbacks
-      this.onTokensFetched = null;
       this.deps = deps;
     }
     attach(context) {
@@ -1740,9 +1738,6 @@
         this.deps.log(
           `Successfully fetched tokens file (${JSON.stringify(json).length} bytes).`
         );
-        if (this.onTokensFetched) {
-          this.onTokensFetched(json);
-        }
       } else {
         this.deps.log(`Fetch failed (status ${status}): ${message}`);
         if (status === 404) {
@@ -2027,20 +2022,6 @@
         const prBase = branchUi.getPrBaseBranch();
         importUi.setContext(owner, repo, branch, folder);
         exportUi.setContext(owner, repo, branch, folder, prBase);
-      };
-      importUi.onTokensFetched = (tokens) => {
-        const contexts = deps.getImportContexts();
-        if (!contexts.length) {
-          deps.log(
-            "No import configuration found. Please set up import settings."
-          );
-          return;
-        }
-        deps.log("Importing tokens into Figma\u2026");
-        deps.postToPlugin({
-          type: "IMPORT_DTCG",
-          payload: { json: tokens, contexts }
-        });
       };
     }
     function attach(context) {

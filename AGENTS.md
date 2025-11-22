@@ -39,6 +39,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 -   Use `import type` for type-only imports to keep the bundle lean.
 -   Preserve existing ordering guarantees (especially in token normalization) and avoid adding helpers that would reorder data implicitly.
 -   Guard optional Figma APIs and browser APIs with defensive checks; silent `catch { /* ignore */ }` blocks are used deliberately to keep the plugin resilient.
+-   Keep things modular in the code. No giant "god" functions.
 
 ## UI (src/app/ui.\*)
 
@@ -55,3 +56,5 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 -   Run `npm run typecheck` after modifying TypeScript.
 -   When changes affect the compiled output or manifest wiring, run `npm run build` to ensure assets emit successfully.
+-   Run `npm test` after adding or modifying and unit tests.
+-   When changes affect the application's functionality, organization, or when new unit tests get added

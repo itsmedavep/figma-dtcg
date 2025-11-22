@@ -100,9 +100,6 @@ describe("GithubImportUi", () => {
         importUi.attach(context);
         importUi.setContext("owner", "repo", "main", "tokens");
 
-        const onTokensFetched = vi.fn();
-        importUi.onTokensFetched = onTokensFetched;
-
         importUi.handleMessage({
             type: "GITHUB_FETCH_TOKENS_RESULT",
             payload: {
@@ -116,10 +113,10 @@ describe("GithubImportUi", () => {
         });
 
         expect(mockDoc.elements["ghFetchBtn"].disabled).toBe(false);
-        expect(onTokensFetched).toHaveBeenCalledWith({ color: "red" });
         expect(deps.log).toHaveBeenCalledWith(
             expect.stringContaining("Successfully fetched")
         );
+        expect(deps.postToPlugin).not.toHaveBeenCalled();
     });
 
     it("should handle fetch result failure", () => {

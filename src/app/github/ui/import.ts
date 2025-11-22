@@ -15,9 +15,6 @@ export class GithubImportUi {
     private currentBranch = "";
     private currentFolder = "";
 
-    // Callbacks
-    public onTokensFetched: ((tokens: unknown) => void) | null = null;
-
     constructor(deps: GithubUiDependencies) {
         this.deps = deps;
     }
@@ -140,10 +137,7 @@ export class GithubImportUi {
                     JSON.stringify(json).length
                 } bytes).`
             );
-
-            if (this.onTokensFetched) {
-                this.onTokensFetched(json);
-            }
+            // GitHub fetch handler already applies imports; do not repost to avoid double imports.
         } else {
             this.deps.log(`Fetch failed (status ${status}): ${message}`);
             if (status === 404) {
