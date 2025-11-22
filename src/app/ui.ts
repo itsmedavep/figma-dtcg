@@ -39,15 +39,39 @@ import {
 /* -------------------------------------------------------
  * Shared helpers
  * ----------------------------------------------------- */
+const prefersDarkQuery =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function"
+        ? window.matchMedia("(prefers-color-scheme: dark)")
+        : null;
 
 function applyTheme(): void {
+    if (typeof document === "undefined") return;
     const effective = appState.systemDarkMode ? "dark" : "light";
+    const root = document.documentElement;
     if (effective === "light") {
-        document.documentElement.setAttribute("data-theme", "light");
+        root.setAttribute("data-theme", "light");
     } else {
-        document.documentElement.removeAttribute("data-theme");
+        root.removeAttribute("data-theme");
     }
+    root.style.colorScheme = effective;
 }
+
+function primeTheme(): void {
+    if (!prefersDarkQuery) {
+        applyTheme();
+        return;
+    }
+
+    appState.systemDarkMode = prefersDarkQuery.matches;
+    applyTheme();
+    prefersDarkQuery.addEventListener("change", (e) => {
+        appState.systemDarkMode = e.matches;
+        applyTheme();
+    });
+}
+
+primeTheme();
 
 /* -------------------------------------------------------
  * Collections / logging
@@ -405,15 +429,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     initDomElements();
 
-    // System theme listener
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    appState.systemDarkMode = mediaQuery.matches;
-    mediaQuery.addEventListener("change", (e) => {
-        appState.systemDarkMode = e.matches;
-        applyTheme();
-    });
-    // Initial apply (defaults to auto/system until we get prefs)
-    applyTheme();
+    // Fallback apply if matchMedia is unavailable in the host environment.
+    if (!prefersDarkQuery) applyTheme();
 
     appState.importPreference = readImportPreference();
     appState.importLogEntries = readImportLog();
