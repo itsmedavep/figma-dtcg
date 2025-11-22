@@ -1,3 +1,5 @@
+// src/app/github/ui/branch.ts
+// Branch picker UI: search, pagination, selection, and creation flows.
 import type { PluginToUi } from "../../messages";
 import type { GithubUiDependencies, AttachContext } from "./types";
 
@@ -6,6 +8,15 @@ const RENDER_STEP = 200;
 const BRANCH_INPUT_PLACEHOLDER = "Search branches…";
 
 type BranchSelectionResult = "selected" | "more" | "fetch" | "noop";
+type BranchListState = {
+    all: string[];
+    filtered: string[];
+    renderCount: number;
+    menuVisible: boolean;
+    highlightIndex: number;
+    lastQuery: string;
+    inputPristine: boolean;
+};
 
 export class GithubBranchUi {
     private deps: GithubUiDependencies;
@@ -35,14 +46,15 @@ export class GithubBranchUi {
     private hasMorePages = false;
     private isFetchingBranches = false;
     private lastBranchesFetchedAtMs = 0;
-
-    private allBranches: string[] = [];
-    private filteredBranches: string[] = [];
-    private renderCount = 0;
-    private branchMenuVisible = false;
-    private branchHighlightIndex = -1;
-    private branchLastQuery = "";
-    private branchInputPristine = true;
+    private listState: BranchListState = {
+        all: [],
+        filtered: [],
+        renderCount: 0,
+        menuVisible: false,
+        highlightIndex: -1,
+        lastQuery: "",
+        inputPristine: true,
+    };
 
     // Callbacks
     public onBranchChange: ((branch: string) => void) | null = null;
@@ -118,7 +130,7 @@ export class GithubBranchUi {
             const raw = this.ghBranchInput.value.trim();
             if (raw && raw !== "__more__" && raw !== "__fetch__") {
                 if (
-                    this.allBranches.includes(raw) ||
+                    this.listState.all.includes(raw) ||
                     raw === this.defaultBranchFromApi
                 )
                     return raw;
@@ -156,9 +168,9 @@ export class GithubBranchUi {
             const names = Array.isArray(pl.branches)
                 ? (pl.branches as Array<{ name: string }>).map((b) => b.name)
                 : [];
-            const set = new Set(this.allBranches);
+            const set = new Set(this.listState.all);
             for (const n of names) if (n) set.add(n);
-            this.allBranches = Array.from(set).sort((a, b) =>
+            this.listState.all = Array.from(set).sort((a, b) =>
                 a.localeCompare(b)
             );
 
@@ -203,8 +215,8 @@ export class GithubBranchUi {
             this.desiredBranch = typeof p.branch === "string" ? p.branch : null;
             if (this.desiredBranch && this.ghBranchInput) {
                 this.ghBranchInput.value = this.desiredBranch;
-                this.branchLastQuery = this.desiredBranch;
-                this.branchInputPristine = false;
+                this.listState.lastQuery = this.desiredBranch;
+                this.listState.inputPristine = false;
                 this.updateClearButtonVisibility();
                 if (this.onBranchChange)
                     this.onBranchChange(this.desiredBranch);
@@ -221,13 +233,13 @@ export class GithubBranchUi {
         this.loadedPages = 0;
         this.hasMorePages = false;
         this.isFetchingBranches = false;
-        this.allBranches = [];
-        this.filteredBranches = [];
-        this.renderCount = 0;
+        this.listState.all = [];
+        this.listState.filtered = [];
+        this.listState.renderCount = 0;
         if (this.ghBranchInput) {
             this.ghBranchInput.value = "";
-            this.branchLastQuery = "";
-            this.branchInputPristine = true;
+            this.listState.lastQuery = "";
+            this.listState.inputPristine = true;
             this.updateClearButtonVisibility();
         }
         if (this.ghBranchMenu)
@@ -249,11 +261,11 @@ export class GithubBranchUi {
                 if (timeout) this.win?.clearTimeout(timeout);
                 const value = this.ghBranchInput!.value;
                 if (value !== "__more__" && value !== "__fetch__") {
-                    this.branchLastQuery = value;
+                    this.listState.lastQuery = value;
                 }
-                this.branchInputPristine = false;
+                this.listState.inputPristine = false;
                 this.updateClearButtonVisibility();
-                if (!this.branchMenuVisible) this.openBranchMenu();
+                if (!this.listState.menuVisible) this.openBranchMenu();
                 timeout = this.win?.setTimeout(() => {
                     this.applyBranchFilter();
                 }, 120) as number | undefined;
@@ -278,9 +290,9 @@ export class GithubBranchUi {
                 e.stopPropagation();
                 if (this.ghBranchInput) {
                     this.ghBranchInput.value = "";
-                    this.branchLastQuery = "";
+                    this.listState.lastQuery = "";
                     this.desiredBranch = null;
-                    this.branchInputPristine = false;
+                    this.listState.inputPristine = false;
                     this.updateClearButtonVisibility();
                     this.showAllBranches();
                     this.ghBranchInput.focus();
@@ -291,7 +303,7 @@ export class GithubBranchUi {
         if (this.ghBranchToggleBtn) {
             this.ghBranchToggleBtn.addEventListener("click", () => {
                 if (this.ghBranchToggleBtn!.disabled) return;
-                if (this.branchMenuVisible) {
+                if (this.listState.menuVisible) {
                     this.closeBranchMenu();
                     return;
                 }
@@ -379,14 +391,14 @@ export class GithubBranchUi {
             return;
         }
         if (e.key === "Enter") {
-            if (this.branchMenuVisible && this.branchHighlightIndex >= 0) {
-                const items = this.getBranchMenuItems();
-                const item = items[this.branchHighlightIndex];
-                if (item && item.dataset.selectable === "1") {
-                    const value = item.getAttribute("data-value") || "";
-                    if (value) {
-                        const result = this.processBranchSelection(value, true);
-                        if (result === "selected") this.closeBranchMenu();
+        if (this.listState.menuVisible && this.listState.highlightIndex >= 0) {
+            const items = this.getBranchMenuItems();
+            const item = items[this.listState.highlightIndex];
+            if (item && item.dataset.selectable === "1") {
+                const value = item.getAttribute("data-value") || "";
+                if (value) {
+                    const result = this.processBranchSelection(value, true);
+                    if (result === "selected") this.closeBranchMenu();
                         else if (result === "more" || result === "fetch") {
                             this.syncBranchHighlightAfterRender();
                             this.openBranchMenu();
@@ -408,7 +420,7 @@ export class GithubBranchUi {
             return;
         }
         if (e.key === "Escape") {
-            if (this.branchMenuVisible) {
+            if (this.listState.menuVisible) {
                 this.closeBranchMenu();
                 e.preventDefault();
             }
@@ -433,7 +445,7 @@ export class GithubBranchUi {
     }
 
     private handleOutsideClick(event: Event) {
-        if (!this.branchMenuVisible) return;
+        if (!this.listState.menuVisible) return;
         const target = event.target as Node | null;
         if (!target) {
             this.closeBranchMenu();
@@ -461,16 +473,16 @@ export class GithubBranchUi {
         this.loadedPages = 0;
         this.hasMorePages = false;
         this.isFetchingBranches = true;
-        this.allBranches = [];
-        this.filteredBranches = [];
-        this.renderCount = 0;
+        this.listState.all = [];
+        this.listState.filtered = [];
+        this.listState.renderCount = 0;
 
         this.setBranchDisabled(true, "Refreshing branches…");
         this.updateBranchCount();
         if (this.ghBranchInput) {
             this.ghBranchInput.value = "";
-            this.branchLastQuery = "";
-            this.branchInputPristine = true;
+            this.listState.lastQuery = "";
+            this.listState.inputPristine = true;
         }
         this.deps.log("Refreshing branches…");
 
@@ -495,8 +507,11 @@ export class GithubBranchUi {
 
     private showAllBranches(): void {
         // Show all branches without filtering
-        this.filteredBranches = [...this.allBranches];
-        this.renderCount = Math.min(RENDER_STEP, this.filteredBranches.length);
+        this.listState.filtered = [...this.listState.all];
+        this.listState.renderCount = Math.min(
+            RENDER_STEP,
+            this.listState.filtered.length
+        );
         this.renderOptions();
         this.updateBranchCount();
     }
@@ -509,8 +524,8 @@ export class GithubBranchUi {
             this.ghBranchInput.placeholder = nextPlaceholder;
             if (disabled) {
                 this.ghBranchInput.value = "";
-                this.branchLastQuery = "";
-                this.branchInputPristine = true;
+                this.listState.lastQuery = "";
+                this.listState.inputPristine = true;
             }
         }
         if (this.ghBranchToggleBtn) {
@@ -522,8 +537,8 @@ export class GithubBranchUi {
 
     private updateBranchCount(): void {
         if (!this.ghBranchCountEl) return;
-        const total = this.allBranches.length;
-        const showing = this.filteredBranches.length;
+        const total = this.listState.all.length;
+        const showing = this.listState.filtered.length;
         this.ghBranchCountEl.textContent = `${showing} / ${total}${
             this.hasMorePages ? " +" : ""
         }`;
@@ -542,19 +557,19 @@ export class GithubBranchUi {
 
     private setBranchHighlight(index: number, scrollIntoView: boolean): void {
         const items = this.getBranchMenuItems();
-        this.branchHighlightIndex = index;
+        this.listState.highlightIndex = index;
         for (let i = 0; i < items.length; i++) {
-            if (i === this.branchHighlightIndex)
+            if (i === this.listState.highlightIndex)
                 items[i].setAttribute("data-active", "1");
             else items[i].removeAttribute("data-active");
         }
         if (
             scrollIntoView &&
-            this.branchHighlightIndex >= 0 &&
-            this.branchHighlightIndex < items.length
+            this.listState.highlightIndex >= 0 &&
+            this.listState.highlightIndex < items.length
         ) {
             try {
-                items[this.branchHighlightIndex].scrollIntoView({
+                items[this.listState.highlightIndex].scrollIntoView({
                     block: "nearest",
                 });
             } catch {
@@ -592,7 +607,7 @@ export class GithubBranchUi {
             return;
         }
         const next = this.findNextSelectable(
-            this.branchHighlightIndex,
+            this.listState.highlightIndex,
             delta,
             items
         );
@@ -601,7 +616,7 @@ export class GithubBranchUi {
 
     private syncBranchHighlightAfterRender(): void {
         const items = this.getBranchMenuItems();
-        if (!this.branchMenuVisible) {
+        if (!this.listState.menuVisible) {
             this.setBranchHighlight(-1, false);
             return;
         }
@@ -610,16 +625,16 @@ export class GithubBranchUi {
             return;
         }
         if (
-            this.branchHighlightIndex >= 0 &&
-            this.branchHighlightIndex < items.length
+            this.listState.highlightIndex >= 0 &&
+            this.listState.highlightIndex < items.length
         ) {
-            const current = items[this.branchHighlightIndex];
+            const current = items[this.listState.highlightIndex];
             if (
                 current &&
                 current.dataset.selectable === "1" &&
                 current.getAttribute("aria-disabled") !== "true"
             ) {
-                this.setBranchHighlight(this.branchHighlightIndex, false);
+                this.setBranchHighlight(this.listState.highlightIndex, false);
                 return;
             }
         }
@@ -629,14 +644,14 @@ export class GithubBranchUi {
 
     private setBranchMenuVisible(show: boolean): void {
         if (!this.ghBranchMenu) {
-            this.branchMenuVisible = false;
-            this.branchHighlightIndex = -1;
+            this.listState.menuVisible = false;
+            this.listState.highlightIndex = -1;
             return;
         }
         if (show && this.ghBranchInput && this.ghBranchInput.disabled)
             show = false;
-        this.branchMenuVisible = show;
-        if (this.branchMenuVisible) {
+        this.listState.menuVisible = show;
+        if (this.listState.menuVisible) {
             this.ghBranchMenu.hidden = false;
             this.ghBranchMenu.setAttribute("data-open", "1");
             if (this.ghBranchToggleBtn)
@@ -656,7 +671,7 @@ export class GithubBranchUi {
 
     private openBranchMenu(): void {
         if (!this.ghBranchMenu) return;
-        if (!this.branchMenuVisible) {
+        if (!this.listState.menuVisible) {
             if (!this.ghBranchMenu.childElementCount) this.renderOptions();
             this.setBranchMenuVisible(true);
         }
@@ -673,7 +688,10 @@ export class GithubBranchUi {
         while (this.ghBranchMenu.firstChild)
             this.ghBranchMenu.removeChild(this.ghBranchMenu.firstChild);
 
-        const slice = this.filteredBranches.slice(0, this.renderCount);
+        const slice = this.listState.filtered.slice(
+            0,
+            this.listState.renderCount
+        );
         if (slice.length > 0) {
             for (let i = 0; i < slice.length; i++) {
                 const name = slice[i];
@@ -683,7 +701,7 @@ export class GithubBranchUi {
                 item.dataset.selectable = "1";
                 item.setAttribute("role", "option");
                 item.textContent = name;
-                if (i === this.branchHighlightIndex)
+                if (i === this.listState.highlightIndex)
                     item.setAttribute("data-active", "1");
                 this.ghBranchMenu.appendChild(item);
             }
@@ -692,19 +710,19 @@ export class GithubBranchUi {
             empty.className = "gh-branch-item gh-branch-item-empty";
             empty.setAttribute("aria-disabled", "true");
             empty.dataset.selectable = "0";
-            empty.textContent = this.allBranches.length
+            empty.textContent = this.listState.all.length
                 ? "No matching branches"
                 : "No branches loaded yet";
             this.ghBranchMenu.appendChild(empty);
         }
 
-        if (this.filteredBranches.length > this.renderCount) {
+        if (this.listState.filtered.length > this.listState.renderCount) {
             const more = this.doc.createElement("li");
             more.className = "gh-branch-item gh-branch-item-action";
             more.dataset.value = "__more__";
             more.dataset.selectable = "1";
             more.textContent = `Load more… (${
-                this.filteredBranches.length - this.renderCount
+                this.listState.filtered.length - this.listState.renderCount
             } more)`;
             this.ghBranchMenu.appendChild(more);
         } else if (this.hasMorePages) {
@@ -718,14 +736,18 @@ export class GithubBranchUi {
 
         if (this.ghBranchInput) {
             const want = this.desiredBranch || this.defaultBranchFromApi || "";
-            if (!this.ghBranchInput.value && want && this.branchInputPristine) {
+            if (
+                !this.ghBranchInput.value &&
+                want &&
+                this.listState.inputPristine
+            ) {
                 this.ghBranchInput.value = want;
-                this.branchLastQuery = want;
+                this.listState.lastQuery = want;
                 this.updateClearButtonVisibility();
             }
         }
 
-        if (this.branchMenuVisible) {
+        if (this.listState.menuVisible) {
             this.syncBranchHighlightAfterRender();
         }
     }
@@ -734,24 +756,27 @@ export class GithubBranchUi {
         const rawInput = (this.ghBranchInput?.value || "").trim();
         const raw =
             rawInput === "__more__" || rawInput === "__fetch__"
-                ? this.branchLastQuery.trim()
+                ? this.listState.lastQuery.trim()
                 : rawInput;
         const q = raw.toLowerCase();
         // Always filter by the query, even if it matches the selection.
         // This allows users to refine their search (e.g. "main" -> "maintenance").
         const effectiveQuery = q;
-        this.filteredBranches = effectiveQuery
-            ? this.allBranches.filter((n) =>
+        this.listState.filtered = effectiveQuery
+            ? this.listState.all.filter((n) =>
                   n.toLowerCase().includes(effectiveQuery)
               )
-            : [...this.allBranches];
+            : [...this.listState.all];
 
-        this.renderCount = Math.min(RENDER_STEP, this.filteredBranches.length);
+        this.listState.renderCount = Math.min(
+            RENDER_STEP,
+            this.listState.filtered.length
+        );
         this.renderOptions();
         this.updateBranchCount();
 
         if (
-            !this.branchMenuVisible &&
+            !this.listState.menuVisible &&
             this.ghBranchInput &&
             !this.ghBranchInput.disabled
         ) {
@@ -772,30 +797,30 @@ export class GithubBranchUi {
         if (!this.ghBranchInput) return "noop";
 
         if (value === "__more__") {
-            this.renderCount = Math.min(
-                this.renderCount + RENDER_STEP,
-                this.filteredBranches.length
+            this.listState.renderCount = Math.min(
+                this.listState.renderCount + RENDER_STEP,
+                this.listState.filtered.length
             );
             this.renderOptions();
             this.updateBranchCount();
-            this.ghBranchInput.value = this.branchLastQuery;
-            if (fromMenu && !this.branchMenuVisible)
+            this.ghBranchInput.value = this.listState.lastQuery;
+            if (fromMenu && !this.listState.menuVisible)
                 this.setBranchMenuVisible(true);
             return "more";
         }
 
         if (value === "__fetch__") {
             this.ensureNextPageIfNeeded();
-            this.ghBranchInput.value = this.branchLastQuery;
+            this.ghBranchInput.value = this.listState.lastQuery;
             return "fetch";
         }
 
         if (!value) return "noop";
 
         this.desiredBranch = value;
-        this.branchLastQuery = value;
+        this.listState.lastQuery = value;
         this.ghBranchInput.value = value;
-        this.branchInputPristine = false;
+        this.listState.inputPristine = false;
         this.updateClearButtonVisibility();
         this.deps.postToPlugin({
             type: "GITHUB_SELECT_BRANCH",
@@ -912,18 +937,18 @@ export class GithubBranchUi {
             const url = String(pl.html_url || "");
 
             if (newBranch) {
-                const s = new Set(this.allBranches);
+                const s = new Set(this.listState.all);
                 if (!s.has(newBranch)) {
                     s.add(newBranch);
-                    this.allBranches = Array.from(s).sort((a, b) =>
+                    this.listState.all = Array.from(s).sort((a, b) =>
                         a.localeCompare(b)
                     );
                 }
                 this.desiredBranch = newBranch;
                 if (this.ghBranchInput) {
                     this.ghBranchInput.value = newBranch;
-                    this.branchLastQuery = newBranch;
-                    this.branchInputPristine = false;
+                    this.listState.lastQuery = newBranch;
+                    this.listState.inputPristine = false;
                 }
                 this.applyBranchFilter();
             }

@@ -46,7 +46,7 @@ describe("GithubExportUi", () => {
         deps = {
             postToPlugin: vi.fn(),
             log: vi.fn(),
-            getLogElement: vi.fn(() => new MockHTMLElement()),
+            getLogElement: vi.fn(() => null),
             getCollectionSelect: vi.fn(() => {
                 const el = new MockHTMLElement();
                 el.value = "coll-1";
@@ -167,7 +167,10 @@ describe("GithubExportUi", () => {
             type: "GITHUB_COMMIT_RESULT",
             payload: {
                 ok: true,
+                owner: "owner",
+                repo: "repo",
                 commitUrl: "http://github.com/commit",
+                commitSha: "sha",
                 branch: "main",
                 fullPath: "tokens/tokens.json",
             },

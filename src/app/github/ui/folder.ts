@@ -1,3 +1,5 @@
+// src/app/github/ui/folder.ts
+// Folder picker UI for browsing and selecting repository paths.
 import type { PluginToUi } from "../../messages";
 import type {
     GithubUiDependencies,
@@ -6,6 +8,12 @@ import type {
 } from "./types";
 
 const GH_FOLDER_PLACEHOLDER = "Path in repository…";
+type FolderPickerState = {
+    isOpen: boolean;
+    currentPath: string;
+    lastFocus: HTMLElement | null;
+    refreshNonce: number;
+};
 
 export class GithubFolderUi {
     private deps: GithubUiDependencies;
@@ -29,10 +37,12 @@ export class GithubFolderUi {
     private currentRepo = "";
     private currentBranch = "";
 
-    private folderPickerIsOpen = false;
-    private folderPickerCurrentPath = "";
-    private folderPickerLastFocus: HTMLElement | null = null;
-    private folderPickerRefreshNonce = 0;
+    private pickerState: FolderPickerState = {
+        isOpen: false,
+        currentPath: "",
+        lastFocus: null,
+        refreshNonce: 0,
+    };
 
     private folderListWaiters: Array<{
         path: string;
@@ -93,9 +103,9 @@ export class GithubFolderUi {
 
     public reset() {
         this.setGhFolderDisplay("");
-        this.folderPickerIsOpen = false;
-        this.folderPickerCurrentPath = "";
-        this.folderPickerRefreshNonce++;
+        this.pickerState.isOpen = false;
+        this.pickerState.currentPath = "";
+        this.pickerState.refreshNonce++;
         this.folderListWaiters = [];
         this.folderCreateWaiters = [];
         if (this.folderPickerOverlay) {
@@ -245,8 +255,8 @@ export class GithubFolderUi {
                         false
                     );
                 }
-                const selectionRaw = this.folderPickerCurrentPath
-                    ? `${this.folderPickerCurrentPath}/`
+                const selectionRaw = this.pickerState.currentPath
+                    ? `${this.pickerState.currentPath}/`
                     : "/";
                 const normalized = this.normalizeFolderInput(selectionRaw);
                 this.setGhFolderDisplay(normalized.display);
@@ -373,7 +383,7 @@ export class GithubFolderUi {
             return;
         }
 
-        this.folderPickerLastFocus =
+        this.pickerState.lastFocus =
             this.doc && this.doc.activeElement instanceof HTMLElement
                 ? this.doc.activeElement
                 : null;
@@ -381,7 +391,7 @@ export class GithubFolderUi {
         this.folderPickerOverlay.hidden = false;
         this.folderPickerOverlay.classList.add("is-open");
         this.folderPickerOverlay.setAttribute("aria-hidden", "false");
-        this.folderPickerIsOpen = true;
+        this.pickerState.isOpen = true;
 
         this.updateFolderPickerTitle(this.currentBranch);
 
@@ -403,9 +413,9 @@ export class GithubFolderUi {
         this.folderPickerOverlay.classList.remove("is-open");
         this.folderPickerOverlay.setAttribute("aria-hidden", "true");
         this.folderPickerOverlay.hidden = true;
-        this.folderPickerIsOpen = false;
-        this.folderPickerCurrentPath = "";
-        this.folderPickerRefreshNonce++;
+        this.pickerState.isOpen = false;
+        this.pickerState.currentPath = "";
+        this.pickerState.refreshNonce++;
         if (this.folderPickerListEl) {
             this.folderPickerListEl.replaceChildren(
                 this.createFolderPickerRow("Loading…", {
@@ -415,12 +425,12 @@ export class GithubFolderUi {
             );
         }
         if (
-            this.folderPickerLastFocus &&
-            this.doc?.contains(this.folderPickerLastFocus)
+            this.pickerState.lastFocus &&
+            this.doc?.contains(this.pickerState.lastFocus)
         ) {
-            this.folderPickerLastFocus.focus();
+            this.pickerState.lastFocus.focus();
         }
-        this.folderPickerLastFocus = null;
+        this.pickerState.lastFocus = null;
     }
 
     private createFolderPickerRow(
@@ -461,18 +471,18 @@ export class GithubFolderUi {
         syncInput = true
     ): void {
         const normalized = this.normalizeFolderPickerPath(raw);
-        this.folderPickerCurrentPath = normalized;
+        this.pickerState.currentPath = normalized;
         if (syncInput && this.folderPickerPathInput)
             this.folderPickerPathInput.value = normalized;
-        if (refresh && this.folderPickerIsOpen) {
+        if (refresh && this.pickerState.isOpen) {
             void this.refreshFolderPickerList();
         }
     }
 
     private async refreshFolderPickerList(): Promise<void> {
-        if (!(this.folderPickerListEl && this.folderPickerIsOpen)) return;
+        if (!(this.folderPickerListEl && this.pickerState.isOpen)) return;
         const listEl = this.folderPickerListEl;
-        const requestId = ++this.folderPickerRefreshNonce;
+        const requestId = ++this.pickerState.refreshNonce;
 
         listEl.replaceChildren(
             this.createFolderPickerRow("Loading…", {
@@ -481,9 +491,9 @@ export class GithubFolderUi {
             })
         );
 
-        const path = this.folderPickerCurrentPath;
+        const path = this.pickerState.currentPath;
         const res = await this.listDir(path);
-        if (requestId !== this.folderPickerRefreshNonce) return;
+        if (requestId !== this.pickerState.refreshNonce) return;
 
         if (!res.ok) {
             const status = typeof res.status === "number" ? res.status : 0;
@@ -521,7 +531,7 @@ export class GithubFolderUi {
                 this.createFolderPickerRow(".. (up one level)", {
                     muted: true,
                     onClick: () => {
-                        const parentParts = this.folderPickerCurrentPath
+                        const parentParts = this.pickerState.currentPath
                             .split("/")
                             .filter(Boolean);
                         parentParts.pop();
@@ -549,8 +559,8 @@ export class GithubFolderUi {
                 nodes.push(
                     this.createFolderPickerRow(`${name}/`, {
                         onClick: () => {
-                            const next = this.folderPickerCurrentPath
-                                ? `${this.folderPickerCurrentPath}/${name}`
+                            const next = this.pickerState.currentPath
+                                ? `${this.pickerState.currentPath}/${name}`
                                 : name;
                             this.setFolderPickerPath(next);
                         },
@@ -563,7 +573,7 @@ export class GithubFolderUi {
     }
 
     private handleFolderPickerKeydown(event: KeyboardEvent): void {
-        if (!this.folderPickerIsOpen) return;
+        if (!this.pickerState.isOpen) return;
         if (event.key === "Escape") {
             event.preventDefault();
             this.closeFolderPicker();

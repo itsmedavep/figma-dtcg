@@ -97,7 +97,9 @@ describe("GithubImportUi", () => {
             type: "GITHUB_FETCH_TOKENS_RESULT",
             payload: {
                 ok: true,
-                tokens: { color: "red" },
+                owner: "owner",
+                repo: "repo",
+                json: { color: "red" },
                 path: "tokens/tokens.json",
                 branch: "main",
             },
@@ -118,6 +120,8 @@ describe("GithubImportUi", () => {
             type: "GITHUB_FETCH_TOKENS_RESULT",
             payload: {
                 ok: false,
+                owner: "owner",
+                repo: "repo",
                 status: 404,
                 message: "Not Found",
                 path: "tokens/tokens.json",

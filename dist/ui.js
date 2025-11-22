@@ -361,13 +361,15 @@
       this.hasMorePages = false;
       this.isFetchingBranches = false;
       this.lastBranchesFetchedAtMs = 0;
-      this.allBranches = [];
-      this.filteredBranches = [];
-      this.renderCount = 0;
-      this.branchMenuVisible = false;
-      this.branchHighlightIndex = -1;
-      this.branchLastQuery = "";
-      this.branchInputPristine = true;
+      this.listState = {
+        all: [],
+        filtered: [],
+        renderCount: 0,
+        menuVisible: false,
+        highlightIndex: -1,
+        lastQuery: "",
+        inputPristine: true
+      };
       // Callbacks
       this.onBranchChange = null;
       this.deps = deps;
@@ -431,7 +433,7 @@
       if (this.ghBranchInput && !this.ghBranchInput.disabled) {
         const raw = this.ghBranchInput.value.trim();
         if (raw && raw !== "__more__" && raw !== "__fetch__") {
-          if (this.allBranches.includes(raw) || raw === this.defaultBranchFromApi)
+          if (this.listState.all.includes(raw) || raw === this.defaultBranchFromApi)
             return raw;
         }
       }
@@ -456,9 +458,9 @@
         }
         if (this.ghNewBranchBtn) this.ghNewBranchBtn.disabled = false;
         const names = Array.isArray(pl.branches) ? pl.branches.map((b) => b.name) : [];
-        const set = new Set(this.allBranches);
+        const set = new Set(this.listState.all);
         for (const n of names) if (n) set.add(n);
-        this.allBranches = Array.from(set).sort(
+        this.listState.all = Array.from(set).sort(
           (a, b) => a.localeCompare(b)
         );
         this.applyBranchFilter();
@@ -490,8 +492,8 @@
         this.desiredBranch = typeof p.branch === "string" ? p.branch : null;
         if (this.desiredBranch && this.ghBranchInput) {
           this.ghBranchInput.value = this.desiredBranch;
-          this.branchLastQuery = this.desiredBranch;
-          this.branchInputPristine = false;
+          this.listState.lastQuery = this.desiredBranch;
+          this.listState.inputPristine = false;
           this.updateClearButtonVisibility();
           if (this.onBranchChange)
             this.onBranchChange(this.desiredBranch);
@@ -506,13 +508,13 @@
       this.loadedPages = 0;
       this.hasMorePages = false;
       this.isFetchingBranches = false;
-      this.allBranches = [];
-      this.filteredBranches = [];
-      this.renderCount = 0;
+      this.listState.all = [];
+      this.listState.filtered = [];
+      this.listState.renderCount = 0;
       if (this.ghBranchInput) {
         this.ghBranchInput.value = "";
-        this.branchLastQuery = "";
-        this.branchInputPristine = true;
+        this.listState.lastQuery = "";
+        this.listState.inputPristine = true;
         this.updateClearButtonVisibility();
       }
       if (this.ghBranchMenu)
@@ -533,11 +535,11 @@
           if (timeout) (_a = this.win) == null ? void 0 : _a.clearTimeout(timeout);
           const value = this.ghBranchInput.value;
           if (value !== "__more__" && value !== "__fetch__") {
-            this.branchLastQuery = value;
+            this.listState.lastQuery = value;
           }
-          this.branchInputPristine = false;
+          this.listState.inputPristine = false;
           this.updateClearButtonVisibility();
-          if (!this.branchMenuVisible) this.openBranchMenu();
+          if (!this.listState.menuVisible) this.openBranchMenu();
           timeout = (_b = this.win) == null ? void 0 : _b.setTimeout(() => {
             this.applyBranchFilter();
           }, 120);
@@ -562,9 +564,9 @@
           e.stopPropagation();
           if (this.ghBranchInput) {
             this.ghBranchInput.value = "";
-            this.branchLastQuery = "";
+            this.listState.lastQuery = "";
             this.desiredBranch = null;
-            this.branchInputPristine = false;
+            this.listState.inputPristine = false;
             this.updateClearButtonVisibility();
             this.showAllBranches();
             this.ghBranchInput.focus();
@@ -575,7 +577,7 @@
         this.ghBranchToggleBtn.addEventListener("click", () => {
           var _a;
           if (this.ghBranchToggleBtn.disabled) return;
-          if (this.branchMenuVisible) {
+          if (this.listState.menuVisible) {
             this.closeBranchMenu();
             return;
           }
@@ -657,9 +659,9 @@
         return;
       }
       if (e.key === "Enter") {
-        if (this.branchMenuVisible && this.branchHighlightIndex >= 0) {
+        if (this.listState.menuVisible && this.listState.highlightIndex >= 0) {
           const items = this.getBranchMenuItems();
-          const item = items[this.branchHighlightIndex];
+          const item = items[this.listState.highlightIndex];
           if (item && item.dataset.selectable === "1") {
             const value = item.getAttribute("data-value") || "";
             if (value) {
@@ -684,7 +686,7 @@
         return;
       }
       if (e.key === "Escape") {
-        if (this.branchMenuVisible) {
+        if (this.listState.menuVisible) {
           this.closeBranchMenu();
           e.preventDefault();
         }
@@ -707,7 +709,7 @@
       if (this.ghBranchInput) this.ghBranchInput.focus();
     }
     handleOutsideClick(event) {
-      if (!this.branchMenuVisible) return;
+      if (!this.listState.menuVisible) return;
       const target = event.target;
       if (!target) {
         this.closeBranchMenu();
@@ -732,15 +734,15 @@
       this.loadedPages = 0;
       this.hasMorePages = false;
       this.isFetchingBranches = true;
-      this.allBranches = [];
-      this.filteredBranches = [];
-      this.renderCount = 0;
+      this.listState.all = [];
+      this.listState.filtered = [];
+      this.listState.renderCount = 0;
       this.setBranchDisabled(true, "Refreshing branches\u2026");
       this.updateBranchCount();
       if (this.ghBranchInput) {
         this.ghBranchInput.value = "";
-        this.branchLastQuery = "";
-        this.branchInputPristine = true;
+        this.listState.lastQuery = "";
+        this.listState.inputPristine = true;
       }
       this.deps.log("Refreshing branches\u2026");
       this.deps.postToPlugin({
@@ -759,8 +761,11 @@
       }
     }
     showAllBranches() {
-      this.filteredBranches = [...this.allBranches];
-      this.renderCount = Math.min(RENDER_STEP, this.filteredBranches.length);
+      this.listState.filtered = [...this.listState.all];
+      this.listState.renderCount = Math.min(
+        RENDER_STEP,
+        this.listState.filtered.length
+      );
       this.renderOptions();
       this.updateBranchCount();
     }
@@ -771,8 +776,8 @@
         this.ghBranchInput.placeholder = nextPlaceholder;
         if (disabled) {
           this.ghBranchInput.value = "";
-          this.branchLastQuery = "";
-          this.branchInputPristine = true;
+          this.listState.lastQuery = "";
+          this.listState.inputPristine = true;
         }
       }
       if (this.ghBranchToggleBtn) {
@@ -783,8 +788,8 @@
     }
     updateBranchCount() {
       if (!this.ghBranchCountEl) return;
-      const total = this.allBranches.length;
-      const showing = this.filteredBranches.length;
+      const total = this.listState.all.length;
+      const showing = this.listState.filtered.length;
       this.ghBranchCountEl.textContent = `${showing} / ${total}${this.hasMorePages ? " +" : ""}`;
     }
     getBranchMenuItems() {
@@ -799,15 +804,15 @@
     }
     setBranchHighlight(index, scrollIntoView) {
       const items = this.getBranchMenuItems();
-      this.branchHighlightIndex = index;
+      this.listState.highlightIndex = index;
       for (let i = 0; i < items.length; i++) {
-        if (i === this.branchHighlightIndex)
+        if (i === this.listState.highlightIndex)
           items[i].setAttribute("data-active", "1");
         else items[i].removeAttribute("data-active");
       }
-      if (scrollIntoView && this.branchHighlightIndex >= 0 && this.branchHighlightIndex < items.length) {
+      if (scrollIntoView && this.listState.highlightIndex >= 0 && this.listState.highlightIndex < items.length) {
         try {
-          items[this.branchHighlightIndex].scrollIntoView({
+          items[this.listState.highlightIndex].scrollIntoView({
             block: "nearest"
           });
         } catch (e) {
@@ -835,7 +840,7 @@
         return;
       }
       const next = this.findNextSelectable(
-        this.branchHighlightIndex,
+        this.listState.highlightIndex,
         delta,
         items
       );
@@ -843,7 +848,7 @@
     }
     syncBranchHighlightAfterRender() {
       const items = this.getBranchMenuItems();
-      if (!this.branchMenuVisible) {
+      if (!this.listState.menuVisible) {
         this.setBranchHighlight(-1, false);
         return;
       }
@@ -851,10 +856,10 @@
         this.setBranchHighlight(-1, false);
         return;
       }
-      if (this.branchHighlightIndex >= 0 && this.branchHighlightIndex < items.length) {
-        const current = items[this.branchHighlightIndex];
+      if (this.listState.highlightIndex >= 0 && this.listState.highlightIndex < items.length) {
+        const current = items[this.listState.highlightIndex];
         if (current && current.dataset.selectable === "1" && current.getAttribute("aria-disabled") !== "true") {
-          this.setBranchHighlight(this.branchHighlightIndex, false);
+          this.setBranchHighlight(this.listState.highlightIndex, false);
           return;
         }
       }
@@ -863,14 +868,14 @@
     }
     setBranchMenuVisible(show) {
       if (!this.ghBranchMenu) {
-        this.branchMenuVisible = false;
-        this.branchHighlightIndex = -1;
+        this.listState.menuVisible = false;
+        this.listState.highlightIndex = -1;
         return;
       }
       if (show && this.ghBranchInput && this.ghBranchInput.disabled)
         show = false;
-      this.branchMenuVisible = show;
-      if (this.branchMenuVisible) {
+      this.listState.menuVisible = show;
+      if (this.listState.menuVisible) {
         this.ghBranchMenu.hidden = false;
         this.ghBranchMenu.setAttribute("data-open", "1");
         if (this.ghBranchToggleBtn)
@@ -889,7 +894,7 @@
     }
     openBranchMenu() {
       if (!this.ghBranchMenu) return;
-      if (!this.branchMenuVisible) {
+      if (!this.listState.menuVisible) {
         if (!this.ghBranchMenu.childElementCount) this.renderOptions();
         this.setBranchMenuVisible(true);
       }
@@ -902,7 +907,10 @@
       if (!this.ghBranchMenu || !this.doc) return;
       while (this.ghBranchMenu.firstChild)
         this.ghBranchMenu.removeChild(this.ghBranchMenu.firstChild);
-      const slice = this.filteredBranches.slice(0, this.renderCount);
+      const slice = this.listState.filtered.slice(
+        0,
+        this.listState.renderCount
+      );
       if (slice.length > 0) {
         for (let i = 0; i < slice.length; i++) {
           const name = slice[i];
@@ -912,7 +920,7 @@
           item.dataset.selectable = "1";
           item.setAttribute("role", "option");
           item.textContent = name;
-          if (i === this.branchHighlightIndex)
+          if (i === this.listState.highlightIndex)
             item.setAttribute("data-active", "1");
           this.ghBranchMenu.appendChild(item);
         }
@@ -921,15 +929,15 @@
         empty.className = "gh-branch-item gh-branch-item-empty";
         empty.setAttribute("aria-disabled", "true");
         empty.dataset.selectable = "0";
-        empty.textContent = this.allBranches.length ? "No matching branches" : "No branches loaded yet";
+        empty.textContent = this.listState.all.length ? "No matching branches" : "No branches loaded yet";
         this.ghBranchMenu.appendChild(empty);
       }
-      if (this.filteredBranches.length > this.renderCount) {
+      if (this.listState.filtered.length > this.listState.renderCount) {
         const more = this.doc.createElement("li");
         more.className = "gh-branch-item gh-branch-item-action";
         more.dataset.value = "__more__";
         more.dataset.selectable = "1";
-        more.textContent = `Load more\u2026 (${this.filteredBranches.length - this.renderCount} more)`;
+        more.textContent = `Load more\u2026 (${this.listState.filtered.length - this.listState.renderCount} more)`;
         this.ghBranchMenu.appendChild(more);
       } else if (this.hasMorePages) {
         const fetch = this.doc.createElement("li");
@@ -941,29 +949,32 @@
       }
       if (this.ghBranchInput) {
         const want = this.desiredBranch || this.defaultBranchFromApi || "";
-        if (!this.ghBranchInput.value && want && this.branchInputPristine) {
+        if (!this.ghBranchInput.value && want && this.listState.inputPristine) {
           this.ghBranchInput.value = want;
-          this.branchLastQuery = want;
+          this.listState.lastQuery = want;
           this.updateClearButtonVisibility();
         }
       }
-      if (this.branchMenuVisible) {
+      if (this.listState.menuVisible) {
         this.syncBranchHighlightAfterRender();
       }
     }
     applyBranchFilter() {
       var _a;
       const rawInput = (((_a = this.ghBranchInput) == null ? void 0 : _a.value) || "").trim();
-      const raw = rawInput === "__more__" || rawInput === "__fetch__" ? this.branchLastQuery.trim() : rawInput;
+      const raw = rawInput === "__more__" || rawInput === "__fetch__" ? this.listState.lastQuery.trim() : rawInput;
       const q = raw.toLowerCase();
       const effectiveQuery = q;
-      this.filteredBranches = effectiveQuery ? this.allBranches.filter(
+      this.listState.filtered = effectiveQuery ? this.listState.all.filter(
         (n) => n.toLowerCase().includes(effectiveQuery)
-      ) : [...this.allBranches];
-      this.renderCount = Math.min(RENDER_STEP, this.filteredBranches.length);
+      ) : [...this.listState.all];
+      this.listState.renderCount = Math.min(
+        RENDER_STEP,
+        this.listState.filtered.length
+      );
       this.renderOptions();
       this.updateBranchCount();
-      if (!this.branchMenuVisible && this.ghBranchInput && !this.ghBranchInput.disabled) {
+      if (!this.listState.menuVisible && this.ghBranchInput && !this.ghBranchInput.disabled) {
         const isFocused = !!this.doc && this.doc.activeElement === this.ghBranchInput;
         if (isFocused) {
           this.setBranchMenuVisible(true);
@@ -975,27 +986,27 @@
       const value = (rawValue || "").trim();
       if (!this.ghBranchInput) return "noop";
       if (value === "__more__") {
-        this.renderCount = Math.min(
-          this.renderCount + RENDER_STEP,
-          this.filteredBranches.length
+        this.listState.renderCount = Math.min(
+          this.listState.renderCount + RENDER_STEP,
+          this.listState.filtered.length
         );
         this.renderOptions();
         this.updateBranchCount();
-        this.ghBranchInput.value = this.branchLastQuery;
-        if (fromMenu && !this.branchMenuVisible)
+        this.ghBranchInput.value = this.listState.lastQuery;
+        if (fromMenu && !this.listState.menuVisible)
           this.setBranchMenuVisible(true);
         return "more";
       }
       if (value === "__fetch__") {
         this.ensureNextPageIfNeeded();
-        this.ghBranchInput.value = this.branchLastQuery;
+        this.ghBranchInput.value = this.listState.lastQuery;
         return "fetch";
       }
       if (!value) return "noop";
       this.desiredBranch = value;
-      this.branchLastQuery = value;
+      this.listState.lastQuery = value;
       this.ghBranchInput.value = value;
-      this.branchInputPristine = false;
+      this.listState.inputPristine = false;
       this.updateClearButtonVisibility();
       this.deps.postToPlugin({
         type: "GITHUB_SELECT_BRANCH",
@@ -1095,18 +1106,18 @@
         const newBranch = String(pl.newBranch || "");
         const url = String(pl.html_url || "");
         if (newBranch) {
-          const s = new Set(this.allBranches);
+          const s = new Set(this.listState.all);
           if (!s.has(newBranch)) {
             s.add(newBranch);
-            this.allBranches = Array.from(s).sort(
+            this.listState.all = Array.from(s).sort(
               (a, b) => a.localeCompare(b)
             );
           }
           this.desiredBranch = newBranch;
           if (this.ghBranchInput) {
             this.ghBranchInput.value = newBranch;
-            this.branchLastQuery = newBranch;
-            this.branchInputPristine = false;
+            this.listState.lastQuery = newBranch;
+            this.listState.inputPristine = false;
           }
           this.applyBranchFilter();
         }
@@ -1183,10 +1194,12 @@
       this.currentOwner = "";
       this.currentRepo = "";
       this.currentBranch = "";
-      this.folderPickerIsOpen = false;
-      this.folderPickerCurrentPath = "";
-      this.folderPickerLastFocus = null;
-      this.folderPickerRefreshNonce = 0;
+      this.pickerState = {
+        isOpen: false,
+        currentPath: "",
+        lastFocus: null,
+        refreshNonce: 0
+      };
       this.folderListWaiters = [];
       this.folderCreateWaiters = [];
       // Callbacks
@@ -1229,9 +1242,9 @@
     }
     reset() {
       this.setGhFolderDisplay("");
-      this.folderPickerIsOpen = false;
-      this.folderPickerCurrentPath = "";
-      this.folderPickerRefreshNonce++;
+      this.pickerState.isOpen = false;
+      this.pickerState.currentPath = "";
+      this.pickerState.refreshNonce++;
       this.folderListWaiters = [];
       this.folderCreateWaiters = [];
       if (this.folderPickerOverlay) {
@@ -1367,7 +1380,7 @@
               false
             );
           }
-          const selectionRaw = this.folderPickerCurrentPath ? `${this.folderPickerCurrentPath}/` : "/";
+          const selectionRaw = this.pickerState.currentPath ? `${this.pickerState.currentPath}/` : "/";
           const normalized = this.normalizeFolderInput(selectionRaw);
           this.setGhFolderDisplay(normalized.display);
           this.deps.postToPlugin({
@@ -1459,11 +1472,11 @@
         this.deps.log("Folder picker UI is unavailable.");
         return;
       }
-      this.folderPickerLastFocus = this.doc && this.doc.activeElement instanceof HTMLElement ? this.doc.activeElement : null;
+      this.pickerState.lastFocus = this.doc && this.doc.activeElement instanceof HTMLElement ? this.doc.activeElement : null;
       this.folderPickerOverlay.hidden = false;
       this.folderPickerOverlay.classList.add("is-open");
       this.folderPickerOverlay.setAttribute("aria-hidden", "false");
-      this.folderPickerIsOpen = true;
+      this.pickerState.isOpen = true;
       this.updateFolderPickerTitle(this.currentBranch);
       const startNormalized = this.normalizeFolderInput(
         ((_a = this.ghFolderInput) == null ? void 0 : _a.value) || ""
@@ -1482,9 +1495,9 @@
       this.folderPickerOverlay.classList.remove("is-open");
       this.folderPickerOverlay.setAttribute("aria-hidden", "true");
       this.folderPickerOverlay.hidden = true;
-      this.folderPickerIsOpen = false;
-      this.folderPickerCurrentPath = "";
-      this.folderPickerRefreshNonce++;
+      this.pickerState.isOpen = false;
+      this.pickerState.currentPath = "";
+      this.pickerState.refreshNonce++;
       if (this.folderPickerListEl) {
         this.folderPickerListEl.replaceChildren(
           this.createFolderPickerRow("Loading\u2026", {
@@ -1493,10 +1506,10 @@
           })
         );
       }
-      if (this.folderPickerLastFocus && ((_a = this.doc) == null ? void 0 : _a.contains(this.folderPickerLastFocus))) {
-        this.folderPickerLastFocus.focus();
+      if (this.pickerState.lastFocus && ((_a = this.doc) == null ? void 0 : _a.contains(this.pickerState.lastFocus))) {
+        this.pickerState.lastFocus.focus();
       }
-      this.folderPickerLastFocus = null;
+      this.pickerState.lastFocus = null;
     }
     createFolderPickerRow(label, options) {
       if (!this.doc) throw new Error("GitHub UI not attached");
@@ -1526,26 +1539,26 @@
     }
     setFolderPickerPath(raw, refresh = true, syncInput = true) {
       const normalized = this.normalizeFolderPickerPath(raw);
-      this.folderPickerCurrentPath = normalized;
+      this.pickerState.currentPath = normalized;
       if (syncInput && this.folderPickerPathInput)
         this.folderPickerPathInput.value = normalized;
-      if (refresh && this.folderPickerIsOpen) {
+      if (refresh && this.pickerState.isOpen) {
         void this.refreshFolderPickerList();
       }
     }
     async refreshFolderPickerList() {
-      if (!(this.folderPickerListEl && this.folderPickerIsOpen)) return;
+      if (!(this.folderPickerListEl && this.pickerState.isOpen)) return;
       const listEl = this.folderPickerListEl;
-      const requestId = ++this.folderPickerRefreshNonce;
+      const requestId = ++this.pickerState.refreshNonce;
       listEl.replaceChildren(
         this.createFolderPickerRow("Loading\u2026", {
           muted: true,
           disabled: true
         })
       );
-      const path = this.folderPickerCurrentPath;
+      const path = this.pickerState.currentPath;
       const res = await this.listDir(path);
-      if (requestId !== this.folderPickerRefreshNonce) return;
+      if (requestId !== this.pickerState.refreshNonce) return;
       if (!res.ok) {
         const status = typeof res.status === "number" ? res.status : 0;
         if (status === 404) {
@@ -1581,7 +1594,7 @@
           this.createFolderPickerRow(".. (up one level)", {
             muted: true,
             onClick: () => {
-              const parentParts = this.folderPickerCurrentPath.split("/").filter(Boolean);
+              const parentParts = this.pickerState.currentPath.split("/").filter(Boolean);
               parentParts.pop();
               this.setFolderPickerPath(parentParts.join("/"));
             }
@@ -1603,7 +1616,7 @@
           nodes.push(
             this.createFolderPickerRow(`${name}/`, {
               onClick: () => {
-                const next = this.folderPickerCurrentPath ? `${this.folderPickerCurrentPath}/${name}` : name;
+                const next = this.pickerState.currentPath ? `${this.pickerState.currentPath}/${name}` : name;
                 this.setFolderPickerPath(next);
               }
             })
@@ -1613,7 +1626,7 @@
       listEl.replaceChildren(...nodes);
     }
     handleFolderPickerKeydown(event) {
-      if (!this.folderPickerIsOpen) return;
+      if (!this.pickerState.isOpen) return;
       if (event.key === "Escape") {
         event.preventDefault();
         this.closeFolderPicker();
@@ -1988,48 +2001,46 @@
     const folderUi = new GithubFolderUi(deps);
     const importUi = new GithubImportUi(deps);
     const exportUi = new GithubExportUi(deps);
-    let doc = null;
-    repoUi.onRepoChange = (repo) => {
-      const { owner, repo: repoName } = repoUi.getSelected();
-      branchUi.setRepo(owner, repoName);
-      folderUi.reset();
-      importUi.reset();
-      exportUi.reset();
-    };
-    branchUi.onBranchChange = (branch) => {
-      const { owner, repo } = repoUi.getSelected();
-      folderUi.setContext(owner, repo, branch);
-      const folder = folderUi.getFolder();
-      const prBase = branchUi.getPrBaseBranch();
-      importUi.setContext(owner, repo, branch, folder);
-      exportUi.setContext(owner, repo, branch, folder, prBase);
-    };
-    folderUi.onFolderChange = (folder) => {
-      const { owner, repo } = repoUi.getSelected();
-      const branch = branchUi.getCurrentBranch();
-      const prBase = branchUi.getPrBaseBranch();
-      importUi.setContext(owner, repo, branch, folder);
-      exportUi.setContext(owner, repo, branch, folder, prBase);
-    };
-    importUi.onTokensFetched = (tokens) => {
-      const contexts = deps.getImportContexts();
-      if (contexts.length === 0) {
-        deps.log(
-          "No import configuration found. Please set up import settings."
-        );
-        return;
-      }
-      deps.log("Importing tokens into Figma\u2026");
-      deps.postToPlugin({
-        type: "IMPORT_TOKENS",
-        payload: {
-          tokens,
-          contexts
+    wireDependencies();
+    function wireDependencies() {
+      repoUi.onRepoChange = () => {
+        const { owner, repo } = repoUi.getSelected();
+        branchUi.setRepo(owner, repo);
+        folderUi.reset();
+        importUi.reset();
+        exportUi.reset();
+      };
+      branchUi.onBranchChange = (branch) => {
+        const { owner, repo } = repoUi.getSelected();
+        folderUi.setContext(owner, repo, branch);
+        const folder = folderUi.getFolder();
+        const prBase = branchUi.getPrBaseBranch();
+        importUi.setContext(owner, repo, branch, folder);
+        exportUi.setContext(owner, repo, branch, folder, prBase);
+      };
+      folderUi.onFolderChange = (folder) => {
+        const { owner, repo } = repoUi.getSelected();
+        const branch = branchUi.getCurrentBranch();
+        const prBase = branchUi.getPrBaseBranch();
+        importUi.setContext(owner, repo, branch, folder);
+        exportUi.setContext(owner, repo, branch, folder, prBase);
+      };
+      importUi.onTokensFetched = (tokens) => {
+        const contexts = deps.getImportContexts();
+        if (!contexts.length) {
+          deps.log(
+            "No import configuration found. Please set up import settings."
+          );
+          return;
         }
-      });
-    };
+        deps.log("Importing tokens into Figma\u2026");
+        deps.postToPlugin({
+          type: "IMPORT_DTCG",
+          payload: { json: tokens, contexts }
+        });
+      };
+    }
     function attach(context) {
-      doc = context.document;
       authUi.attach(context);
       repoUi.attach(context);
       branchUi.attach(context);
@@ -2039,34 +2050,28 @@
     }
     function handleMessage(msg) {
       let handled = false;
-      if (authUi.handleMessage(msg)) handled = true;
-      if (repoUi.handleMessage(msg)) handled = true;
-      if (branchUi.handleMessage(msg)) handled = true;
-      if (folderUi.handleMessage(msg)) handled = true;
-      if (importUi.handleMessage(msg)) handled = true;
-      if (exportUi.handleMessage(msg)) handled = true;
-      if (msg.type === "GITHUB_AUTH_RESULT" && msg.payload.ok) {
-      }
+      handled = authUi.handleMessage(msg) || handled;
+      handled = repoUi.handleMessage(msg) || handled;
+      handled = branchUi.handleMessage(msg) || handled;
+      handled = folderUi.handleMessage(msg) || handled;
+      handled = importUi.handleMessage(msg) || handled;
+      handled = exportUi.handleMessage(msg) || handled;
       return handled;
     }
     function onSelectionChange() {
       exportUi.updateEnabled();
     }
     function onCollectionsData(data) {
-      const hasCollections = !!((data == null ? void 0 : data.collections) && data.collections.length > 0 && data.collections.some((c) => c.variables && c.variables.length > 0));
-      const hasTextStyles = !!((data == null ? void 0 : data.textStyles) && data.textStyles.length > 0);
+      const hasCollections = !!(data == null ? void 0 : data.collections) && data.collections.length > 0 && data.collections.some((c) => c.variables && c.variables.length > 0);
+      const hasTextStyles = !!((data == null ? void 0 : data.textStyles) && data.textStyles.length);
       exportUi.setCollectionsAvailability(hasCollections, hasTextStyles);
       exportUi.updateEnabled();
-    }
-    function setRememberPref(pref) {
-      authUi.setRememberPref(pref);
     }
     return {
       attach,
       handleMessage,
       onSelectionChange,
-      onCollectionsData,
-      setRememberPref
+      onCollectionsData
     };
   }
 

@@ -254,6 +254,19 @@ describe("GithubFolderUi", () => {
         expect(folderUi.getFolder()).toBe("dist");
     });
 
+    it("resets picker state after use", () => {
+        folderUi.attach(context);
+        folderUi.setContext("owner", "repo", "main");
+        mockDoc.elements["ghPickFolderBtn"].click();
+
+        const overlay = mockDoc.elements["folderPickerOverlay"];
+        expect(overlay.hidden).toBe(false);
+
+        folderUi.reset();
+        expect(overlay.hidden).toBe(true);
+        expect(mockDoc.elements["folderPickerPath"].value).toBe("");
+    });
+
     it("should navigate deep into folders", async () => {
         folderUi.attach(context);
         folderUi.setContext("owner", "repo", "main");

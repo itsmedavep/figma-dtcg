@@ -1,3 +1,5 @@
+// src/app/github/ui/types.ts
+// Shared GitHub tab UI contracts for orchestration and feature modules.
 import type { PluginToUi, UiToPlugin, GithubScope } from "../../messages";
 
 export type FolderListEntry = {
@@ -21,4 +23,19 @@ export type GithubUiDependencies = {
 export type AttachContext = {
     document: Document;
     window: Window;
+};
+
+export type GithubUiApi = {
+    attach(context: AttachContext): void;
+    handleMessage(msg: PluginToUi): boolean;
+    onSelectionChange(): void;
+    onCollectionsData(data?: {
+        collections?: Array<{
+            id: string;
+            name: string;
+            modes: Array<{ id: string; name: string }>;
+            variables: Array<{ id: string; name: string; type: string }>;
+        }>;
+        textStyles?: Array<{ id: string; name: string }>;
+    }): void;
 };

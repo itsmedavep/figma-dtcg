@@ -158,6 +158,31 @@ describe("GithubBranchUi", () => {
         expect(branchUi.getCurrentBranch()).toBe("main"); // Default
     });
 
+    it("renders branch options and count after load and clears on reset", () => {
+        branchUi.attach(context);
+        branchUi.setRepo("owner", "repo");
+
+        branchUi.handleMessage({
+            type: "GITHUB_BRANCHES",
+            payload: {
+                owner: "owner",
+                repo: "repo",
+                branches: [{ name: "zeta" }, { name: "alpha" }],
+                defaultBranch: "alpha",
+                page: 1,
+                hasMore: false,
+            },
+        });
+
+        const menu = mockDoc.elements["ghBranchMenu"];
+        expect(menu.children.length).toBe(2); // renderOptions ran
+        expect(mockDoc.elements["ghBranchCount"].textContent).toContain("2");
+
+        branchUi.reset();
+        expect(menu.children.length).toBe(0);
+        expect(mockDoc.elements["ghBranchInput"].value).toBe("");
+    });
+
     it("should handle branch selection", () => {
         branchUi.attach(context);
         branchUi.setRepo("owner", "repo");
