@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Autocomplete, AutocompleteItem } from "./autocomplete";
+import { Autocomplete, AutocompleteItem } from "../autocomplete";
 
 // Minimal DOM mocks
 class MockHTMLElement {

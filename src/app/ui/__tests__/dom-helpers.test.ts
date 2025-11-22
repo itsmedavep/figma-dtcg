@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { h, clearChildren } from "./dom-helpers";
+import { h, clearChildren } from "../dom-helpers";
 
 // Minimal DOM mocks
 class MockHTMLElement {

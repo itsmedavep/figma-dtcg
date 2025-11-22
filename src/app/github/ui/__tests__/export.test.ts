@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { GithubExportUi } from "./export";
-import type { GithubUiDependencies, AttachContext } from "./types";
+import { GithubExportUi } from "../export";
+import type { GithubUiDependencies, AttachContext } from "../types";
 
 // Minimal DOM mocks
 class MockHTMLElement {
