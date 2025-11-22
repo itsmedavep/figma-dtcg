@@ -17,6 +17,7 @@ export type GhUserResult =
     | { ok: false; error: string };
 
 /** Safe header getter that handles figma's Response polyfill. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function headerGet(h: any, key: string): string | null {
     try {
         if (h && typeof h.get === "function") return h.get(key);
@@ -32,6 +33,7 @@ export interface GhRateInfo {
 }
 
 /** Parse rate limit headers into a tiny struct (when present). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseRate(h: any): GhRateInfo | undefined {
     const remainingStr = headerGet(h, "x-ratelimit-remaining");
     const resetStr = headerGet(h, "x-ratelimit-reset");
@@ -46,6 +48,7 @@ function parseRate(h: any): GhRateInfo | undefined {
 }
 
 /** Always resolve `res.text()` without throwing, even inside the sandbox. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function safeText(res: any): Promise<string> {
     try {
         return await res.text();
@@ -235,12 +238,13 @@ export type GhListReposResult =
     | { ok: false; error: string };
 
 /** Fetch helper that retries transient failures a couple of times. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchJsonWithRetry(url: string, init: any, tries = 2) {
-    let last: any;
+    let last: unknown;
     for (let i = 0; i < tries; i++) {
         try {
             return await fetch(url, init);
-        } catch (e) {
+        } catch (e: unknown) {
             last = e;
             await new Promise((r) => setTimeout(r, 150));
         }
@@ -264,6 +268,7 @@ export async function ghListRepos(token: string): Promise<GhListReposResult> {
         const all: GhRepo[] = [];
         let page = 1;
 
+        // eslint-disable-next-line no-constant-condition
         while (true) {
             const res = await fetchJsonWithRetry(
                 `${base}&page=${page}`,
@@ -355,7 +360,9 @@ export async function ghListBranches(
         const branchesUrl = `${baseRepoUrl}/branches?per_page=100&page=${page}${ts}`;
         const res = await fetch(branchesUrl, { headers });
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate = parseRate((res as any)?.headers);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const saml = headerGet((res as any)?.headers, "x-github-saml");
 
         if (res.status === 403 && saml) {
@@ -389,6 +396,7 @@ export async function ghListBranches(
                   .map((b) => ({ name: b.name }))
             : [];
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const link = headerGet((res as any)?.headers, "link");
         let hasMore = false;
         if (link && /\brel="next"/i.test(link)) hasMore = true;
@@ -493,7 +501,9 @@ export async function ghCreateBranch(
         // Preflight: push permission & SAML hints
         try {
             const repoRes = await fetch(baseRepoUrl, { headers });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const rate0 = parseRate((repoRes as any)?.headers);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const saml0 = headerGet((repoRes as any)?.headers, "x-github-saml");
             if (repoRes.status === 403 && saml0) {
                 return {
@@ -545,7 +555,9 @@ export async function ghCreateBranch(
             baseName
         )}`;
         const refRes = await fetch(refUrl, { headers });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate1 = parseRate((refRes as any)?.headers);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const saml1 = headerGet((refRes as any)?.headers, "x-github-saml");
 
         if (refRes.status === 403 && saml1) {
@@ -597,7 +609,9 @@ export async function ghCreateBranch(
             headers,
             body,
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate2 = parseRate((createRes as any)?.headers);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const saml2 = headerGet((createRes as any)?.headers, "x-github-saml");
 
         if (createRes.status === 403 && saml2) {
@@ -725,6 +739,7 @@ export async function ghListDir(
 
     try {
         const res = await fetch(url, { headers });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate = parseRate((res as any)?.headers);
         if (!res.ok) {
             const msg = await safeText(res);
@@ -758,6 +773,7 @@ export async function ghListDir(
                 rate,
             };
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const entries: GhDirEntry[] = json.map((it: any) => ({
             type: it?.type === "dir" ? "dir" : "file",
             name: String(it?.name || ""),
@@ -919,7 +935,9 @@ export async function ghEnsureFolder(
                 branch
             )}&_ts=${Date.now()}`;
             const res = await fetch(url, { headers });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const rate = parseRate((res as any)?.headers);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const saml = headerGet((res as any)?.headers, "x-github-saml");
 
             if (res.status === 403 && saml) {
@@ -977,7 +995,9 @@ export async function ghEnsureFolder(
         });
 
         const putRes = await fetch(putUrl, { method: "PUT", headers, body });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate2 = parseRate((putRes as any)?.headers);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const saml2 = headerGet((putRes as any)?.headers, "x-github-saml");
 
         if (putRes.status === 403 && saml2) {
@@ -1135,6 +1155,7 @@ export async function ghCommitFiles(
             `${base}/git/ref/heads/${encodeURIComponent(branch)}?${cacheBust}`,
             { headers }
         );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate1 = parseRate((refRes as any)?.headers);
         if (!refRes.ok) {
             const text = await safeText(refRes);
@@ -1171,6 +1192,7 @@ export async function ghCommitFiles(
             `${base}/git/commits/${baseCommitSha}?${cacheBust}`,
             { headers }
         );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate2 = parseRate((commitRes as any)?.headers);
         if (!commitRes.ok) {
             const text = await safeText(commitRes);
@@ -1209,6 +1231,7 @@ export async function ghCommitFiles(
                     encoding: "utf-8",
                 }),
             });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const rateB = parseRate((blobRes as any)?.headers);
             if (!blobRes.ok) {
                 const text = await safeText(blobRes);
@@ -1249,6 +1272,7 @@ export async function ghCommitFiles(
             headers,
             body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate3 = parseRate((treeRes as any)?.headers);
         if (!treeRes.ok) {
             const text = await safeText(treeRes);
@@ -1285,6 +1309,7 @@ export async function ghCommitFiles(
                 parents: [baseCommitSha],
             }),
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate4 = parseRate((commitCreateRes as any)?.headers);
         if (!commitCreateRes.ok) {
             const text = await safeText(commitCreateRes);
@@ -1320,6 +1345,7 @@ export async function ghCommitFiles(
                 body: JSON.stringify({ sha: newCommitSha, force: false }),
             }
         );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate5 = parseRate((updateRefRes as any)?.headers);
         if (!updateRefRes.ok) {
             const text = await safeText(updateRefRes);
@@ -1433,7 +1459,9 @@ export async function ghGetFileContents(
 
     try {
         const res = await fetch(url, { headers });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate = parseRate((res as any)?.headers);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const saml = headerGet((res as any)?.headers, "x-github-saml");
 
         if (res.status === 403 && saml) {
@@ -1597,7 +1625,9 @@ export async function ghCreatePullRequest(
             headers,
             body: JSON.stringify({ title, head, base, body }),
         });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rate = parseRate((res as any)?.headers);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const saml = headerGet((res as any)?.headers, "x-github-saml");
 
         if (res.status === 403 && saml) {

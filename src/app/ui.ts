@@ -344,7 +344,15 @@ window.addEventListener("message", async (event: MessageEvent) => {
     }
 
     if (msg.type === "COLLECTIONS_DATA") {
-        githubUi.onCollectionsData();
+        githubUi.onCollectionsData({
+            collections: msg.payload.collections,
+            textStyles: msg.payload.textStylesCount
+                ? new Array(msg.payload.textStylesCount).fill({
+                      id: "",
+                      name: "",
+                  })
+                : [],
+        });
         populateCollections({ collections: msg.payload.collections });
         if (uiElements.exportAllChk)
             uiElements.exportAllChk.checked = !!msg.payload.exportAllPref;

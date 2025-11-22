@@ -1030,8 +1030,12 @@ pre {
     -moz-appearance: none;
     padding-right: 28px;
     border-radius: 12px;
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: var(--surface-elevated);
     cursor: pointer;
+}
+
+[data-theme="light"] .gh-repo-combo select {
+    background-color: var(--surface-elevated);
 }
 
 .gh-repo-combo select:disabled {
@@ -1060,26 +1064,37 @@ pre {
     flex-wrap: wrap;
 }
 
+.gh-branch-label-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 6px;
+}
+
 .gh-branch-combo {
     position: relative;
-    flex: 1 1 auto;
+    --branch-toggle-width: 32px;
+    flex: 1 1 0;
     min-width: 0;
     display: flex;
     align-items: stretch;
 }
 
 .gh-branch-combo input {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
+    padding-right: 24px;
 }
 
 .gh-branch-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0 10px;
+    width: var(--branch-toggle-width);
+    min-width: var(--branch-toggle-width);
+    padding: 0;
     border: 1px solid var(--border);
     border-left: none;
     border-top-left-radius: 0;
@@ -1090,15 +1105,54 @@ pre {
     color: var(--ink);
     font-size: 12px;
     cursor: pointer;
+    box-shadow: none;
 }
 
 .gh-branch-toggle:hover:not([disabled]) {
     background: rgba(255, 255, 255, 0.12);
+    transform: none;
+    box-shadow: none;
 }
 
 .gh-branch-toggle[disabled] {
     cursor: not-allowed;
     opacity: 0.5;
+}
+
+button.gh-branch-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--ink-muted);
+    font-size: 20px;
+    font-weight: normal;
+    cursor: pointer;
+    position: absolute;
+    right: var(--branch-toggle-width);
+    top: 50%;
+    transform: translateY(-50%);
+    line-height: 1;
+    width: 24px;
+    height: calc(100% - 2px);
+    box-shadow: none;
+    border-radius: 0;
+    z-index: 10;
+}
+
+button.gh-branch-clear:hover,
+button.gh-branch-clear:active,
+button.gh-branch-clear:focus {
+    transform: translateY(-50%);
+    box-shadow: none;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+button.gh-branch-clear[hidden] {
+    display: none;
 }
 
 .gh-branch-menu {
@@ -1112,7 +1166,7 @@ pre {
     list-style: none;
     border: 1px solid var(--border);
     border-radius: 14px;
-    background: rgba(4, 5, 16, 0.95);
+    background: var(--surface-elevated);
     box-shadow: 0 25px 45px rgba(0, 0, 0, 0.55);
     overflow-y: auto;
     z-index: 20;
@@ -1168,9 +1222,31 @@ pre {
     border-color: var(--accent);
 }
 
+[data-theme="light"] .gh-branch-toggle {
+    background: var(--surface);
+    box-shadow: none;
+}
+
+.gh-branch-toggle:active {
+    transform: none;
+    box-shadow: none;
+}
+
+[data-theme="light"] .gh-branch-combo input:not(:disabled) {
+    background: var(--surface);
+}
+
+[data-theme="light"] .gh-branch-menu {
+    background: var(--surface-elevated);
+}
+
 .gh-branch-count {
+    flex: 0 0 auto;
+    min-width: 7ch;
     white-space: nowrap;
     font-size: 12px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .gh-branch-actions {
