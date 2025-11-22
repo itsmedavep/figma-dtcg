@@ -33,7 +33,7 @@ export function canonicalPath(
 }
 
 export function toDot(path: string[]): string {
-    var i = 0,
+    let i = 0,
         s = "";
     for (i = 0; i < path.length; i++) {
         if (i > 0) s += ".";
@@ -50,7 +50,7 @@ export function parseAliasString(s: string): string[] | null {
     if (typeof s !== "string") return null;
     if (s.length < 3) return null;
     if (s.charAt(0) !== "{" || s.charAt(s.length - 1) !== "}") return null;
-    var inner = s.substring(1, s.length - 1);
+    const inner = s.substring(1, s.length - 1);
     if (!inner) return null;
     return inner.split(".");
 }
@@ -64,20 +64,20 @@ export function parseAliasString(s: string): string[] | null {
  * Keeps adapters from reordering content across reads/writes.
  */
 export function normalize(graph: TokenGraph): TokenGraph {
-    var seen: { [k: string]: 1 } = {};
-    var copy: TokenNode[] = [];
-    var i = 0;
+    const seen: { [k: string]: 1 } = {};
+    const copy: TokenNode[] = [];
+    let i = 0;
     for (i = 0; i < graph.tokens.length; i++) {
-        var t = graph.tokens[i];
-        var key = slashPath(t.path);
+        const t = graph.tokens[i];
+        const key = slashPath(t.path);
         if (!seen[key]) {
             seen[key] = 1;
             copy.push(t);
         }
     }
     copy.sort(function (a, b) {
-        var da = toDot(a.path);
-        var db = toDot(b.path);
+        const da = toDot(a.path);
+        const db = toDot(b.path);
         if (da < db) return -1;
         if (da > db) return 1;
         return 0;
@@ -86,7 +86,7 @@ export function normalize(graph: TokenGraph): TokenGraph {
 }
 
 function slashPath(path: string[]): string {
-    var i = 0,
+    let i = 0,
         s = "";
     for (i = 0; i < path.length; i++) {
         if (i > 0) s += "/";
@@ -99,10 +99,10 @@ function slashPath(path: string[]): string {
 export function indexByDotPath(graph: TokenGraph): {
     [dot: string]: TokenNode;
 } {
-    var idx: { [dot: string]: TokenNode } = {};
-    var i = 0;
+    const idx: { [dot: string]: TokenNode } = {};
+    let i = 0;
     for (i = 0; i < graph.tokens.length; i++) {
-        var t = graph.tokens[i];
+        const t = graph.tokens[i];
         idx[toDot(t.path)] = t;
     }
     return idx;
@@ -123,39 +123,39 @@ export function analyzeAliases(graph: TokenGraph): {
     missing: string[];
     cycles: string[][];
 } {
-    var idx = indexByDotPath(graph);
-    var edges: { [from: string]: string[] } = {};
-    var nodes: string[] = [];
+    const idx = indexByDotPath(graph);
+    const edges: { [from: string]: string[] } = {};
+    const nodes: string[] = [];
 
-    var i = 0;
+    let i = 0;
     for (i = 0; i < graph.tokens.length; i++) {
-        var t = graph.tokens[i];
-        var from = toDot(t.path);
+        const t = graph.tokens[i];
+        const from = toDot(t.path);
         nodes.push(from);
         edges[from] = [];
-        var ctxKeys = keysOf(t.byContext);
-        var k = 0;
+        const ctxKeys = keysOf(t.byContext);
+        let k = 0;
         for (k = 0; k < ctxKeys.length; k++) {
-            var ctx = ctxKeys[k];
-            var val = t.byContext[ctx];
+            const ctx = ctxKeys[k];
+            const val = t.byContext[ctx];
             if (isAlias(val)) {
-                var to = toDot(val.path);
+                const to = toDot(val.path);
                 edges[from].push(to);
             }
         }
     }
 
-    var missing: string[] = [];
-    var u = 0;
+    const missing: string[] = [];
+    let u = 0;
     for (u = 0; u < nodes.length; u++) {
-        var n = nodes[u];
-        var outs = edges[n];
-        var j = 0;
+        const n = nodes[u];
+        const outs = edges[n];
+        let j = 0;
         for (j = 0; j < outs.length; j++) {
-            var target = outs[j];
+            const target = outs[j];
             if (!idx[target]) {
-                var seen = false;
-                var m = 0;
+                let seen = false;
+                let m = 0;
                 for (m = 0; m < missing.length; m++)
                     if (missing[m] === target) {
                         seen = true;
@@ -166,31 +166,31 @@ export function analyzeAliases(graph: TokenGraph): {
         }
     }
 
-    var WHITE = 0,
+    const WHITE = 0,
         GRAY = 1,
         BLACK = 2;
-    var color: { [node: string]: number } = {};
+    const color: { [node: string]: number } = {};
     for (u = 0; u < nodes.length; u++) color[nodes[u]] = WHITE;
 
-    var cycles: string[][] = [];
+    const cycles: string[][] = [];
 
     function dfs(start: string, stack: string[]): boolean {
         color[start] = GRAY;
         stack.push(start);
-        var arr = edges[start];
-        var p = 0;
+        const arr = edges[start];
+        let p = 0;
         for (p = 0; p < arr.length; p++) {
-            var v = arr[p];
+            const v = arr[p];
             if (color[v] === WHITE) {
                 if (dfs(v, stack)) return true;
             } else if (color[v] === GRAY) {
-                var ci = stack.length - 1;
-                var cyc: string[] = [];
+                let ci = stack.length - 1;
+                const cyc: string[] = [];
                 while (ci >= 0 && stack[ci] !== v) {
                     ci--;
                 }
                 if (ci >= 0) {
-                    var w = ci;
+                    let w = ci;
                     for (w = ci; w < stack.length; w++) cyc.push(stack[w]);
                     cyc.push(v);
                 }
@@ -204,9 +204,9 @@ export function analyzeAliases(graph: TokenGraph): {
     }
 
     for (u = 0; u < nodes.length; u++) {
-        var node = nodes[u];
+        const node = nodes[u];
         if (color[node] === WHITE) {
-            var stack: string[] = [];
+            const stack: string[] = [];
             dfs(node, stack);
         }
     }
@@ -215,8 +215,8 @@ export function analyzeAliases(graph: TokenGraph): {
 }
 
 function keysOf<T>(obj: { [k: string]: T }): string[] {
-    var keys: string[] = [];
-    var k: string;
+    const keys: string[] = [];
+    let k: string;
     for (k in obj)
         if (Object.prototype.hasOwnProperty.call(obj, k)) keys.push(k);
     return keys;

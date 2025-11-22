@@ -29,7 +29,10 @@ type HandlerDeps = {
     safeKeyFromCollectionAndMode: SafeKeyFn;
     importDtcg: ImportFn;
     exportDtcg: ExportFn;
-    broadcastLocalCollections: (opts?: { force?: boolean; silent?: boolean }) => Promise<void>;
+    broadcastLocalCollections: (opts?: {
+        force?: boolean;
+        silent?: boolean;
+    }) => Promise<void>;
 };
 
 type GhSelected = {
@@ -103,45 +106,55 @@ export function createGithubDispatcher(deps: HandlerDeps): GithubDispatcher {
         const current = await getSelected();
         const merged = { ...current, ...partial };
         await setSelected(merged);
-    return merged;
-}
+        return merged;
+    }
 
-type CommitSignature = { branch: string; fullPath: string; scope: GithubScope };
+    type CommitSignature = {
+        branch: string;
+        fullPath: string;
+        scope: GithubScope;
+    };
 
-async function getLastCommitSignature(): Promise<CommitSignature | null> {
-    try {
-        const stored = await figma.clientStorage.getAsync(GH_LAST_COMMIT_KEY);
-        if (
-            stored &&
-            typeof stored === "object" &&
-            typeof (stored as { branch?: unknown }).branch === "string" &&
-            typeof (stored as { fullPath?: unknown }).fullPath === "string"
-        ) {
-            return {
-                branch: (stored as { branch: string }).branch,
-                fullPath: (stored as { fullPath: string }).fullPath,
-                scope:
-                    typeof (stored as { scope?: unknown }).scope === "string" &&
-                    ((stored as { scope?: unknown }).scope === "all" ||
-                        (stored as { scope?: unknown }).scope === "selected" ||
-                        (stored as { scope?: unknown }).scope === "typography")
-                        ? ((stored as { scope: GithubScope }).scope as GithubScope)
-                        : "selected",
-            };
+    async function getLastCommitSignature(): Promise<CommitSignature | null> {
+        try {
+            const stored = await figma.clientStorage.getAsync(
+                GH_LAST_COMMIT_KEY
+            );
+            if (
+                stored &&
+                typeof stored === "object" &&
+                typeof (stored as { branch?: unknown }).branch === "string" &&
+                typeof (stored as { fullPath?: unknown }).fullPath === "string"
+            ) {
+                return {
+                    branch: (stored as { branch: string }).branch,
+                    fullPath: (stored as { fullPath: string }).fullPath,
+                    scope:
+                        typeof (stored as { scope?: unknown }).scope ===
+                            "string" &&
+                        ((stored as { scope?: unknown }).scope === "all" ||
+                            (stored as { scope?: unknown }).scope ===
+                                "selected" ||
+                            (stored as { scope?: unknown }).scope ===
+                                "typography")
+                            ? ((stored as { scope: GithubScope })
+                                  .scope as GithubScope)
+                            : "selected",
+                };
+            }
+        } catch {
+            /* ignore */
         }
-    } catch {
-        /* ignore */
+        return null;
     }
-    return null;
-}
 
-async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
-    try {
-        await figma.clientStorage.setAsync(GH_LAST_COMMIT_KEY, sig);
-    } catch {
-        /* ignore */
+    async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
+        try {
+            await figma.clientStorage.setAsync(GH_LAST_COMMIT_KEY, sig);
+        } catch {
+            /* ignore */
+        }
     }
-}
 
     function pickPerModeFile(
         files: Array<{ name: string; json: unknown }>,
@@ -278,13 +291,13 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
         };
     }
 
-  async function ensureFolderPathWritable(
-    token: string,
-    owner: string,
-    repo: string,
-    branch: string,
-    folderPath: string
-  ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+    async function ensureFolderPathWritable(
+        token: string,
+        owner: string,
+        repo: string,
+        branch: string,
+        folderPath: string
+    ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
         if (!folderPath) return { ok: true };
         const segments = folderPath.split("/").filter(Boolean);
         let prefix = "";
@@ -311,9 +324,9 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
             }
             const message = res.message || `HTTP ${status}`;
             return { ok: false, status: status || 400, message };
+        }
+        return { ok: true };
     }
-    return { ok: true };
-  }
 
     async function handle(msg: UiToPlugin): Promise<boolean> {
         switch (msg.type) {
@@ -984,7 +997,7 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                 // Refresh UI safely after import
                 try {
                     await deps.broadcastLocalCollections({ force: true });
-                } catch (e) {
+                } catch {
                     // ignore refresh errors, import succeeded
                 }
                 return true;
@@ -1108,7 +1121,7 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                         : msg.payload.scope === "typography"
                         ? "typography"
                         : "selected";
-                let scope: GithubScope = requestedScope;
+                const scope: GithubScope = requestedScope;
                 const collection = String(msg.payload.collection || "");
                 const mode = String(msg.payload.mode || "");
                 const styleDictionary = !!msg.payload.styleDictionary;
@@ -1416,7 +1429,7 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                         typeof v === "object" &&
                         !Array.isArray(v) &&
                         Object.keys(v).length === 0;
-                    let exportLooksEmpty =
+                    const exportLooksEmpty =
                         files.length === 0 ||
                         files.every((f) => isPlainEmptyObject(f.json));
 
@@ -1543,7 +1556,9 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                         }
                         return value;
                     };
-                    const containsTypographyTokens = (text: string): boolean => {
+                    const containsTypographyTokens = (
+                        text: string
+                    ): boolean => {
                         const parsed = tryParseJson(text);
                         const hasTypography = (value: unknown): boolean => {
                             if (!value) return false;
@@ -1557,9 +1572,11 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                                         "$type"
                                     )
                                 ) {
-                                    const t = (value as {
-                                        [k: string]: unknown;
-                                    })["$type"];
+                                    const t = (
+                                        value as {
+                                            [k: string]: unknown;
+                                        }
+                                    )["$type"];
                                     if (
                                         typeof t === "string" &&
                                         t.toLowerCase() === "typography"
@@ -1576,9 +1593,11 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                                             key
                                         ) &&
                                         hasTypography(
-                                            (value as {
-                                                [k: string]: unknown;
-                                            })[key]
+                                            (
+                                                value as {
+                                                    [k: string]: unknown;
+                                                }
+                                            )[key]
                                         )
                                     ) {
                                         return true;
@@ -1701,7 +1720,10 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                             commitRes.status === 422 &&
                             typeof commitRes.message === "string" &&
                             /not a fast forward/i.test(commitRes.message);
-                        if (looksLikeFastForwardRace && sameTargetAsLastCommit) {
+                        if (
+                            looksLikeFastForwardRace &&
+                            sameTargetAsLastCommit
+                        ) {
                             const noChangeMessage =
                                 scope === "selected"
                                     ? `No token values changed for "${selectionCollection}" / "${selectionMode}"; repository already matches the current export.`
@@ -1734,10 +1756,10 @@ async function setLastCommitSignature(sig: CommitSignature): Promise<void> {
                         deps.send({
                             type: "ERROR",
                             payload: {
-                                message: `GitHub: Commit failed (${commitRes.status}): ${commitRes.message}${
-                                    fastForwardRetry
-                                        ? " (after retry)"
-                                        : ""
+                                message: `GitHub: Commit failed (${
+                                    commitRes.status
+                                }): ${commitRes.message}${
+                                    fastForwardRetry ? " (after retry)" : ""
                                 }`,
                             },
                         });

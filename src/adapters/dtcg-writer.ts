@@ -4,7 +4,6 @@
 // - Uses Figma display metadata only for alias references to preserve user intent
 
 import { type TokenGraph, type TokenNode, type ValueOrAlias } from "../core/ir";
-import { slugSegment } from "../core/normalize";
 import { serializeTypographyValue } from "../core/typography";
 import { colorValueToHexString } from "../core/color";
 

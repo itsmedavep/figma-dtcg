@@ -59,8 +59,8 @@ export interface ImportOpts {
  * We keep this helper local so the export path never depends on a broader utility module.
  */
 function keysOf<T>(obj: { [k: string]: T }): string[] {
-    var out: string[] = [];
-    var k: string;
+    const out: string[] = [];
+    let k: string;
     for (k in obj)
         if (Object.prototype.hasOwnProperty.call(obj, k)) out.push(k);
     return out;
@@ -69,11 +69,14 @@ function keysOf<T>(obj: { [k: string]: T }): string[] {
 /**
  * Replace file-hostile characters so each export path is safe for Git commits on every OS.
  * Using a narrow allow list keeps legacy file names stable while preventing accidental nesting.
+ * Includes control characters (\u0000-\u001F) which are invalid in file paths and could cause
+ * security issues or filesystem errors.
  */
+// eslint-disable-next-line no-control-regex -- Intentionally filtering control characters for path safety
 const INVALID_FILE_CHARS = /[<>:"/\\|?*\u0000-\u001F]/g;
 
 function sanitizeForFile(s: string): string {
-    var cleaned = String(s);
+    let cleaned = String(s);
     cleaned = cleaned.replace(INVALID_FILE_CHARS, "_");
     cleaned = cleaned.replace(/\s+/g, " ").trim();
     cleaned = cleaned.replace(/[. ]+$/g, "");
@@ -88,17 +91,17 @@ function cloneTokenWithSingleContext(
     t: TokenNode,
     ctx: string
 ): TokenNode | null {
-    var val = t.byContext[ctx];
+    const val = t.byContext[ctx];
     if (!val) return null;
 
     // shallow clone without spreads
-    var copyByCtx: { [k: string]: ValueOrAlias } = {};
+    const copyByCtx: { [k: string]: ValueOrAlias } = {};
     copyByCtx[ctx] = val;
 
     return {
         path: (function () {
-            var arr: string[] = [];
-            var i = 0;
+            const arr: string[] = [];
+            let i = 0;
             for (i = 0; i < t.path.length; i++) arr.push(t.path[i]);
             return arr;
         })(),
@@ -110,16 +113,16 @@ function cloneTokenWithSingleContext(
 }
 
 function collectContextsFromGraph(graph: TokenGraph): string[] {
-    var seen: string[] = [];
-    var i = 0;
+    const seen: string[] = [];
+    let i = 0;
     for (i = 0; i < graph.tokens.length; i++) {
-        var t = graph.tokens[i];
-        var ks = keysOf(t.byContext);
-        var j = 0;
+        const t = graph.tokens[i];
+        const ks = keysOf(t.byContext);
+        let j = 0;
         for (j = 0; j < ks.length; j++) {
-            var ctx = ks[j];
-            var already = false;
-            var k = 0;
+            const ctx = ks[j];
+            let already = false;
+            let k = 0;
             for (k = 0; k < seen.length; k++)
                 if (seen[k] === ctx) {
                     already = true;
@@ -133,14 +136,14 @@ function collectContextsFromGraph(graph: TokenGraph): string[] {
 
 function sanitizeContexts(list: string[] | undefined): string[] {
     if (!list) return [];
-    var out: string[] = [];
-    for (var i = 0; i < list.length; i++) {
-        var raw = list[i];
+    const out: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+        const raw = list[i];
         if (typeof raw !== "string") continue;
-        var trimmed = raw.trim();
+        const trimmed = raw.trim();
         if (!trimmed) continue;
-        var exists = false;
-        for (var j = 0; j < out.length; j++)
+        let exists = false;
+        for (let j = 0; j < out.length; j++)
             if (out[j] === trimmed) {
                 exists = true;
                 break;
@@ -154,42 +157,42 @@ function filterGraphByContexts(
     graph: TokenGraph,
     requested: string[]
 ): { graph: TokenGraph; summary: ImportSummary } {
-    var available = collectContextsFromGraph(graph);
-    var requestedList = sanitizeContexts(requested);
+    const available = collectContextsFromGraph(graph);
+    const requestedList = sanitizeContexts(requested);
 
-    var availableSet: { [k: string]: true } = {};
-    for (var ai = 0; ai < available.length; ai++)
+    const availableSet: { [k: string]: true } = {};
+    for (let ai = 0; ai < available.length; ai++)
         availableSet[available[ai]] = true;
 
-    var appliedSet: { [k: string]: true } = {};
-    var missingRequested: string[] = [];
-    var fallbackToAll = false;
+    const appliedSet: { [k: string]: true } = {};
+    const missingRequested: string[] = [];
+    let fallbackToAll = false;
 
     if (requestedList.length > 0) {
-        for (var ri = 0; ri < requestedList.length; ri++) {
-            var ctx = requestedList[ri];
+        for (let ri = 0; ri < requestedList.length; ri++) {
+            const ctx = requestedList[ri];
             if (availableSet[ctx]) appliedSet[ctx] = true;
             else missingRequested.push(ctx);
         }
         if (Object.keys(appliedSet).length === 0 && available.length > 0) {
             fallbackToAll = true;
-            for (var ai2 = 0; ai2 < available.length; ai2++)
+            for (let ai2 = 0; ai2 < available.length; ai2++)
                 appliedSet[available[ai2]] = true;
         }
     } else {
-        for (var ai3 = 0; ai3 < available.length; ai3++)
+        for (let ai3 = 0; ai3 < available.length; ai3++)
             appliedSet[available[ai3]] = true;
     }
 
-    var appliedList: string[] = [];
-    for (var ctxKey in appliedSet)
+    const appliedList: string[] = [];
+    for (const ctxKey in appliedSet)
         if (Object.prototype.hasOwnProperty.call(appliedSet, ctxKey))
             appliedList.push(ctxKey);
     appliedList.sort();
 
-    var skippedList: Array<{ context: string; reason: string }> = [];
-    for (var si = 0; si < available.length; si++) {
-        var ctxAvailable = available[si];
+    const skippedList: Array<{ context: string; reason: string }> = [];
+    for (let si = 0; si < available.length; si++) {
+        const ctxAvailable = available[si];
         if (!appliedSet[ctxAvailable]) {
             skippedList.push({
                 context: ctxAvailable,
@@ -202,20 +205,20 @@ function filterGraphByContexts(
         return a.context < b.context ? -1 : 1;
     });
 
-    var filteredTokens: TokenNode[] = [];
-    var removedTokens: Array<{
+    const filteredTokens: TokenNode[] = [];
+    const removedTokens: Array<{
         path: string;
         removedContexts: string[];
         keptContexts: string[];
         reason: "partial" | "removed";
     }> = [];
 
-    for (var ti = 0; ti < graph.tokens.length; ti++) {
-        var tok = graph.tokens[ti];
-        var ctxs = keysOf(tok.byContext);
+    for (let ti = 0; ti < graph.tokens.length; ti++) {
+        const tok = graph.tokens[ti];
+        const ctxs = keysOf(tok.byContext);
         if (ctxs.length === 0) {
             // Nothing to filter; keep token as-is (clone for safety).
-            var cloneEmpty: TokenNode = {
+            const cloneEmpty: TokenNode = {
                 path: tok.path.slice(),
                 type: tok.type,
                 byContext: {},
@@ -228,12 +231,12 @@ function filterGraphByContexts(
             continue;
         }
 
-        var kept: string[] = [];
-        var removed: string[] = [];
-        var newCtx: { [k: string]: ValueOrAlias } = {};
+        const kept: string[] = [];
+        const removed: string[] = [];
+        const newCtx: { [k: string]: ValueOrAlias } = {};
 
-        for (var ci = 0; ci < ctxs.length; ci++) {
-            var ctx = ctxs[ci];
+        for (let ci = 0; ci < ctxs.length; ci++) {
+            const ctx = ctxs[ci];
             if (appliedSet[ctx]) {
                 kept.push(ctx);
                 newCtx[ctx] = tok.byContext[ctx];
@@ -261,7 +264,7 @@ function filterGraphByContexts(
             });
         }
 
-        var clone: TokenNode = {
+        const clone: TokenNode = {
             path: tok.path.slice(),
             type: tok.type,
             byContext: newCtx,
@@ -320,24 +323,24 @@ export async function importDtcg(
 
 // Pull the latest graph from Figma and emit files in the format requested by the UI (single/per-mode/typography).
 export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
-    var current = await readFigmaToIR();
-    var graph = normalize(current);
-    var styleDictionary = !!opts.styleDictionary;
-    var flatTokens = !!opts.flatTokens;
+    const current = await readFigmaToIR();
+    const graph = normalize(current);
+    const styleDictionary = !!opts.styleDictionary;
+    const flatTokens = !!opts.flatTokens;
 
     if (opts.format === "typography") {
-        var typographyTokens: TokenNode[] = [];
-        for (var ti = 0; ti < graph.tokens.length; ti++) {
-            var tok = graph.tokens[ti];
+        const typographyTokens: TokenNode[] = [];
+        for (let ti = 0; ti < graph.tokens.length; ti++) {
+            const tok = graph.tokens[ti];
             if (tok.type === "typography") {
-                var cloneTypo: TokenNode = {
+                const cloneTypo: TokenNode = {
                     path: tok.path.slice(),
                     type: tok.type,
                     byContext: {} as { [ctx: string]: ValueOrAlias },
                 };
-                var ctxKeys = keysOf(tok.byContext);
-                for (var ci = 0; ci < ctxKeys.length; ci++) {
-                    var ctx = ctxKeys[ci];
+                const ctxKeys = keysOf(tok.byContext);
+                for (let ci = 0; ci < ctxKeys.length; ci++) {
+                    const ctx = ctxKeys[ci];
                     cloneTypo.byContext[ctx] = tok.byContext[ctx];
                 }
                 if (typeof tok.description !== "undefined")
@@ -348,12 +351,12 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
             }
         }
 
-        var typographyGraph: TokenGraph = { tokens: typographyTokens };
-        var typographySerialized = serialize(typographyGraph, {
+        const typographyGraph: TokenGraph = { tokens: typographyTokens };
+        const typographySerialized = serialize(typographyGraph, {
             styleDictionary: styleDictionary,
             flatTokens: flatTokens,
         });
-        var typographyJson = typographySerialized.json;
+        let typographyJson = typographySerialized.json;
         if (!typographyTokens.length) {
             typographyJson = {};
         }
@@ -362,7 +365,7 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
     if (opts.format === "single") {
         // One file with whatever contexts exist; writer will emit the first available per token.
-        var single = serialize(graph, {
+        const single = serialize(graph, {
             styleDictionary: styleDictionary,
             flatTokens: flatTokens,
         });
@@ -370,17 +373,17 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
     }
 
     // Per mode: split graph by context "Collection/Mode", one file each.
-    var contexts: string[] = [];
-    var i = 0;
+    const contexts: string[] = [];
+    let i = 0;
     for (i = 0; i < graph.tokens.length; i++) {
-        var t = graph.tokens[i];
-        var ks = keysOf(t.byContext);
-        var j = 0;
+        const t = graph.tokens[i];
+        const ks = keysOf(t.byContext);
+        let j = 0;
         for (j = 0; j < ks.length; j++) {
-            var c = ks[j];
+            const c = ks[j];
             // push if unique
-            var found = false;
-            var k = 0;
+            let found = false;
+            let k = 0;
             for (k = 0; k < contexts.length; k++)
                 if (contexts[k] === c) {
                     found = true;
@@ -391,44 +394,44 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
     }
 
     // Build a file per context
-    var files: Array<{ name: string; json: unknown }> = [];
-    var ci = 0;
+    const files: Array<{ name: string; json: unknown }> = [];
+    let ci = 0;
     for (ci = 0; ci < contexts.length; ci++) {
-        var ctx = contexts[ci];
+        const ctx = contexts[ci];
 
         // Create a filtered graph where each token only carries this ctx (if present)
-        var filtered: TokenGraph = { tokens: [] };
-        var ii = 0;
+        const filtered: TokenGraph = { tokens: [] };
+        let ii = 0;
         for (ii = 0; ii < graph.tokens.length; ii++) {
-            var tok = graph.tokens[ii];
-            var one = cloneTokenWithSingleContext(tok, ctx);
+            const tok = graph.tokens[ii];
+            const one = cloneTokenWithSingleContext(tok, ctx);
             if (one) filtered.tokens.push(one);
         }
 
         // If nothing in this context, skip
         if (filtered.tokens.length === 0) continue;
 
-        var out = serialize(filtered, {
+        const out = serialize(filtered, {
             styleDictionary: styleDictionary,
             flatTokens: flatTokens,
         });
 
         // Try to recover the original collection/mode names from per-context metadata so
         // we don't lose slashes or other punctuation that appears in the collection name.
-        var collection = ctx;
-        var mode = "default";
+        let collection = ctx;
+        let mode = "default";
 
-        var haveCollection = false;
-        var haveMode = false;
+        let haveCollection = false;
+        let haveMode = false;
         for (
             ii = 0;
             ii < filtered.tokens.length && (!haveCollection || !haveMode);
             ii++
         ) {
-            var tok = filtered.tokens[ii];
+            const tok = filtered.tokens[ii];
             if (!tok || !tok.extensions) continue;
 
-            var figmaExt = (tok.extensions as { [k: string]: unknown })[
+            const figmaExt = (tok.extensions as { [k: string]: unknown })[
                 "com.figma"
             ] as
                 | {
@@ -442,15 +445,15 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
                 | undefined;
             if (!figmaExt || typeof figmaExt !== "object") continue;
 
-            var perCtx = figmaExt.perContext;
+            const perCtx = figmaExt.perContext;
             if (!perCtx || typeof perCtx !== "object") continue;
 
-            var ctxMeta = perCtx[ctx];
+            const ctxMeta = perCtx[ctx];
             if (!ctxMeta || typeof ctxMeta !== "object") continue;
 
-            var ctxCollection = (ctxMeta as { collectionName?: unknown })
+            const ctxCollection = (ctxMeta as { collectionName?: unknown })
                 .collectionName;
-            var ctxMode = (ctxMeta as { modeName?: unknown }).modeName;
+            const ctxMode = (ctxMeta as { modeName?: unknown }).modeName;
 
             if (typeof ctxCollection === "string" && !haveCollection) {
                 collection = ctxCollection;
@@ -464,12 +467,12 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
         if (!haveCollection || !haveMode) {
             // ctx format falls back to "Collection/Mode"
-            var slash = ctx.lastIndexOf("/");
+            const slash = ctx.lastIndexOf("/");
             collection = slash >= 0 ? ctx.substring(0, slash) : ctx;
             mode = slash >= 0 ? ctx.substring(slash + 1) : "default";
         }
 
-        var fname =
+        const fname =
             sanitizeForFile(collection) +
             "_mode=" +
             sanitizeForFile(mode) +
@@ -479,7 +482,7 @@ export async function exportDtcg(opts: ExportOpts): Promise<ExportResult> {
 
     // Fallback: if no contexts were found, still emit a single file
     if (files.length === 0) {
-        var fallback = serialize(graph, {
+        const fallback = serialize(graph, {
             styleDictionary: styleDictionary,
             flatTokens: flatTokens,
         });

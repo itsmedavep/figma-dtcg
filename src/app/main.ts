@@ -3,7 +3,7 @@
 // - Handles persistence so the iframe can reload without losing settings
 // - Wraps GitHub flows with retries and gentle error surfaces
 
-import type { UiToPlugin, PluginToUi, GithubScope } from "./messages";
+import type { UiToPlugin, PluginToUi } from "./messages";
 import {
     snapshotCollectionsForUi,
     analyzeSelectionState,
@@ -398,7 +398,9 @@ async function handleUiResize(msg: UiToPlugin): Promise<void> {
     figma.ui.resize(w, h);
     try {
         await figma.clientStorage.setAsync("uiSize", { width: w, height: h });
-    } catch {}
+    } catch {
+        // Ignore storage errors - UI resize will still work even if we can't persist the size
+    }
 }
 
 // Respond to preview requests by exporting the closest match and pushing it to the W3C preview pane.
@@ -472,7 +474,7 @@ figma.ui.onmessage = async (msg: UiToPlugin) => {
         if (e && (e as Error).message) message = (e as Error).message;
         figma.notify("Plugin error: " + message, { timeout: 4000 });
         send({ type: "ERROR", payload: { message } });
-        // eslint-disable-next-line no-console
+
         console.error(e);
     }
 };

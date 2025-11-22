@@ -71,6 +71,12 @@ function b64(s: string): string {
     }
 }
 
+/**
+ * Regex to detect invalid characters in GitHub repository path segments.
+ * Includes ASCII control characters (\u0000-\u001F) which are not allowed in
+ * repository paths and could cause security or parsing issues.
+ */
+// eslint-disable-next-line no-control-regex -- Intentionally filtering control characters for path security
 const INVALID_REPO_SEGMENT = /[<>:"\\|?*\u0000-\u001F]/;
 
 function sanitizeRepoPathInput(
