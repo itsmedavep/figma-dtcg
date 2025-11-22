@@ -90,8 +90,11 @@
       rawLines.push("Create one in the Variables panel, then press Refresh.");
     }
     let textStylesCount = 0;
-    if (typeof figma.getLocalTextStyles === "function") {
-      const textStyles = figma.getLocalTextStyles();
+    let textStyles = null;
+    if (typeof figma.getLocalTextStylesAsync === "function") {
+      textStyles = await figma.getLocalTextStylesAsync();
+    }
+    if (textStyles) {
       textStylesCount = textStyles.length;
       rawLines.push("");
       rawLines.push("Text styles: " + String(textStyles.length));
@@ -1862,6 +1865,7 @@
     }
     if (typeof figma.getLocalTextStylesAsync === "function") {
       const textStyles = await figma.getLocalTextStylesAsync();
+      if (textStyles.length === 0) return { tokens };
       const defaultCollection = "typography";
       const defaultMode = "Mode 1";
       for (const style of textStyles) {
@@ -2204,7 +2208,8 @@
     let createdTextStyles = 0;
     async function importTypographyTokens(tokens) {
       if (tokens.length === 0) return;
-      const canReadStyles = typeof figma.getLocalTextStyles === "function";
+      const hasAsyncTextStyles = typeof figma.getLocalTextStylesAsync === "function";
+      const canReadStyles = hasAsyncTextStyles;
       const canCreateStyles = typeof figma.createTextStyle === "function";
       if (!canReadStyles || !canCreateStyles) {
         logWarn2(
@@ -2214,7 +2219,7 @@
       }
       const stylesById = /* @__PURE__ */ new Map();
       const stylesByName = /* @__PURE__ */ new Map();
-      const localStyles = figma.getLocalTextStyles();
+      const localStyles = await figma.getLocalTextStylesAsync();
       for (const style of localStyles) {
         stylesById.set(style.id, style);
         stylesByName.set(style.name, style);

@@ -112,8 +112,11 @@ export async function snapshotCollectionsForUi(): Promise<{
     }
 
     let textStylesCount = 0;
-    if (typeof figma.getLocalTextStyles === "function") {
-        const textStyles = figma.getLocalTextStyles();
+    let textStyles: readonly TextStyle[] | null = null;
+    if (typeof figma.getLocalTextStylesAsync === "function") {
+        textStyles = await figma.getLocalTextStylesAsync();
+    }
+    if (textStyles) {
         textStylesCount = textStyles.length;
         rawLines.push("");
         rawLines.push("Text styles: " + String(textStyles.length));

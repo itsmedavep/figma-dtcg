@@ -1,0 +1,19 @@
+name: Run Unit Tests
+
+on:
+    pull_request:
+        branches: [main, develop] # Triggers on pull requests targeting main and develop branches
+
+jobs:
+    test:
+        runs-on: ubuntu-latest # Specifies the operating system for the job
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4 # Checks out your repository code
+
+            - name: Build project
+              run: npm build
+
+            - name: Run tests
+              run: npm test # Runs the unit tests
